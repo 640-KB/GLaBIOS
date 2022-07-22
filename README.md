@@ -54,7 +54,7 @@ EGA:
 
 CGA:
 
-![Screenshot CGA 07-22-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.10_cga_1.png)
+![Screenshot CGA 07-22-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.10_cga_2.png)
 
 MDA:
 
