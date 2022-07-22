@@ -46,6 +46,8 @@ It will be released soon, once it is stable enough for testing.
 
 ![Screenshot 06-15-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.8_1.png)
 
+![Screenshot MDA 07-22-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.10_mda_1.png)
+
 ## STATUS
 
 ### TODO:
