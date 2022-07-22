@@ -4,6 +4,10 @@ A modern, scratch-built, open-source alternative BIOS for 8088 or Turbo PCs.
 
 Copyright (c) 2022, 640KB and contributors
 
+## Preview pre-release available!
+
+[Ver 0.0.10 ROMs now available for testing](https://github.com/640-KB/GLaBIOS/releases)
+
 ## License
 
 - GNU General Public License v3.0. See [LICENSE](LICENSE).
@@ -13,7 +17,7 @@ Copyright (c) 2022, 640KB and contributors
 ### Why another 8088 PC BIOS in 2022?
 
 Because learning.  I've always wanted to know what actually happens inside the big gray box
-and how everything actually works on a PC. Like a vintage car, radio or TV it's actually possible
+and how everything actually works on a PC. Like an old car, radio or TV it's actually possible
 for a hobbyist to learn all of the inner workings and be able to repair or build.
 
 ### Where did the name originate?
@@ -34,9 +38,9 @@ There are several other excellent BIOS projects out there each with it's own des
 - Support for Turbo, 5160, 5150 and compatible clone hardware.
 - POST test screen is Color "theme-able" (build-time)
 - Performance-optmized CGA/MDA text and graphics routines. Multiple levels of CGA snow removal (configurable at build-time).
-- Accurate PIT-based I/O timing. Better stability on faster PCs and increased speed on slower PCs.
+- Accurate PIT-based I/O timing. Better stability at faster clock speeds and increased speed on slower PCs.
 - Support for NEC V20 instructions (enabled at build-time). Performance improvement is negligible but uses them just because.
-- Beeps pitched correctly at A<sub>5</sub> (880Hz), $\frac{1}{4}$ second long regardless of clock speed. Alternating error beeps are perfect fourth apart. (Is this silly? Maybe, but who wants a flat beep?)
+- Beeps pitched correctly at A<sub>5</sub> (880Hz), &frac14; second long regardless of clock speed. Alternating error beeps are perfect fourth apart. (Is this silly? Maybe, but who wants a flat beep?)
 
 ### So where is the source code?
 
@@ -44,7 +48,15 @@ It will be released soon, once it is stable enough for testing.
 
 ### Screenshots
 
+EGA:
+
 ![Screenshot 06-15-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.8_1.png)
+
+CGA:
+
+![Screenshot CGA 07-22-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.10_cga_1.png)
+
+MDA:
 
 ![Screenshot MDA 07-22-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.10_mda_1.png)
 
@@ -69,9 +81,7 @@ It will be released soon, once it is stable enough for testing.
 
 ### Assembler Version
 
-Built using MASM 5.0 (or later). MASM and MASM syntax has been 
-what I have used and most familiar with in assembly programming.
-It also provides some sense of historical authenticity _[citation needed]_.
+Built using MASM 5.0. MASM and it's syntax has been what I have used and most familiar with in assembly programming. It also provides some sense of historical authenticity _[citation needed]_.
 
 ### Code Formatting
 - Tab Size: 6 spaces. Indented with TAB characters.
@@ -80,13 +90,13 @@ It also provides some sense of historical authenticity _[citation needed]_.
 GLaBIOS uses all UPPERCASE mnemonics because 1) it was the way I originally
 learned assembly language 2) it's what's used in MASM 5 documentation
 and manuals 3) it would have been an accepted practice in the era in when 
-a PC BIOS clone was written.
+PC BIOS clones were written.
 
 ### Build Process:
 
 1. `MASM GLABIOS;`
 2. `LINK GLABIOS;`  Will create GLABIOS.EXE.
-3. Convert EXE to BIN (unfortunately DOS EXE2BIN cannot do this because it exceeds a single segment by 100H bytes). Included is a conversion program to do this and also calculate and insert the checksum.
+3. Convert EXE to BIN (unfortunately DOS EXE2BIN cannot do this because it exceeds a single segment by 100H bytes). Included is a conversion program to do this and also calculate and insert the checksum. Or just remove the EXE header (the first 512 bytes of the EXE file) and then calculate the checksum manually, following step 4.
 4. Calculate 8-bit checksum byte and insert into relative file offset `1FFF` in GLABIOS.ROM.
 
 ### Testing
@@ -95,7 +105,7 @@ Hampa Hug's excellent [PCE/ibmpc emulator](http://hampa.ch/pce/pce-ibmpc.html) w
 
 ### Real Hardware Deployment
 
-Minuszerodegrees has a lot of information about [original ROM types](http://minuszerodegrees.net/rom/rom.htm) and "modern" equivalents. I found using [Winbond W27E257](http://www.minuszerodegrees.net/rom/misc/Winbond%20W27E257%20as%2027C256%20replacement.htm) EEPROMs worked very well since it could be electrically erased and re-written quickly.  Since these are 32K EEPROMS, the image will need to be written 4 times sequentially.  From there I use a TL866 II Plus to write the images.
+[Minuszerodegrees (-0°)](http://www.minuszerodegrees.net/) has a lot of information about [original ROM types](http://minuszerodegrees.net/rom/rom.htm) and "modern" equivalents. I found using [Winbond W27E257](http://www.minuszerodegrees.net/rom/misc/Winbond%20W27E257%20as%2027C256%20replacement.htm) EEPROMs worked very well since it could be electrically erased and re-written quickly.  Since these are 32K EEPROMS, the image will need to be written 4 times sequentially.  I use a TL866 II Plus to write the EEPROMs.
 
 ## References and Credits:
 
