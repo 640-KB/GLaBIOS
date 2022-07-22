@@ -1,6 +1,6 @@
 # GLaBIOS
 ## (General Libraries and Basic Input Output System)
-A modern, scratch-built, open-source alternative BIOS for 8088 or Turbo PCs (coming soon)
+A modern, scratch-built, open-source alternative BIOS for 8088 or Turbo PCs.
 
 Copyright (c) 2022, 640KB and contributors
 
@@ -29,9 +29,18 @@ There are several other excellent BIOS projects out there each with it's own des
 3. Feature-complete with full support for original vintage hardware
 4. Fit in an 8K ROM to drop in to any original PC or clone
 
+### Features and build-time options
+
+- Support for Turbo, 5160, 5150 and compatible clone hardware.
+- POST test screen is Color "theme-able" (build-time)
+- Performance-optmized CGA/MDA text and graphics routines. Multiple levels of CGA snow removal (configurable at build-time).
+- Accurate PIT-based I/O timing. Better stability on faster PCs and increased speed on slower PCs.
+- Support for NEC V20 instructions (enabled at build-time). Performance improvement is negligible but uses them just because.
+- Beeps pitched correctly at A<sub>5</sub> (880Hz), $\frac{1}{4}$ second long regardless of clock speed. Alternating error beeps are perfect fourth apart. (Is this silly? Maybe, but who wants a flat beep?)
+
 ### So where is the source code?
 
-It will be released soon, once it is deemed stable enough for testing!
+It will be released soon, once it is stable enough for testing.
 
 ### Screenshots
 
@@ -43,21 +52,16 @@ It will be released soon, once it is deemed stable enough for testing!
 
 | Item	| Complete | TODO/Notes |
 | ----------- | ----------- | ----------- |
-| INT 09H Keyboard Decoding     | 60% | Complete all key combinations, cleanup |
-| INT 10H Video for CGA / MDA   | 50%  | Graphic modes, scrolling, testing |
-| INT 13H Floppy Disk Services  | 90% | Testing, cleanup, documentation |
-| INT 05H Print Screen          | 0%  | |
-| Fixed ORGs for INT vectors    | 0%  | TODO when code is closer to finalized |
-| POST tests for all ICs        |     | Necessity of each vs code size to do it |
+| INT 09H Keyboard Decoding     | 90% | Ctrl-NumLock (pause), cleanup |
+| INT 10H Video for CGA / MDA   | 90%  | Functions 8,9,A in CGA graphics modes 4-6 |
+| Fixed ORGs for INT vectors    | 50%  | TODO when code is close to finalized |
+| POST tests for all ICs        |     | Evaluate necessity of each vs code size to do it |
 | RAM / Parity / NMI handling   |     |	Test on real hardware. Provide additional output for offending memory |
-| Turbo XT support              |     | Additional testing on 10-16MHz real hardware |
 
 ### Known Bugs / Incompatibilities
 
-- Norton SYSINFO v4.5 (?) pauses on load waiting for a keypress
-- Using IBM XT/Xebec hard drive controller, if second HD is enabled but missing, odd looping INIT behavior on POST
-- FreeDOS (2016) hangs on boot when booted from floppy disk
 - ROM BASIC (INT 18) loads but doesn't work properly. Memory at 40:200 (or 50:100 or 60:0, which is ES and SS when BASIC is running) is being overwritten after first key press. Screen doesn't draw properly first time.
+- SYSINFO 6.01 does not detect CGA/MDA. Shows "No Monitor", 0KB video RAM. Why?
 
 ## BUILD NOTES:
 
@@ -65,10 +69,7 @@ It will be released soon, once it is deemed stable enough for testing!
 
 Built using MASM 5.0 (or later). MASM and MASM syntax has been 
 what I have used and most familiar with in assembly programming.
-It also provides some sense of historical authenticity.
-That said, it did not really occur to me in the beginning the irony of
-writing an open-source project using a closed-source/commercial assembler. 
-I wouldn't be opposed to convert someday to an open-source assembler (NASM, etc).
+It also provides some sense of historical authenticity _[citation needed]_.
 
 ### Code Formatting
 - Tab Size: 6 spaces. Indented with TAB characters.
@@ -83,7 +84,7 @@ a PC BIOS clone was written.
 
 1. `MASM GLABIOS;`
 2. `LINK GLABIOS;`  Will create GLABIOS.EXE.
-3. Convert EXE to BIN (unfortunately DOS EXE2BIN cannot do this because it exceeds a single segment by 100H bytes). I will include a small tool to do this in the forthcoming distribution (TBD).
+3. Convert EXE to BIN (unfortunately DOS EXE2BIN cannot do this because it exceeds a single segment by 100H bytes). Included is a conversion program to do this and also calculate and insert the checksum.
 4. Calculate 8-bit checksum byte and insert into relative file offset `1FFF` in GLABIOS.ROM.
 
 ### Testing
