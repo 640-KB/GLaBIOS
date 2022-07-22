@@ -75,7 +75,7 @@ MDA:
 ### Known Bugs / Incompatibilities
 
 - ROM BASIC (INT 18) loads but doesn't work properly. Memory at 40:200 (or 50:100 or 60:0, which is ES and SS when BASIC is running) is being overwritten after first key press. Screen doesn't draw properly first time.
-- SYSINFO 6.01 does not detect CGA/MDA. Shows "No Monitor", 0KB video RAM. Why?
+- SYSINFO 6.01 does not detect CGA/MDA. Shows "No Monitor", 0KB video RAM. Landmark Speedcom 6.00 also shows no video adapter. What are they doing to detect adapters?
 
 ## BUILD NOTES:
 
@@ -101,7 +101,7 @@ PC BIOS clones were written.
 
 ### Testing
 
-Hampa Hug's excellent [PCE/ibmpc emulator](http://hampa.ch/pce/pce-ibmpc.html) works very well for build testing and debugging.  This provides a near-perfect hardware-accurate emulation of a PC ISA with inspection of support ICs, memory and code stepping.  My experience is the PC-DOS 2.0 branches work best since it uses the 8K ROM size used by 5150, 5160 v1 and many clones.
+Hampa Hug's excellent [PCE/ibmpc emulator](http://hampa.ch/pce/pce-ibmpc.html) works very well for build testing and debugging.  This provides a near-perfect hardware-accurate emulation of a PC with inspection of ICs, memory and code stepping.  [86Box](http://86box.net/) and [PCem](http://pcem-emulator.co.uk/index.html) also work very well.
 
 ### Real Hardware Deployment
 
