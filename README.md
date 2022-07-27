@@ -68,7 +68,7 @@ MDA:
 | ----------- | ----------- | ----------- |
 | INT 09H Keyboard Decoding     | 90% | Ctrl-NumLock (pause), cleanup |
 | INT 10H Video for CGA / MDA   | 90%  | Functions AH=8,9,A in CGA graphics modes 4-6 |
-| Fixed ORGs for INT vectors    | 95%  | Tonly INT_0E (needs INT_13 refactoring) |
+| Fixed ORGs for INT vectors    | 95%  | Only INT_0E (needs INT 13h refactoring) |
 | POST tests for all ICs        |     | Evaluate necessity of each vs code size to do it |
 | RAM / Parity / NMI handling   |     |	Test on real hardware. Provide additional output for offending memory |
 
