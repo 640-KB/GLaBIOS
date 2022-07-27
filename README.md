@@ -1,6 +1,6 @@
 # GLaBIOS
 ## (General Libraries and Basic Input Output System)
-A modern, scratch-built, open-source alternative BIOS for 8088 or Turbo PCs.
+A modern, scratch-built, open-source alternative BIOS for PC, XT, 8088 Clone or Turbo PCs.
 
 Copyright (c) 2022, 640KB and contributors
 
