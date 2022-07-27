@@ -6,7 +6,7 @@ Copyright (c) 2022, 640KB and contributors
 
 ## Preview pre-release available!
 
-[Ver 0.0.10 ROMs now available for testing](https://github.com/640-KB/GLaBIOS/releases)
+[Ver 0.0.11 ROMs now available for testing](https://github.com/640-KB/GLaBIOS/releases)
 
 ## License
 
@@ -67,15 +67,14 @@ MDA:
 | Item	| Complete | TODO/Notes |
 | ----------- | ----------- | ----------- |
 | INT 09H Keyboard Decoding     | 90% | Ctrl-NumLock (pause), cleanup |
-| INT 10H Video for CGA / MDA   | 90%  | Functions 8,9,A in CGA graphics modes 4-6 |
-| Fixed ORGs for INT vectors    | 50%  | TODO when code is close to finalized |
+| INT 10H Video for CGA / MDA   | 90%  | Functions AH=8,9,A in CGA graphics modes 4-6 |
+| Fixed ORGs for INT vectors    | 95%  | Tonly INT_0E (needs INT_13 refactoring) |
 | POST tests for all ICs        |     | Evaluate necessity of each vs code size to do it |
 | RAM / Parity / NMI handling   |     |	Test on real hardware. Provide additional output for offending memory |
 
 ### Known Bugs / Incompatibilities
 
-- ROM BASIC (INT 18) loads but doesn't work properly. Memory at 40:200 (or 50:100 or 60:0, which is ES and SS when BASIC is running) is being overwritten after first key press. Screen doesn't draw properly first time.
-- SYSINFO 6.01 does not detect CGA/MDA. Shows "No Monitor", 0KB video RAM. Landmark Speedcom 6.00 also shows no video adapter. What are they doing to detect adapters?
+- ROM BASIC (INT 18) loads but doesn't work properly. Memory at 40:200 (or 50:100 or 60:0, which is ES and SS when BASIC is running) is being overwritten after first key press. Screen doesn't draw properly first time. Crashes.
 
 ## BUILD NOTES:
 
