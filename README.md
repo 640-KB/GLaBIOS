@@ -12,6 +12,16 @@ Copyright (c) 2022, 640KB and contributors
 
 - GNU General Public License v3.0. See [LICENSE](LICENSE).
 
+## Features
+
+- A complete "100% PC Compatible" BIOS for retro/vintage PC, XT, 8088 Clone or Turbo PCs.
+- Support for 5150, 5160, Turbo and compatible clone hardware.
+- POST test screen is color and supports easily customized themes (build-time).
+- Performance-optmized CGA/MDA text and graphics routines. Multiple levels of CGA snow removal (configurable at build-time).
+- Accurate PIT-based I/O timing. Better stability at faster clock speeds and increased speed on slower PCs.
+- NEC V20 enhanced instructions (enabled at build-time). Performance improvement is negligible but uses them just because.
+- Beeps pitched correctly at A<sub>5</sub> (880Hz), &frac14; second long regardless of clock speed. (Silly? Maybe, but who wants a flat beep?)
+
 ## FAQ
 
 ### Why another 8088 PC BIOS in 2022?
@@ -32,15 +42,6 @@ There are several other excellent BIOS projects out there each with it's own des
 2. A fully open-source PC BIOS, free of outside proprietary or copyrighted code
 3. Feature-complete with full support for original vintage hardware
 4. Fit in an 8K ROM to drop in to any original PC or clone
-
-### Features and build-time options
-
-- Support for Turbo, 5160, 5150 and compatible clone hardware.
-- POST test screen is Color "theme-able" (build-time)
-- Performance-optmized CGA/MDA text and graphics routines. Multiple levels of CGA snow removal (configurable at build-time).
-- Accurate PIT-based I/O timing. Better stability at faster clock speeds and increased speed on slower PCs.
-- Support for NEC V20 instructions (enabled at build-time). Performance improvement is negligible but uses them just because.
-- Beeps pitched correctly at A<sub>5</sub> (880Hz), &frac14; second long regardless of clock speed. Alternating error beeps are perfect fourth apart. (Is this silly? Maybe, but who wants a flat beep?)
 
 ### So where is the source code?
 
