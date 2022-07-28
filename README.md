@@ -16,10 +16,10 @@ Copyright (c) 2022, 640KB and contributors
 
 - A complete "100% PC Compatible" BIOS for retro/vintage PC, XT, 8088 Clone or Turbo PCs.
 - Support for 5150, 5160, Turbo and compatible clone hardware.
-- POST test screen is color and supports easily customized themes (build-time).
 - Performance-optmized CGA/MDA text and graphics routines. Multiple levels of CGA snow removal (configurable at build-time).
 - Accurate PIT-based I/O timing. Better stability at faster clock speeds and increased speed on slower PCs.
 - NEC V20 enhanced instructions (enabled at build-time). Performance improvement is negligible but uses them just because.
+- POST test screen colors support easily customized themes (build-time).
 - Beeps pitched correctly at A<sub>5</sub> (880Hz), &frac14; second long regardless of clock speed. (Silly? Maybe, but who wants a flat beep?)
 
 ## FAQ
@@ -73,10 +73,6 @@ MDA:
 | POST tests for all ICs        |     | Evaluate necessity of each vs code size to do it |
 | RAM / Parity / NMI handling   |     |	Test on real hardware. Provide additional output for offending memory |
 
-### Known Bugs / Incompatibilities
-
-- ROM BASIC (INT 18) loads but doesn't work properly. Memory at 40:200 (or 50:100 or 60:0, which is ES and SS when BASIC is running) is being overwritten after first key press. Screen doesn't draw properly first time. Crashes.
-
 ## BUILD NOTES:
 
 ### Assembler Version
@@ -96,7 +92,11 @@ PC BIOS clones were written.
 
 1. `MASM GLABIOS;`
 2. `LINK GLABIOS;`  Will create GLABIOS.EXE.
-3. Convert EXE to BIN (unfortunately DOS EXE2BIN cannot do this because it exceeds a single segment by 100H bytes). Included is a conversion program to do this and also calculate and insert the checksum. Or just remove the EXE header (the first 512 bytes of the EXE file) and then calculate the checksum manually, following step 4.
+3. Run `GLA2ROM GLABIOS` to convert to an 8 KiB ROM file.
+
+OR
+
+3. Convert EXE manually by removing the EXE header (the first 512 bytes of the EXE file) and extracting the last 8 KiB
 4. Calculate 8-bit checksum byte and insert into relative file offset `1FFF` in GLABIOS.ROM.
 
 ### Testing
