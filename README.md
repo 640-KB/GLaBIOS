@@ -59,11 +59,11 @@ EGA with V20:
 
 CGA:
 
-![Screenshot CGA 07-22-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.11_cga_1.png)
+![Screenshot CGA 07-29-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.11_cga_2.png)
 
 MDA with example POST error:
 
-![Screenshot MDA 07-22-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.11_mda_1.png)
+![Screenshot MDA 07-29-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.11_mda_1.png)
 
 ## STATUS
 
