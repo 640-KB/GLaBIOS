@@ -6,7 +6,7 @@ Copyright (c) 2022, 640KB and contributors
 
 ## Preview pre-release available!
 
-[Ver 0.0.11 ROMs now available for testing](https://github.com/640-KB/GLaBIOS/releases)
+[Ver 0.0.11 ROMs now available for testing!](https://github.com/640-KB/GLaBIOS/releases)
 
 ## License
 
@@ -49,17 +49,21 @@ It will be released soon, once it is stable enough for testing.
 
 ### Screenshots
 
-EGA:
+VGA with 8087 FPU:
 
-![Screenshot 06-15-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.8_1.png)
+![Screenshot VGA 07-29-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.11_vga_1.png)
+
+EGA with V20:
+
+![Screenshot VGA 07-29-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.11_ega_1.png)
 
 CGA:
 
-![Screenshot CGA 07-22-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.10_cga_2.png)
+![Screenshot CGA 07-22-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.11_cga_1.png)
 
-MDA:
+MDA with example POST error:
 
-![Screenshot MDA 07-22-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.10_mda_1.png)
+![Screenshot MDA 07-22-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.11_mda_1.png)
 
 ## STATUS
 
