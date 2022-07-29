@@ -20,11 +20,12 @@ Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org.
 
 - A complete "100% PC Compatible" BIOS for retro/vintage PC, XT, 8088 Clone or Turbo PCs.
 - Support for 5150, 5160, Turbo and compatible clone hardware.
-- Performance-optmized CGA/MDA text and graphics routines. Multiple levels of CGA snow removal (configurable at build-time).
+- FAST! Performance-optmized CGA/MDA text and graphics routines.
+- Multiple levels of "CGA snow" removal (configurable at build-time).
 - Accurate PIT-based I/O timing. Better stability at faster clock speeds and increased speed on slower PCs.
-- NEC V20 enhanced instructions (enabled at build-time). Performance improvement is negligible but uses them just because.
+- NEC V20 enhanced instruction set support (enabled at build-time).
 - POST test screen colors support easily customized themes (build-time).
-- Beeps pitched correctly at A<sub>5</sub> (880Hz), &frac14; second long regardless of clock speed. (Silly? Maybe, but who wants a flat beep?)
+- Beeps pitched correctly at A<sub>5</sub> (880Hz), &frac14; second long regardless of clock speed (nobody wants a flat beep).
 
 ## FAQ
 
@@ -75,9 +76,9 @@ MDA with example POST error:
 
 | Item	| Complete | TODO/Notes |
 | ----------- | ----------- | ----------- |
-| INT 09H Keyboard Decoding     | 90% | Ctrl-NumLock (pause), cleanup |
-| INT 10H Video for CGA / MDA   | 90%  | Functions AH=8,9,A in CGA graphics modes 4-6 |
-| Fixed ORGs for INT vectors    | 95%  | Only INT_0E (needs INT 13h refactoring) |
+| `INT 09h` Keyboard     | 90% | Ctrl-NumLock (pause), cleanup |
+| `INT 10h` Video for CGA / MDA   | 90%  | Functions AH=8,9,A in CGA graphics modes 4-6 |
+| Fixed ORGs for `INT` vectors    | 95%  | Only INT_0E (needs INT 13h refactoring) |
 | POST tests for all ICs        |     | Evaluate necessity of each vs code size to do it |
 | RAM / Parity / NMI handling   |     |	Test on real hardware. Provide additional output for offending memory |
 
