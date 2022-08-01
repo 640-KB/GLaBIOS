@@ -44,7 +44,7 @@ If you aren't familiar with the reference, ask a gamer.
 There are several other excellent BIOS projects out there each with it's own design goals and use cases. These are the goals for this one:
 
 1. Learning
-2. A fully open-source PC BIOS, free of outside proprietary or copyrighted code
+2. A fully open-source PC BIOS, built and improved by the community, free of outside proprietary or copyrighted code
 3. Feature-complete with full support for original vintage hardware
 4. Fit in an 8K ROM to drop in to any original PC or clone
 
