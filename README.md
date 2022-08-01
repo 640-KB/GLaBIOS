@@ -25,7 +25,7 @@ Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org.
 - Accurate PIT-based I/O timing. Better stability at faster clock speeds and increased speed on slower PCs.
 - NEC V20 enhanced instruction set support (enabled at build-time).
 - POST test screen colors support easily customized themes (build-time).
-- Beeps pitched correctly at A<sub>5</sub> (880Hz), &frac14; second long regardless of clock speed (nobody wants a flat beep).
+- Beeps pitched correctly at A<sub>5</sub> (880Hz), &frac14; second long regardless of clock speed (nobody wants a half-fast, flat beep).
 
 ## FAQ
 
