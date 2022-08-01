@@ -20,7 +20,7 @@ Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org.
 
 - A complete [100% PC Compatible](#compatibility) BIOS for retro/vintage PC, XT, 8088 Clone or Turbo PCs.
 - Support for 5150, 5160, Turbo and compatible clone hardware.
-- FAST! Performance-optmized CGA/MDA text and graphics routines.
+- FAST! [Performance-optmized](doc/about/perf.md) CGA/MDA text and graphics routines.
 - Multiple levels of "CGA snow" removal (configurable at build-time).
 - Accurate PIT-based I/O timing. Better stability at faster clock speeds and increased speed on slower PCs.
 - NEC V20 enhanced instruction set support (enabled at build-time).
