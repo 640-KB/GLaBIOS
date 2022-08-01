@@ -18,7 +18,7 @@ Copyright (c) 2022, 640KB and contributors
 - Support for 5150, 5160, Turbo and compatible clone hardware.
 - Performance-optmized CGA/MDA text and graphics routines. Multiple levels of CGA snow removal (configurable at build-time).
 - Accurate PIT-based I/O timing. Better stability at faster clock speeds and increased speed on slower PCs.
-- NEC V20 enhanced instructions (enabled at build-time). Performance improvement is negligible but uses them just because.
+- NEC V20 enhanced instruction support (enabled at build-time).
 - POST test screen colors support easily customized themes (build-time).
 - Beeps pitched correctly at A<sub>5</sub> (880Hz), &frac14; second long regardless of clock speed. (Silly? Maybe, but who wants a flat beep?)
 
@@ -64,6 +64,14 @@ CGA:
 MDA with example POST error:
 
 ![Screenshot MDA 07-29-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.11_mda_1.png)
+
+1-2-3 ver 1A
+
+![Screenshot 123 08-01-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_gb_123_1.pngg)
+
+Flight Simulator 1.0
+
+![Screenshot FS1 08-01-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_gb_fs1_1.png)
 
 ## STATUS
 
