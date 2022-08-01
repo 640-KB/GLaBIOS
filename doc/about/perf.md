@@ -4,17 +4,11 @@ A modern, scratch-built, open-source alternative BIOS for vintage PC, XT, 8088 C
 
 Copyright (c) 2022, [640KB](640kb@glabios.org) and contributors.
 
-## Performance
+## Video Performance
 
-The `INT 10h` CGA and MDA routines were written to be as quick as possible. The speed of the BIOS video routines has a very visible impact on almost all UI functions, such as directory listing, text scrolling/movement in programs, etc.
+The [BIOS `INT 10h` CGA and MDA](https://en.wikipedia.org/wiki/INT_10H) routines were written to be as quick as possible. This can have a major visible impact on almost all UI functions, such as directory listing, text scrolling/movement in both DOS and many programs.
 
-Here are the results of a few simple video benchmarks that were written to measure the overall speed/performance during development.  These were then run on some other selected BIOS ROM binaries [found here](http://www.minuszerodegrees.net/xt_clone_bios/xt_clone_bios.htm) as baselines for comparison.
-
-### CGA Graphics Drawing
-
-This is a simple benchmark program drawing simple checkerboard patterns using only the BIOS `INT 10h` `AH = 0Bh` [write graphics pixel](https://en.wikipedia.org/wiki/INT_10H) routines in both 320x200 and 640x200 resolutions. Time was kept using the BDA counter for a resolution of ~ 55ms.
-
-![Screenshot CGA Gfx 08-01-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/perf_cga_gfx_1.png)
+Here are the results of a few simple video benchmarks that were written to measure the overall speed/performance during development, timed using the BDA counter for a resolution of ~55ms.  These were then run on some other BIOS ROM binaries [found here](http://www.minuszerodegrees.net/xt_clone_bios/xt_clone_bios.htm) as baselines for comparison.  
 
 ### CGA Text Drawing / Scrolling
 
@@ -26,6 +20,13 @@ All BIOS'es tested (appeared to) have some type of [CGA snow](https://en.wikiped
 
 ### MDA Text Drawing / Scrolling
 
-This repeats the test as above, except that in MDA mode memory can be written directly without the necessity of CGA snow code.
+This repeats the test as above, except that in MDA mode memory can be written directly without the necessity of CGA snow removal.
 
 ![Screenshot CGA Text 08-01-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/perf_mda_txt_1.png)
+
+
+### CGA Graphics Drawing
+
+This is a simple benchmark program drawing simple checkerboard patterns using only the BIOS `INT 10h` `AH = 0Bh` [write graphics pixel](https://en.wikipedia.org/wiki/INT_10H) routines in both 320x200 and 640x200 resolutions.
+
+![Screenshot CGA Gfx 08-01-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/perf_cga_gfx_1.png)
