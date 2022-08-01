@@ -68,7 +68,7 @@ CGA:
 
 MDA with example POST error:
 
-![Screenshot MDA 07-29-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.11_mda_1.png)
+![Screenshot MDA 07-29-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.11_mda_3.png)
 
 #### Compatibility
 
