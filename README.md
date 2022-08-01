@@ -18,7 +18,7 @@ Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org.
 
 ## Features
 
-- A complete "100% PC Compatible" BIOS for retro/vintage PC, XT, 8088 Clone or Turbo PCs.
+- A complete [100% PC Compatible](#compatibility) BIOS for retro/vintage PC, XT, 8088 Clone or Turbo PCs.
 - Support for 5150, 5160, Turbo and compatible clone hardware.
 - FAST! Performance-optmized CGA/MDA text and graphics routines.
 - Multiple levels of "CGA snow" removal (configurable at build-time).
@@ -70,9 +70,11 @@ MDA with example POST error:
 
 ![Screenshot MDA 07-29-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.11_mda_1.png)
 
+#### Compatibility
+
 1-2-3 ver 1A
 
-![Screenshot 123 08-01-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_gb_123_1.pngg)
+![Screenshot 123 08-01-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_gb_123_1.png)
 
 Flight Simulator 1.0
 
