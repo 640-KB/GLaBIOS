@@ -2,7 +2,7 @@
 ## (General Libraries and Basic Input Output System)
 A modern, scratch-built, open-source alternative BIOS for vintage PC, XT, 8088 Clone or Turbo PCs.
 
-Copyright (c) 2022, [640KB](640kb@glabios.org) and contributors.
+Copyright &copy; 2022, [640KB](640kb@glabios.org) and contributors.
 
 ## Preview pre-release available!
 
@@ -20,12 +20,12 @@ Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org.
 
 - A complete [100% PC Compatible](#compatibility) BIOS for retro/vintage PC, XT, 8088 Clone or Turbo PCs.
 - Support for 5150, 5160, Turbo and compatible clone hardware.
-- FAST! Performance-optmized CGA/MDA text and graphics routines.
-- Multiple levels of "CGA snow" removal (configurable at build-time).
+- FAST! [Performance-optmized](doc/about/perf.md) CGA/MDA text and graphics routines.
+- Multiple levels of "[CGA snow](https://en.wikipedia.org/wiki/Color_Graphics_Adapter#Limitations,_bugs_and_errata)" removal (configurable at build-time).
 - Accurate PIT-based I/O timing. Better stability at faster clock speeds and increased speed on slower PCs.
 - NEC V20 enhanced instruction set support (enabled at build-time).
 - POST test screen colors support easily customized themes (build-time).
-- Beeps pitched correctly at A<sub>5</sub> (880Hz), &frac14; second long regardless of clock speed (nobody wants a flat beep).
+- Beeps pitched correctly at A<sub>5</sub> (880Hz), &frac14; second long regardless of clock speed (nobody wants a half-fast, flat beep).
 
 ## FAQ
 
@@ -44,7 +44,7 @@ If you aren't familiar with the reference, ask a gamer.
 There are several other excellent BIOS projects out there each with it's own design goals and use cases. These are the goals for this one:
 
 1. Learning
-2. A fully open-source PC BIOS, free of outside proprietary or copyrighted code
+2. A fully open-source PC BIOS, built and improved by the community, free of outside proprietary or copyrighted code
 3. Feature-complete with full support for original vintage hardware
 4. Fit in an 8K ROM to drop in to any original PC or clone
 
@@ -142,4 +142,5 @@ Many more references in inline comments.
 
 - Code Golf (CGCC) (https://codegolf.stackexchange.com/) community on Stack Exchange for helping me become a better ASM programmer.
 - Hampa Hug for the excellent PCE software (http://www.hampa.ch/pce/pce-ibmpc.html) that helped make development and debugging much easier.
+- @Raffzahn, Contributor, Advisor and Meckerhut.
 - Dave Nault, my partner in crime for 2 semesters of college assembly language programming classes back in the day. Wherever you are buddy, hope you're doing well!
