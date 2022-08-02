@@ -22,7 +22,7 @@ This tests the BIOS TTY (`AH = 0Eh`) and text scrolling (`AH = 6h and 7h`).  It 
 
 All BIOS'es tested (appeared to) have some type of [CGA snow](https://en.wikipedia.org/wiki/Color_Graphics_Adapter#Limitations,_bugs_and_errata) removal.
 
-![Screenshot CGA Text 08-01-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/perf_cga_txt_1.png)
+![Screenshot CGA Text 08-01-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/perf_cga_txt_1b.png)
 
 ### MDA Text Drawing / Scrolling
 
