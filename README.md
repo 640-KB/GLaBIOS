@@ -6,7 +6,7 @@ Copyright &copy; 2022, [640KB](640kb@glabios.org) and contributors.
 
 ## Preview pre-release available!
 
-[Ver 0.0.11 ROMs now available for testing!](https://github.com/640-KB/GLaBIOS/releases)
+[Ver 0.0.12 ROMs now available for testing!](https://github.com/640-KB/GLaBIOS/releases)
 
 ## License
 
@@ -86,9 +86,10 @@ Flight Simulator 1.0
 
 | Item	| Complete | TODO/Notes |
 | ----------- | ----------- | ----------- |
-| `INT 09h` Keyboard     | 90% | Ctrl-NumLock (pause), cleanup |
-| `INT 10h` Video for CGA / MDA   | 90%  | Functions AH=8,9,A in CGA graphics modes 4-6 |
-| Fixed ORGs for `INT` vectors    | 95%  | Only INT_0E (needs INT 13h refactoring) |
+| `INT 09h` Keyboard     | 95% | Ctrl-NumLock (pause) |
+| Fixed ORGs for `INT` vectors    | 97%  | INT 0Eh |
+| Create tests for all BIOS functions        |     | Especially INT 10h, INT 09h and INT 13h |
+| Code Golfing        |     | Optimize code for bytes (where possible) and remove unnecessary code to free up space  |
 | POST tests for all ICs        |     | Evaluate necessity of each vs code size to do it |
 | RAM / Parity / NMI handling   |     |	Test on real hardware. Provide additional output for offending memory |
 
