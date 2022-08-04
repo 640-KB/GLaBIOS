@@ -8,7 +8,7 @@ Copyright (c) 2022, [640KB](640kb@glabios.org) and contributors.
 
 The [BIOS `INT 10h` CGA and MDA](https://en.wikipedia.org/wiki/INT_10H) routines were written to be as quick as possible. This can have a major visible impact on almost all UI functions, such as directory listing, text scrolling/movement in both DOS and many programs.
 
-Here are the results of a few simple video benchmarks that were written to measure the overall speed/performance during development, timed using the BDA counter for a resolution of ~55ms.  These were then run on some other BIOS ROM binaries [found here](http://www.minuszerodegrees.net/xt_clone_bios/xt_clone_bios.htm) as baselines for comparison.  
+Here are the results of a few simple video benchmarks that were written to measure the overall speed/performance during development, timed using the BDA counter for a resolution of ~55ms.  These were then run on some other BIOS ROM binaries [found here](http://www.minuszerodegrees.net/xt_clone_bios/xt_clone_bios.htm) as baselines for comparison.
 
 ### CGA Text Drawing / Scrolling
 
@@ -16,14 +16,13 @@ This tests the BIOS TTY (`AH = 0Eh`) and text scrolling (`AH = 6h and 7h`).  It 
 
 All BIOS'es tested (appeared to) have some type of [CGA snow](https://en.wikipedia.org/wiki/Color_Graphics_Adapter#Limitations,_bugs_and_errata) removal.
 
-![Screenshot CGA Text 08-01-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/perf_cga_txt_1b.png)
+![Screenshot CGA Text 08-01-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/perf_cga_txt_1c.png)
 
 ### MDA Text Drawing / Scrolling
 
 This repeats the test as above, except that in MDA mode memory can be written directly without the necessity of CGA snow removal.
 
 ![Screenshot CGA Text 08-01-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/perf_mda_txt_1.png)
-
 
 ### CGA Graphics Drawing
 
