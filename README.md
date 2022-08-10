@@ -86,12 +86,10 @@ Flight Simulator 1.0
 
 | Item	| Complete | TODO/Notes |
 | ----------- | ----------- | ----------- |
-| `INT 09h` Keyboard     | 95% | Ctrl-NumLock (pause) |
 | Fixed ORGs for `INT` vectors    | 97%  | INT 0Eh |
-| Create tests for all BIOS functions        |     | Especially INT 10h, INT 09h and INT 13h |
-| Code Golfing        |     | Optimize code for bytes (where possible) and remove unnecessary code to free up space  |
-| POST tests for all ICs        |     | Evaluate necessity of each vs code size to do it |
-| RAM / Parity / NMI handling   |     |	Test on real hardware. Provide additional output for offending memory |
+| POST tests for ICs        |  90%   | PIT Timer Channel #0? |
+| Create tests for all BIOS functions        |     | INT 10h, INT 09h and INT 13h |
+| Regression / bug testing        |   | Ongoing |
 
 ## BUILD NOTES:
 
