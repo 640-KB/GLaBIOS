@@ -6,7 +6,7 @@ Copyright &copy; 2022, [640KB](640kb@glabios.org) and contributors.
 
 ## Preview pre-release available!
 
-[Ver 0.0.12 ROMs now available for testing!](https://github.com/640-KB/GLaBIOS/releases)
+[Ver 0.0.13 ROMs now available for testing!](https://github.com/640-KB/GLaBIOS/releases)
 
 ## License
 
@@ -87,7 +87,7 @@ Flight Simulator 1.0
 | Item	| Complete | TODO/Notes |
 | ----------- | ----------- | ----------- |
 | Fixed ORGs for `INT` vectors    | 97%  | INT 0Eh |
-| POST tests for ICs        |  90%   | PIT Timer Channel #0? |
+| POST tests for ICs        |  95%   | PIT Timer Channel #0? |
 | Create tests for all BIOS functions        |     | INT 10h, INT 09h and INT 13h |
 | Regression / bug testing        |   | Ongoing |
 
