@@ -6,7 +6,7 @@ Copyright &copy; 2022, [640KB](640kb@glabios.org) and contributors.
 
 ## Preview pre-release available!
 
-[Ver 0.0.13 ROMs now available for testing!](https://github.com/640-KB/GLaBIOS/releases)
+[Ver 0.0.14 ROMs now available for testing!](https://github.com/640-KB/GLaBIOS/releases)
 
 ## License
 
