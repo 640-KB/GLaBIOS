@@ -86,10 +86,9 @@ Flight Simulator 1.0
 
 | Item	| Complete | TODO/Notes |
 | ----------- | ----------- | ----------- |
-| Fixed ORGs for `INT` vectors    | 97%  | INT 0Eh |
-| POST tests for ICs        |  95%   | PIT Timer Channel #0? |
+| POST tests for ICs        |  95%   | Test for PIT Timer Channel #0 |
 | Create tests for all BIOS functions        |     | INT 10h, INT 09h and INT 13h |
-| Regression / bug testing        |   | Ongoing |
+| Program / Regression / bug testing        |   | Ongoing |
 
 ## BUILD NOTES:
 
