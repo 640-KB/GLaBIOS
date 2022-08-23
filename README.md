@@ -96,20 +96,15 @@ Flight Simulator 1.0
 
 Built using MASM 5.0. MASM and it's syntax has been what I have used and most familiar with in assembly programming. It also provides some sense of historical authenticity _[citation needed]_.
 
-### Code Formatting
-- Tab Size: 6 spaces. Indented with TAB characters.
-
-### Code style:
-GLaBIOS uses all UPPERCASE mnemonics because 1) it was the way I originally
-learned assembly language 2) it's what's used in MASM 5 documentation
-and manuals 3) it would have been an accepted practice in the era in when 
-PC BIOS clones were written.
-
 ### Build Process:
+
+`MAKE.BAT`
+
+OR Manually:
 
 1. `MASM GLABIOS;`
 2. `LINK GLABIOS;`  Will create GLABIOS.EXE.
-3. Run `GLA2ROM GLABIOS` to convert to an 8 KiB ROM file.
+3. Use the included [GLa2ROM](src/gla2rom) `GLA2ROM GLABIOS.EXE GLABIOS.ROM` to convert to an 8 KiB ROM file.
 
 OR
 
@@ -123,6 +118,17 @@ Hampa Hug's excellent [PCE/ibmpc emulator](http://hampa.ch/pce/pce-ibmpc.html) w
 ### Real Hardware Deployment
 
 [Minuszerodegrees (-0°)](http://www.minuszerodegrees.net/) has a lot of information about [original ROM types](http://minuszerodegrees.net/rom/rom.htm) and "modern" equivalents. I found using [Winbond W27E257](http://www.minuszerodegrees.net/rom/misc/Winbond%20W27E257%20as%2027C256%20replacement.htm) EEPROMs worked very well since it could be electrically erased and re-written quickly.  Since these are 32K EEPROMS, the image will need to be written 4 times sequentially.  I use a TL866 II Plus to write the EEPROMs.
+
+## Source Code:
+
+### Code style:
+GLaBIOS uses all UPPERCASE mnemonics because 1) it was the way I originally
+learned assembly language 2) it's what's used in MASM 5 documentation
+and manuals 3) it would have been an accepted practice in the era in when 
+PC BIOS clones were written.
+
+### Code Formatting
+- Tab Size: 6 spaces. Indented with TAB characters.
 
 ## References and Credits:
 
