@@ -82,16 +82,6 @@ Flight Simulator 1.0
 
 ![Screenshot FS1 08-01-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_gb_fs1_1.png)
 
-## STATUS
-
-### TODO:
-
-| Item	| Complete | TODO/Notes |
-| ----------- | ----------- | ----------- |
-| POST tests for ICs        |  95%   | Test for PIT Timer Channel #0 |
-| Create tests for all BIOS functions        |     | INT 10h, INT 09h and INT 13h |
-| Program / Regression / bug testing        |   | Ongoing |
-
 ## BUILD NOTES:
 
 ### Assembler Version
