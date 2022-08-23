@@ -4,9 +4,9 @@ A modern, scratch-built, open-source alternative BIOS for vintage PC, XT, 8088 C
 
 Copyright &copy; 2022, [640KB](640kb@glabios.org) and contributors.
 
-## Pre-release candidate available!
+## Version 0.1.0 public beta release
 
-[Ver 0.0.15 ROMs now available for testing!](https://github.com/640-KB/GLaBIOS/releases)
+[Download Ver 0.1.0 ROMs](https://github.com/640-KB/GLaBIOS/releases)
 
 ## License
 
@@ -48,9 +48,9 @@ There are several other excellent BIOS projects out there each with it's own des
 3. Feature-complete with full support for original vintage hardware
 4. Fit in an 8K ROM to drop in to any original PC or clone
 
-### So where is the source code?
+### Where is the source code?
 
-It will be released soon, once it is stable enough for testing.
+[Right here](src)
 
 ### Screenshots
 
