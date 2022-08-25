@@ -3789,28 +3789,27 @@ OUT_DECU_R ENDP
 ;----------------------------------------------------------------------------;
 ; Hide cursor display
 ;----------------------------------------------------------------------------;
+; Clobbers CX
+;----------------------------------------------------------------------------;
 HIDE_CURSOR PROC
-	PUSH	CX
 	MOV	CX, 2000H			; hide cursor
 	JMP	SHORT SET_CURSOR
 
 ;----------------------------------------------------------------------------;
 ; Show cursor display - restores saved cursor in CURSOR_DEFAULT
 ;----------------------------------------------------------------------------;
+; Input:
+; 	DS = BDA
+; Clobbers CX
+;----------------------------------------------------------------------------;
 SHOW_CURSOR PROC
 		ASSUME DS:_BDA
-	PUSH	CX
-	PUSH	DS
-	MOV	CX, SEG _BDA
-	MOV	DS, CX
 	MOV	CX, CURSOR_DEFAULT	; reset to original
-	POP	DS
 SET_CURSOR:
 	PUSH	AX
 	MOV	AH, 1
 	INT	10H
 	POP	AX
-	POP	CX
 	RET
 SHOW_CURSOR ENDP
 HIDE_CURSOR ENDP
@@ -3894,8 +3893,31 @@ INT_KB_CTRL_SCAN_TBL LABEL BYTE
 L_INT_KB_CTRL_ASC_TBL	EQU ($-INT_KB_CTRL_ASC_TBL)/2		; 12 total
 L_INT_KB_CTRL_SCAN_TBL	EQU ($-INT_KB_CTRL_SCAN_TBL)/2-1	; 6
 
+;----------------------------------------------------------------------------;
+; Clear keyboard circular buffer
+;----------------------------------------------------------------------------;
+; Clear/init circular buffer at KB_BUF
+; Clobbers AX
 ;
-; 10 bytes here
+; Size: 13h
+;----------------------------------------------------------------------------;
+KB_BUF_CLEAR PROC
+		ASSUME ES:_BDA
+	PUSH	ES 					; save ES
+	PUSH	DI
+	MOV	AX, SEG _BDA 			; get BDA segment
+	MOV	ES, AX
+	MOV	AX, WORD PTR ES:[KB_BUF_ST] 	; AX = original start of buffer
+	MOV	DI, OFFSET ES:KB_BUF_HD 	; DI = buffer head
+	STOSW 					; write to head pointer
+	STOSW 					; write to tail pointer
+	POP	DI
+	POP	ES
+	RET
+KB_BUF_CLEAR ENDP
+
+;
+; 1 byte here
 ;
 BYTES_HERE	INT_09
 
@@ -5409,7 +5431,6 @@ BYTES_HERE	INT_0E
 		ORG 0EF57H
 INT_0E PROC
 		ASSUME DS:_BDA
-	;STI						; not necessary?
 	PUSH	AX
 	PUSH	DS
 	MOV	AX, SEG _BDA 			; DS = BDA segment
@@ -5624,10 +5645,8 @@ INT_17_0_OK:
 	MOV	AL, 00001101B 		; /strobe pin HIGH
 	INC	DX 				; DX = control port
 	PUSH	DX				; I/O delay
-	;IO_DELAY_SHORT
 	OUT	DX, AL
 	POP	DX				; I/O delay
-	;IO_DELAY_SHORT
 	MOV	AL, 00001100B		; /strobe pin LOW
 	OUT	DX, AL
 	DEC	DX 				; DX = status port
@@ -6264,17 +6283,14 @@ INT_10_CHECK_BOUNDS:
 	DEC	DX				; fixup for 0-based column index (0-79, etc)
 INT_10_BOUNDS_OK:
 	MUL	DH				; AX = memory offset of col 0 of new bottom row
-	;XOR	DH, DH			; DX = lower right column position
 	MOV	DH, AL			; save AL
 
 ;----------------------------------------------------------------------------;
 ; Is graphics mode?
 ;
-	;PUSH	AX
 	CALL	INT_10_IS_TXT		; NZ if CGA GFX, ZR if CGA/MDA Text
 	MOV	AL, DH			; restore AL
 	MOV	DH, 0				; DX = lower right column position
-	;POP	AX
 	JNZ	INT_10_SCR_GFX
 
 ;----------------------------------------------------------------------------;
@@ -6416,6 +6432,7 @@ INT_10_6_DONE:
 ;	AX = memory offset of col 0 of new bottom row
 ;	BH = attribute to be used on blank line
 ;	BL = (scratch)
+;	BP (high) = flags (ZF if scroll up, NZ if scroll down)
 ;	CH = row/Y of upper left corner of scroll window
 ;	CL = column/X of upper left corner of scroll window
 ;	DX = lower right column/X position
@@ -6444,8 +6461,8 @@ INT_10_SCR_GFX PROC
 ;----------------------------------------------------------------------------;
 ; is 320x200/4 color - adjust to 2 bits per pixel (16 bits per glyph)
 ;
-	SHL	DL, 1				; WORD (char) align rect width
 	SHL	DI, 1				; WORD (char) align mem offset
+	SHL	DL, 1				; WORD (char) align rect width
 	SAHF					; set ZF if scroll up
 	JZ	INT_10_SCR_GFX_RDY	; jump if scroll up
 
@@ -6507,16 +6524,16 @@ INT_10_SCR_GFX_MOVE_LOOP:
 	MOV	DH, BL			; # of lines to clear
 INT_10_SCR_GFX_CLR:
 	MOV	AL, BH			; AL = attribute/color byte to write
-	MOV	BX, DI			; save destination
+	MOV	SI, DI			; save destination
 INT_10_SCR_GFX_CLR_LOOP:
 	MOV	CL, DL			; # of pixels to clear
 	REP	STOSB				; clear odd field
-	MOV	DI, BX
-	ADD	DI, 2000H			; vid mem offset for interlaced field
+	MOV	DI, 2000H			; vid mem offset for interlaced field
+	ADD	DI, SI
 	MOV	CL, DL			; # of pixels to clear
 	REP	STOSB				; clear even field
-	ADD	BX, BP			; move to next line
-	MOV	DI, BX			; reset dest
+	ADD	SI, BP			; move to next line
+	MOV	DI, SI			; reset dest
 	DEC	DH
 	JNZ	INT_10_SCR_GFX_CLR_LOOP
 	POP	DS
@@ -7514,7 +7531,7 @@ FOUND_ROM:
 ;----------------------------------------------------------------------------;
 ; Call Option ROM's BIOS init routine
 ;
-	MOV	DI, OFFSET ROM_INIT_SS
+	MOV	DI, OFFSET ROM_INIT_SS		; BDA = temp location for FAR CALL
 	MOV	ES:[DI], SI				; Init vector offset (always 3)
 	MOV	ES:[DI+2], DS			; Init vector segment
 	CALL	DWORD PTR ES:[DI]			; CALL Option ROM init
@@ -7766,31 +7783,8 @@ WB_LOW_CHECK_OK:
 WB_TEST_DONE:
 WB_TEST ENDP
 
-;----------------------------------------------------------------------------;
-; Clear keyboard circular buffer
-;----------------------------------------------------------------------------;
-; Clear/init circular buffer at KB_BUF
-; Clobbers AX
-; 
-; Size: 13h
-;----------------------------------------------------------------------------;
-KB_BUF_CLEAR PROC
-		ASSUME ES:_BDA
-	PUSH	ES 					; save ES
-	PUSH	DI
-	MOV	AX, SEG _BDA 			; get BDA segment
-	MOV	ES, AX
-	MOV	AX, WORD PTR ES:[KB_BUF_ST] 	; AX = original start of buffer
-	MOV	DI, OFFSET ES:KB_BUF_HD 	; DI = buffer head
-	STOSW 					; write to head pointer
-	STOSW 					; write to tail pointer
-	POP	DI
-	POP	ES
-	RET
-KB_BUF_CLEAR ENDP
-
 ;
-; 96 bytes here
+; 116 bytes here
 ;
 BYTES_HERE	INT_12
 
@@ -8124,11 +8118,9 @@ IO_WAIT_MS_125 ENDP
 ; Cannot use stack since this could be called before it is working.
 ;----------------------------------------------------------------------------;
 BEEP_ON_P PROC
-	;PUSH	AX				; save tone (no guarantee of stack yet)
 	XCHG	AX, BX			; save tone
 	MOV	AL, 10110110B		; Select Timer 2, LE, Mode 3 (square), Binary
 	OUT	PIT_CTRL, AL		; (10 11 011 0) Send to PIT control word (43H)
-	;POP	AX				; restore tone
 	XCHG	AX, BX			; restore tone
 	OUT	PIT_CH2, AL			; send low byte to timer
 	MOV	AL, AH 			; select high byte
