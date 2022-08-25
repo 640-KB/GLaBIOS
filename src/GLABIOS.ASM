@@ -151,8 +151,6 @@ CPU_TYPE		EQU	CPU_8088		; CPU_8088 or CPU_V20
 ;CPU_TYPE		EQU	CPU_V20		; use V20-only instructions
 	ENDIF
 
-MAX_RAM 		EQU	640			; Max detectable RAM (in KB)
-
 ;----------------------------------------------------------------------------;
 ; Additional Build-time Support
 ;
@@ -169,7 +167,7 @@ CGA_SNOW_REMOVE	EQU	3		; 0: Snow, Normal Flashing, Fastest
 ;----------------------------------------------------------------------------;
 ; Personality Traits
 ;
-POST_GLADOS		EQU	1		; say "Starting GLaDOS..." on boot
+POST_GLADOS		EQU	0		; say "Starting GLaDOS..." on boot
 POST_CLS		EQU	0		; clear screen after POST
 POST_SHOW_VER	EQU	2		; display Version verbosity (0-2)
 POST_VIDEO_TYPE	EQU	1		; display Video adapter type
@@ -185,6 +183,16 @@ POST_TEST_PIC_INT	EQU	1		; POST PIC Interrupt Test
 POST_TEST_CHK_ROM	EQU	1		; POST Checksum ROM
 
 ;----------------------------------------------------------------------------;
+; Advanced Options (may void your warranty)
+;
+MAX_RAM 		EQU	640		; Max detectable RAM (in KB)
+DRAM_REFRESH	EQU	1		; 1: Use standard DMA DRAM refresh
+						; 0: Disable refresh (use only with SRAM!)
+OPT_ROM_START	EQU	0C800H	; start of storage / option ROM area
+OPT_ROM_END		EQU	0F600H	; end below this address
+INT_19_BOOT_HD	EQU	1		; attempt C: (80h) boot if floppy fails
+
+;----------------------------------------------------------------------------;
 ; END Configurable Build Options
 ;----------------------------------------------------------------------------;
 
@@ -194,10 +202,10 @@ POST_TEST_CHK_ROM	EQU	1		; POST Checksum ROM
 ;
 VER_NAME		EQU	'GLaBIOS'
 	IFNDEF VER_NUM
-VER_NUM		EQU	'0.1.0'		; (max 6 chars)
+VER_NUM		EQU	'0.1.1'		; (max 6 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'08/22/22' 		; must be MM/DD/YY format
+VER_DATE		EQU	'08/25/22' 		; must be MM/DD/YY format
 	ENDIF
 	IFNDEF COPY_YEAR
 COPY_YEAR		EQU	'2022'		; can be set at build time
@@ -1717,6 +1725,7 @@ DMA_PASS:
 	OUT	DMA_RESET, AL 		; master reset of DMA again
 			ENDIF			; POST_TEST_DMA
 
+			IF DRAM_REFRESH
 ;----------------------------------------------------------------------------;
 ; [13] Set Counter DMA Channel 0 for memory refresh
 ;----------------------------------------------------------------------------;
@@ -1747,6 +1756,7 @@ DMA_PASS:
 	MOV	AL, 18 			; divisor: 1.19318 MHz / 18 = 66,287.7 Hz
 	OUT	PIT_CH1, AL			; refresh DRAM every 2ms
 	;IO_DELAY_SHORT
+			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; [13C] Enable DMA and clear mask register on Channels 0-3
@@ -2237,7 +2247,7 @@ HELLO_WORLD:
 ;----------------------------------------------------------------------------;
 ; Jump over INT 02h fixed ORG to continue...
 ;
-	JMP	SHORT INT_02_AFTER
+	JMP	INT_02_AFTER
 
 			IF ARCH_TYPE EQ ARCH_TURBO
 ;----------------------------------------------------------------------------;
@@ -2566,10 +2576,10 @@ DMA_STATUS_OK:
 	CALL	SHOW_CURSOR				; re-enable cursor
 
 ;----------------------------------------------------------------------------;
-; [28] Option ROM scan for other ROMs (storage, etc) [0C800H, 0F400H)
+; [28] Option ROM scan for other ROMs (storage, etc) [0C800H, 0F600H)
 ;----------------------------------------------------------------------------;
-	MOV	AX, 0C800H 				; start at 0C800H
-	MOV	DI, 0F400H 				; end below 0F400H
+	MOV	AX, OPT_ROM_START			; start at 0C800H
+	MOV	DI, OPT_ROM_END 			; end below 0F600H
 	CALL	BIOS_ROM_SCAN
 
 ;----------------------------------------------------------------------------;
@@ -2751,15 +2761,28 @@ CLEAR_POST_SCREEN:
 
 ;----------------------------------------------------------------------------;
 ; Attempt to IPL three times.  If failure, call INT 18h / ROM BASIC.
+; If INT_19_BOOT_HD is 1, BIOS will also attempt to IPL from 80h (C:)
 ;
+	MOV	DL, 0					; start IPL from drive 0 (A:)
+BOOT_DEVICE:
 	MOV	CX, 3 				; retry IPL 3 times
 BOOT_RETRY:
 	PUSH	CX					; save retry counter
-	MOV	DL, 0					; IPL from drive 0 (A:)
+			IF INT_19_BOOT_HD EQ 1
+	PUSH	DX					; save drive number
+			ENDIF
 	INT	19H
 	IO_DELAY_LONG
+			IF INT_19_BOOT_HD EQ 1
+	POP	DX					; restore drive number
+			ENDIF
 	POP	CX					; restore retry counter
 	LOOP	BOOT_RETRY
+			IF INT_19_BOOT_HD EQ 1
+	XOR	DL, 10000000b			; flip to HD
+	JNZ	BOOT_DEVICE				; retry if HD
+			ENDIF
+
 TRY_INT18:
 	INT	18H					; ROM BASIC or boot failure
 	CLI						; should not return, but halt
@@ -2811,7 +2834,7 @@ POST_COM		DB	'COM',  0
 POST_FDD		DB	'FDD',  0
 POST_HDD		DB	'HDD',  0
 POST_HD		DB	':',    0
-POST_MB		DB	'MB (', 0
+POST_MB		DB	' MB (', 0
 POST_NONE		DB	'None', 0
 POST_FAIL		DB	'FAIL', 0
 POST_MEMORY		DB	CR, 'Memory', 0		; RAM Memory test
@@ -2836,7 +2859,7 @@ POST_ERR_PMEM	DB	'RAM', 0
 POST_STRINGS ENDP
 
 NMI_ERR_PAR		DB	'PARITY', 0			; NMI Parity Error
-NMI_ERR_IO		DB	'NMIO', 0			; NMI I/O Error
+NMI_ERR_IO		DB	'NMI', 0			; NMI I/O Error
 
 STRINGS ENDP
 
@@ -7996,13 +8019,8 @@ SHOW_DISK_PARAMS PROC
 	XCHG	AX, DX				; AX = # of heads
 	MUL	CL					; AX = heads * sectors
 	MUL	BX					; DX:AX = heads * sectors * cyl
-			IF CPU_TYPE	EQ CPU_V20
-	ROL	AX, 5					; AX = AX / 2048
-			ELSE	
-	MOV	CL, 5					; (# of 512 byte sectors)
-	ROL	AX, CL				; AX = AX / 2048
-			ENDIF
-	AND	AX, 00011111B			; AX = size in MB
+	MOV	CX, 2048				; AX = DX:AX / 2048
+	DIV	CX					; (size in MB)
 
 	POST_COL_1	POST_HD, POST_CLR_VAL1, 1
 
@@ -8313,7 +8331,7 @@ MDA_COLOR_FIX_DONE:
 MDA_COLOR_FIX ENDP
 
 ;
-; 1 BYTE HERE
+; 2 BYTES HERE
 ;
 BYTES_HERE	GFX_CHARSET
 
