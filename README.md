@@ -2,11 +2,11 @@
 ## (General Libraries and Basic Input Output System)
 A modern, scratch-built, open-source alternative BIOS for vintage PC, XT, 8088 Clone or Turbo PCs.
 
-Copyright &copy; 2022, [640KB](640kb@glabios.org) and contributors.
+Copyright &copy; 2022, [640KB](mailto:640kb@glabios.org) and contributors.
 
-## Version 0.1.1 public beta release
+## Version 0.1.2 public beta release
 
-[Download Ver 0.1.1 ROMs](https://github.com/640-KB/GLaBIOS/releases)
+[Download Ver 0.1.2 ROMs](https://github.com/640-KB/GLaBIOS/releases)
 
 [Source Code](src)
 
