@@ -3673,11 +3673,8 @@ INT_16 ENDP
 ;----------------------------------------------------------------------------;
 MEM_ADDR_TEST PROC
 	MOV	AL, 1					; pattern to rotate
-	XOR	BX, BX				; start at bit 15
-	STC						; starting bit
-MEM_ADDR_LOOP_1:
+	XOR	BX, BX				; base address
 	MOV	DI, 02000H				; highest address in 16KB segment
-	SAR	BX, 1					; shift to next starting bit
 MEM_ADDR_LOOP:
 	MOV	ES:[BX], AL				; write to base address
 	NOT	AL					; invert value
@@ -3689,11 +3686,9 @@ MEM_ADDR_LOOP:
 	CMP	ES:[BX][DI], AL			; is second value the same?
 	JNZ	MEM_ADDR_ERR			; jump if not
 	NOT	AL					; revert value again
-	ROL	AL, 1					; walk test value
+	ROL	AL, 1					; alter test value
 	SHR	DI, 1					; move to next address line
 	JNZ	MEM_ADDR_LOOP			; loop until offset is 0
-	TEST	BX, BX
-	JNZ	MEM_ADDR_LOOP_1
 MEM_ADDR_ERR:
 	RET
 MEM_ADDR_TEST ENDP
