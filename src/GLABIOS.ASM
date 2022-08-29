@@ -57,8 +57,6 @@
 ;
 ; Item					Complete	TODO/Notes
 ;
-; - INT 09H Keyboard Decoding			95%	Final testing, cleanup
-; - INT 10H Video for CGA / MDA 		95%	Testing of all functions, all modes
 ; - POST screen display					Formatting in 40 col mode
 ; - POST tests for all ICs			90%	PIT Timer Channel #0? Testing of tests
 ; - Turbo mode 					  	Test with higher (> 8MHz) speeds?
@@ -169,7 +167,7 @@ CGA_SNOW_REMOVE	EQU	3		; 0: Snow, Normal Flashing, Fastest
 ;
 POST_GLADOS		EQU	0		; say "Starting GLaDOS..." on boot
 POST_CLS		EQU	0		; clear screen after POST
-POST_SHOW_VER	EQU	2		; display Version verbosity (0-2)
+POST_SHOW_VER	EQU	3		; display Version verbosity (0-3)
 POST_VIDEO_TYPE	EQU	1		; display Video adapter type
 
 ;----------------------------------------------------------------------------;
@@ -188,9 +186,7 @@ POST_TEST_CHK_ROM	EQU	1		; POST Checksum ROM
 MAX_RAM 		EQU	640		; Max detectable RAM (in KB)
 DRAM_REFRESH	EQU	1		; 1: Use standard DMA DRAM refresh
 						; 0: Disable refresh (use only with SRAM!)
-OPT_ROM_START	EQU	0C800H	; start of storage / option ROM area
-OPT_ROM_END		EQU	0F600H	; end below this address
-INT_19_BOOT_HD	EQU	1		; attempt C: (80h) boot if floppy fails
+OPT_ROM_END		EQU	0FE00H	; Option ROM scan ending address
 
 ;----------------------------------------------------------------------------;
 ; END Configurable Build Options
@@ -202,10 +198,10 @@ INT_19_BOOT_HD	EQU	1		; attempt C: (80h) boot if floppy fails
 ;
 VER_NAME		EQU	'GLaBIOS'
 	IFNDEF VER_NUM
-VER_NUM		EQU	'0.1.1'		; (max 6 chars)
+VER_NUM		EQU	'0.1.2'		; (max 6 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'08/25/22' 		; must be MM/DD/YY format
+VER_DATE		EQU	'08/28/22' 		; must be MM/DD/YY format
 	ENDIF
 	IFNDEF COPY_YEAR
 COPY_YEAR		EQU	'2022'		; can be set at build time
@@ -376,8 +372,8 @@ FDC_ST_TIMEOUT	EQU	80H 			; Time out, drive not ready
 FDC_ST_SENSE	EQU	0FFH 			; Sense operation failed
 
 ; Trivial RAM / data test pattern
-RAM_TEST_2		EQU 	1001010110100101B	; Simple RAM test 095A5H
-RAM_TEST		EQU 	0111001110011101B	; Alternate RAM test 0739DH
+RAM_TEST		EQU 	1001010110100101B	; Simple RAM test 095A5H
+RAM_TEST_1		EQU 	0111001110011101B	; Alternate RAM test 0739DH
 MAGIC_WORD		EQU	0AA55H		; Magic Word used for option ROM, IPL device
 
 ; Warm Boot Flag options set in BDA 40:72H
@@ -792,21 +788,16 @@ PPI_C_X_H RECORD	PC2PE:1,PC2IE:1,PC2T2:1,PC2CI:1,PCDRV:2,PCVID:2
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	CALL_JMP = address for CALL
-;	NO_RESTORE_SP = do not restore SP to RET_HALT
 ;
 ; - SS must be CS
-; - SP set to RET_HALT if NO_RESTORE_SP is not defined
 ;----------------------------------------------------------------------------;
-CALL_NS 	MACRO CALL_JMP, NO_RESTORE_SP
+CALL_NS 	MACRO CALL_JMP
 		LOCAL	CALL_JMP_PTR, CALL_JMP_RET
 	MOV	SP, OFFSET CALL_JMP_PTR
 	JMP	CALL_JMP
 CALL_JMP_PTR:
 	DW	OFFSET CALL_JMP_RET
 CALL_JMP_RET:
-		IFB	<NO_RESTORE_SP>
-	MOV	SP, OFFSET RET_HALT		; RET will go to RET_HALT handler
-		ENDIF
 		ENDM
 
 ;----------------------------------------------------------------------------;
@@ -1403,13 +1394,19 @@ CGA_MEM	LABEL BYTE				; 16KiB (4000H) total CGA memory
 _CGA_MEM	ENDS
 
 ;----------------------------------------------------------------------------;
-; C000:0000 - Video BIOS ROM segment (option ROM)
+; C000:0000 - Video Option ROM segment
 ;----------------------------------------------------------------------------;
 _VID_BIOS	SEGMENT AT 0C000H
 VID_MN		DW	?			; magic number (0AA55H)
 VID_BIOS_SZ		DB	?			; length in 512 byte blocks
 VID_VEC		DW	?
 _VID_BIOS	ENDS
+
+;----------------------------------------------------------------------------;
+; C800:0000 - Start of Storage/Other Option ROM segment
+;----------------------------------------------------------------------------;
+_OPT_ROM	SEGMENT AT 0C800H
+_OPT_ROM	ENDS
 
 ;----------------------------------------------------------------------------;
 ; F000:E000 - System BIOS ROM segment map
@@ -1453,37 +1450,26 @@ _BIOS    	SEGMENT
 BIOS_TOP	PROC NEAR
 
 VER_BANNER	DB	VER_NAME, ' [', HEART, '] '
+				IF POST_SHOW_VER GT 2
 		DB	"The hero we need but don't deserve"
+		;DB	"An Energy Star Foe"
 		DB	CR, LF
-COPYRIGHT	DB	'(C) ', COPY_YEAR, ' '
-		DB	'640KB Released under GPLv3'
-		DB	LF, 0
+				ENDIF
 
-;----------------------------------------------------------------------------;
-; Error handler for initial startup or short jump
-;----------------------------------------------------------------------------;
-; Beep patterns (Short / Long):
-; SH  LNG
-;  2   1	CPU register test failure
-;  3   1	CPU instruction test failed
-;  4   1	Build is V20 but not detected
-;  2   2	System BIOS ROM Checksum Error
-;  3   2	PIT Counter 1 test failed
-;  4   2	DMA register test failed
-;  5   2	PIC test register failed
-;  5   3	PIC test interrupt failed
-;  1   3	Base RAM (0-16KB) read/write error
-;  3   3 	Error loading video adapter ROM
-;  1   4	Base RAM (0-16KB) parity error
-;----------------------------------------------------------------------------;
-HALT_ERROR	PROC
-		JMP	HALT_BEEP		; JMP HALT_BEEP near jump for halt
-RET_HALT	DW	OFFSET HALT_BEEP	; use this for SP to return to HALT_BEEP
-HALT_ERROR	ENDP
+COPYRIGHT	DB	'(C)'
+				IF POST_SHOW_VER GT 2
+		DB	' '
+				ENDIF
+		DB	COPY_YEAR, ' '
+		DB	'640KB Released under GPLv3'
+				IF POST_SHOW_VER GT 1
+		DB	LF
+				ENDIF
+		DB	0
 
 BIOS_TOP 	ENDP
 
-BYTES_HERE	POWER_ON			; 1 byte here
+BYTES_HERE	POWER_ON			; 6 BYTES HERE
 
 ;----------------------------------------------------------------------------;
 ; F000:E05B: Beginning of boot execution
@@ -1493,6 +1479,21 @@ BYTES_HERE	POWER_ON			; 1 byte here
 ; http://minuszerodegrees.net/5160/post/5160%20-%20POST%20-%20Detailed%20breakdown.htm
 ; http://minuszerodegrees.net/5150/post/5150%20-%20POST%20-%20Detailed%20breakdown.htm
 ; https://stanislavs.org/helppc/cold_boot.html
+;----------------------------------------------------------------------------;
+; POST Error Beep patterns:
+;
+; Short  Long
+; 	2   	1	CPU register test failure
+;	3	1	CPU instruction test failed
+;	4	1	Build is V20 but not detected
+;	2	2	System BIOS ROM Checksum Error
+;	3	2	PIT Counter 1 test failed
+;	4	2	DMA register test failed
+;	5	2	PIC test register failed
+;	5	3	PIC test interrupt failed
+;	1	3	Base RAM (0-16KB) read/write error
+;	3	3 	Error loading video adapter ROM
+;	1	4	Base RAM (0-16KB) parity error
 ;----------------------------------------------------------------------------;
 			ASSUME CS:_BIOS, DS:NOTHING, ES:NOTHING, SS:NOTHING
 		ORG  0E05BH
@@ -1584,7 +1585,7 @@ INIT_VIDEO:
 ; Set up POST flags in BP
 ;----------------------------------------------------------------------------;
 			ASSUME DS:_BDA_ABS
-	CMP	WORD PTR DS:[WARM_FLAG_ABS], WARM_BOOT
+	CMP	WARM_FLAG_ABS, WARM_BOOT
 	JNZ	POST_FLAG_DONE
 	MOV	BP, MASK WARM		; clear and set POST warm boot flag
 POST_FLAG_DONE:
@@ -1596,7 +1597,6 @@ POST_FLAG_DONE:
 ;----------------------------------------------------------------------------;
 	MOV	DX, CS 			; SS to temp boot stack CS
 	MOV	SS, DX			; SS to 0F000h BIOS segment
-	MOV	SP, OFFSET RET_HALT 	; RET will go to RET_HALT handler
 
 ;----------------------------------------------------------------------------;
 ; [5] Setup 8255 PPI to normal operating state
@@ -1639,7 +1639,7 @@ CHECKSUM_ROM:
 			ASSUME DS:_BIOS
 	MOV	DS, DX			; DS to 0F000h BIOS segment
 	MOV	SI, OFFSET BIOS_TOP 	; offset to top of BIOS ROM
-	MOV	CX, 1000H 			; checksum 8KB (in 2 byte words)
+	MOV	CH, 10H			; checksum 8KB (in 2 byte words)
 	XOR	BX, BX 			; BL = accumulator for sum
 CHECKSUM:
 	LODSW 				; next two bytes into AL and AH
@@ -1647,8 +1647,8 @@ CHECKSUM:
 	ADD	BL, AH			; ZF if sum is 0
 	LOOP	CHECKSUM 			; loop through entire ROM
 	MOV	BL, 22H 			; on failure, 2 short and 2 long beeps
-	JZ	CHECKSUM_OK			; was sum 0?
-	RET 					; if not, no biscuit for you
+	JNZ	HALT_ERROR			; if sum not 0, fail
+
 CHECKSUM_OK:
 			ENDIF
 
@@ -1695,12 +1695,16 @@ INIT_PIT1_TEST:
 	OR	DH, AL			; set all lines received on high byte
 	LOOP	INIT_PIT1_TEST		; loop until timeout
 	MOV	BL, 32H 			; beep pattern (3 short, 2 long)
-DMA_FAIL:
-	RET
-INIT_PIT1_TEST_DONE:
+HALT_ERROR:
+	JMP	SHORT HALT_BEEP_1		; NEAR jump for POST errors
 			ELSE
+	JMP	SHORT INIT_PIT1_TEST_DONE ; jump over the NEAR jump
+HALT_ERROR:
+	JMP	SHORT HALT_BEEP_1		; must still be here if PIT test is off
 	IO_DELAY_SHORT			; I/O delay
 			ENDIF
+
+INIT_PIT1_TEST_DONE:
 
 ;----------------------------------------------------------------------------;
 ; [12] Reset, Clear and test DMA Offset and Block Size Registers
@@ -1715,12 +1719,7 @@ INIT_PIT1_TEST_DONE:
 	XOR	DX, DX			; starting at port 00H
 	CALL_NS WB_TEST			; ZF if pass, NZ if failed
 	MOV	BL, 42H 			; beep pattern (4 short, 2 long)
-			IF POST_TEST_PIT_1 EQ 1
-	JNZ	DMA_FAIL			; (this saves one byte)
-			ELSE
-	JZ	DMA_PASS
-	RET
-			ENDIF			; POST_TEST_PIT_1
+	JNZ	HALT_ERROR
 DMA_PASS:
 	OUT	DMA_RESET, AL 		; master reset of DMA again
 			ENDIF			; POST_TEST_DMA
@@ -1844,7 +1843,8 @@ BASE_RAM_TEST:
 
 BASE_RAM_ERROR:
 	MOV	BL, 13H 				; on failure, 1 short and 3 long beeps
-	RET
+HALT_BEEP_1:
+	JMP	HALT_BEEP				; NEAR jump to HALT BEEP PROC
 BASE_RAM_ZERO:
 	MOV	AX, RAM_TEST			; test pattern
 	CALL_NS MEM_CHECK				; write and verify test pattern
@@ -1854,12 +1854,12 @@ BASE_RAM_ZERO:
 	JNZ	BASE_RAM_ERROR
 	MOV	WORD PTR[SI], DX			; restore warm boot flag
 	INC	AX					; AL = 1
-	MOV	BYTE PTR DS:[FD_MOTOR_CT_ABS], AL 	; set motor to turn off on next tick
+	MOV	FD_MOTOR_CT_ABS, AL 		; set motor to turn off on next tick
 	IN	AL, PPI_C				; read PPI channel C
 	AND	AL, 11000000B			; check parity and I/O flags
 	JZ	BASE_RAM_TEST_DONE		; either set?
 	MOV	BL, 14H				; Halt with 1 short beep, 4 long beeps
-	RET
+	JMP	SHORT HALT_BEEP_1
 BASE_RAM_TEST_DONE:
 	IN	AL, PPI_B
 	OR	AL, 00110000B 			; disable RAM parity and I/O ch. flags
@@ -1927,7 +1927,7 @@ BASE_RAM_TEST_DONE:
 	MOV	BL, 52H			; beep error 5 short, 2 long
 	JZ	PIC_REG_PASS
 PIC_INT_FAIL:
-	JMP	HALT_BEEP
+	JMP	SHORT HALT_BEEP_1
 PIC_REG_PASS:
 	DEC	DX				; DX = Port 1 (21h)
 			ELSE
@@ -1954,18 +1954,19 @@ PIC_VECT_TMP_LOOP:
 ;----------------------------------------------------------------------------;
 ; - Disable all interrupts and ensure none are received
 ;
-	MOV	INT_LAST_ABS, DH		; clear last interrupt flag
+	MOV	DI, OFFSET INT_LAST_ABS
+	MOV	[DI], DH			; clear last interrupt flag
 	STI					; enable interrupts
 	IO_DELAY				; wait for it...
 	CLI
-	;INC	BX				; beep error 5 short, 3 long (out of bytes!)
-	TEST	INT_LAST_ABS, AL		; did any interrupts happen?
+	INC	BX				; beep error 5 short, 3 long (out of bytes!)
+	TEST	[DI], AL			; did any interrupts happen?
 
 			IF POST_TEST_PIC_REG EQ 1
 	JNZ	PIC_INT_FAIL
 			ELSE
 	JZ	PIC_INT_PASS
-	JMP	HALT_BEEP
+	JMP	SHORT HALT_BEEP_1
 			ENDIF			; IF POST_TEST_PIC_REG EQ 1
 
 			ENDIF			; IF POST_TEST_PIC_INT EQ 1
@@ -2019,18 +2020,36 @@ BIOS_INT_VECTORS_LOOP:
 ;----------------------------------------------------------------------------;
 ; Check for valid BASIC ROMs and set INT 18H vector if detected
 ;----------------------------------------------------------------------------;
+; - Scan 4 x 8K ROMs starting at seg 0F600h.
+; - BASIC dectected if for each ROM all are true:
+; 	- first two bytes not option ROM (0AAFFh)
+;	- not the same as the previous ROM (checks to make sure 
+;		are not all 0000 or FFFF)
+;	- has a valid checksum
+;----------------------------------------------------------------------------;
 			ASSUME DS:_SEG_BASIC
 INIT_ROM_BASIC_SEG:
-	MOV	BX, SEG _SEG_BASIC 		; AX = BASIC SEG in ROM
-	MOV	DX, BX				; DX = first BASIC SEG
-	MOV	CL, 4					; loop 4 8K ROMs
+	MOV	BX, SEG _SEG_BASIC 		; BX = BASIC SEG in ROM
+	MOV	DX, BX				; DX = save first BASIC SEG
+	MOV	DI, MAGIC_WORD			; start with a negative check result
+	MOV	CL, 4					; checksum 4 x 8K ROMs
 CHECK_BASIC_ROM:
+	MOV	DS, BX				; set DS to current segment
+	MOV	AX, WORD PTR[_BASIC]		; AX = first two bytes
+	CMP	AX, MAGIC_WORD			; is an option ROM?
+	JZ	INIT_ROM_BASIC_DONE		; if so, not ROM BASIC
+	XCHG	AX, DI				; save last ROM's header to DI
+	CMP	AX, DI				; is same as last ROM?
+	JZ	INIT_ROM_BASIC_DONE		; if so, valid ROM not present
 	MOV	AL, 10H 				; ROM Size = 8K (10h * 512B)
-	MOV	DS, BX				; set DS to next segment
 	ADD	BH, 2					; BX = next BASIC 8K ROM
 	CALL	ROM_CHECKSUM 			; checksum ROM at DS:0, size AL
 	LOOPZ CHECK_BASIC_ROM			; loop 4 ROMs or checksum fail
 	JNZ	INIT_ROM_BASIC_DONE		; if NZ, checksum failed
+
+;----------------------------------------------------------------------------;
+; BASIC ROM detected - set as INT 18h in IVT
+;
 	MOV	DI, OFFSET _INT_18H		; DI = BASIC offset in IVT
 	XOR	AX, AX				; vector offset is :0000
 	STOSW 					; write to IVT
@@ -2225,11 +2244,11 @@ HELLO_WORLD:
 ; Save the initial cursor mode to BDA for hot key and POST display
 ;
 	XOR	BX, BX				; BH = video page 0
-	MOV	AH, 3					; Get power-on cursor and position
-	INT	10H
+	MOV	AH, 3					; CX = power-on cursor
+	INT	10H					; DX = and position
 	MOV	CURSOR_DEFAULT, CX		; save to BDA for Turbo toggle
 
-			IF POST_SHOW_VER GT 0
+			IF POST_SHOW_VER GT 1
 ;----------------------------------------------------------------------------;
 ; Display VERSION notice in bottom left
 ;
@@ -2242,12 +2261,16 @@ HELLO_WORLD:
 	POP	DX					; restore previous cursor
 	MOV	AH, 2 				; reset cursor position 
 	INT	10H 					; row = DH, column = DL
+			ELSE
+	PRINT_SZ VER				; display version
+	PRINTLN_SZ REL_DATE				; display build date
+	CALL	CRLF
 			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Jump over INT 02h fixed ORG to continue...
 ;
-	JMP	INT_02_AFTER
+	JMP	SHORT INT_02_AFTER
 
 			IF ARCH_TYPE EQ ARCH_TURBO
 ;----------------------------------------------------------------------------;
@@ -2282,7 +2305,7 @@ TOGGLE_TURBO ENDP
 			ENDIF
 
 ;
-; 0 BYTES HERE
+; 3 BYTES HERE
 ;
 BYTES_HERE	INT_02
 
@@ -2337,7 +2360,7 @@ INT_02_AFTER:
 	STOSW
 
 POST_DETECT_PORTS:
-	MOV	BX, OFFSET EQUIP_FLAGS+1	; BX set to high byte of EQUIP_FLAGS
+	MOV	BX, OFFSET EQUIP_FLAGS[1]	; BX set to high byte of EQUIP_FLAGS
 
 ;----------------------------------------------------------------------------;
 ; [38] Detect and enable Game ports
@@ -2576,10 +2599,10 @@ DMA_STATUS_OK:
 	CALL	SHOW_CURSOR				; re-enable cursor
 
 ;----------------------------------------------------------------------------;
-; [28] Option ROM scan for other ROMs (storage, etc) [0C800H, 0F600H)
+; [28] Option ROM scan for other ROMs (storage, etc)
 ;----------------------------------------------------------------------------;
-	MOV	AX, OPT_ROM_START			; start at 0C800H
-	MOV	DI, OPT_ROM_END 			; end below 0F600H
+	MOV	AX, SEG _OPT_ROM			; start at 0C800H
+	MOV	DI, OPT_ROM_END 			; end below 0FE00H
 	CALL	BIOS_ROM_SCAN
 
 ;----------------------------------------------------------------------------;
@@ -2641,6 +2664,8 @@ HDD_POST PROC
 	CALL	GET_DISK_PARAMS			; return # HD's in DX
 	JC	HDD_POST_NONE
 
+
+HDD_POST_COUNT PROC
 ;----------------------------------------------------------------------------;
 ; Display HDD POST drive count column
 ;
@@ -2655,6 +2680,8 @@ HDD_POST PROC
 
 	POP	CX					; CX = drive count
 	JCXZ	HDD_POST_DONE			; reset passed but 0 drives
+
+HDD_POST_COUNT ENDP
 
 ;----------------------------------------------------------------------------;
 ; Display HDD drive letter(s) and size(s)
@@ -2760,29 +2787,16 @@ CLEAR_POST_SCREEN:
 	;JZ	TRY_INT18				;
 
 ;----------------------------------------------------------------------------;
-; Attempt to IPL three times.  If failure, call INT 18h / ROM BASIC.
-; If INT_19_BOOT_HD is 1, BIOS will also attempt to IPL from 80h (C:)
+; Attempt to IPL three times from drive 0h. If failure, call INT 18h / ROM BASIC.
 ;
-	MOV	DL, 0					; start IPL from drive 0 (A:)
-BOOT_DEVICE:
+	CWD						; IPL from drive 0 A: (set DL = 0h)
 	MOV	CX, 3 				; retry IPL 3 times
 BOOT_RETRY:
 	PUSH	CX					; save retry counter
-			IF INT_19_BOOT_HD EQ 1
-	PUSH	DX					; save drive number
-			ENDIF
 	INT	19H
 	IO_DELAY_LONG
-			IF INT_19_BOOT_HD EQ 1
-	POP	DX					; restore drive number
-			ENDIF
 	POP	CX					; restore retry counter
 	LOOP	BOOT_RETRY
-			IF INT_19_BOOT_HD EQ 1
-	XOR	DL, 10000000b			; flip to HD
-	JNZ	BOOT_DEVICE				; retry if HD
-			ENDIF
-
 TRY_INT18:
 	INT	18H					; ROM BASIC or boot failure
 	CLI						; should not return, but halt
@@ -2813,7 +2827,7 @@ NL_Z			DB	CR,LF,0				; one NL, null term'd
 BOOT_FAIL		DB	'Disk Boot Fail. You monster.'
 NL2_ANY_KEY		DB	LF
 NL_ANY_KEY		DB	CR,LF
-ANY_KEY		DB	'Press the Any Key...',0
+ANY_KEY		DB	'Press the Any Key', 0
 
 BANNER_STRINGS ENDP
 
@@ -2837,15 +2851,19 @@ POST_HD		DB	':',    0
 POST_MB		DB	' MB (', 0
 POST_NONE		DB	'None', 0
 POST_FAIL		DB	'FAIL', 0
-POST_MEMORY		DB	CR, 'Memory', 0		; RAM Memory test
-POST_KB_OK		DB	'KB OK',0
+POST_MEMORY		DB	CR, 'RAM', 0		; RAM Memory test
+				IF POST_SHOW_VER GT 2
+POST_KB_OK		DB	' KB OK',0
+				ELSE
+POST_KB_OK		DB	'KB',0
+				ENDIF
 POST_LSEP		DB	POST_L, 0
 POST_RSEP		DB	POST_R, 0
 
 ;----------------------------------------------------------------------------;
 ; POST Error Strings
 ;
-POST_ERR		DB	CR,LF,'POST '		; POST Error
+POST_ERR		DB	CR,LF, 'POST '		; POST Error
 POST_ERR_ERR	DB	'Error ', 0			; Error
 POST_ERR_PKI	DB	'KB INT', 0			; typically "301"
 POST_ERR_PKB	DB	'KB Init', 0		; Reset returned non-success
@@ -3147,7 +3165,7 @@ IS_ALPHA_DONE:
 IS_ALPHA ENDP
 
 ;
-; 0 BYTES HERE
+; 24 BYTES HERE
 ;
 BYTES_HERE	INT_19
 
@@ -3655,10 +3673,11 @@ INT_16 ENDP
 ;----------------------------------------------------------------------------;
 MEM_ADDR_TEST PROC
 	MOV	AL, 1					; pattern to rotate
-	MOV	BX, 100H				; start at bit 8
+	XOR	BX, BX				; start at bit 15
+	STC						; starting bit
 MEM_ADDR_LOOP_1:
 	MOV	DI, 02000H				; highest address in 16KB segment
-	SHR	BX, 1
+	SAR	BX, 1					; shift to next starting bit
 MEM_ADDR_LOOP:
 	MOV	ES:[BX], AL				; write to base address
 	NOT	AL					; invert value
@@ -5973,7 +5992,7 @@ INT_10_0_IS_CGA_GFX:
 INT_10_0_IS_CGA_TEXT:
 	TEST	BL, 0010B				; is 80 or 40 col text?
 	JNZ	INT_10_0_DETECT_DONE		; jump if 80
-	SHR	BYTE PTR VID_BUF_SZ+1, 1	; CGA 40x25 page size = 800H (2K)
+	SHR	BYTE PTR VID_BUF_SZ[1], 1	; CGA 40x25 page size = 800H (2K)
 	;MOV	BYTE PTR VID_BUF_SZ+1, HIGH OFFSET CGA_MEM_40	
 	XOR	SI, SI				; SI = CGA 40 CRTD offset (00H)
 INT_10_0_IS_40_COL:
@@ -7802,8 +7821,8 @@ WB_LOW_CHECK_OK:
 	LOOP	WB_READ_LOOP		; loop all eight registers
 	SHL	AH, 1				; rotate to next starting bit
 	JNZ	WB_WRITE_1			; loop until AH = 0
-	RET
 WB_TEST_DONE:
+	RET
 WB_TEST ENDP
 
 ;
@@ -7970,7 +7989,7 @@ PORT_COUNT_LOOP:
 	CALL	WORD_HEX				; display I/O address in hex
 	CALL	SPACE					; separate ports with space
 	LOOP	PORT_COUNT_LOOP
-	MOV	SI, OFFSET POST_RSEP+1		; skip leading space in right sep.
+	MOV	SI, OFFSET POST_RSEP[1]		; skip leading space in right sep.
 	JMP	POST_END_COL_STR			; display end with sep. in SI and RET
 PORT_COUNT_NONE:
 	PRINT_SZ	POST_NONE			; display "None"
@@ -8221,18 +8240,18 @@ HALT_BEEP_START:
 	MOV	DX, BP 				; get original beep pattern
 HLT_LONG_BEEP_LOOP: 				; long beeps
 	MOV	AX, BEEP_ERR_LOW			; low C5
-	CALL_NS BEEP_ON_P, 1			; turn on speaker / beep
+	CALL_NS BEEP_ON_P				; turn on speaker / beep
 	IO_DELAY_LONG				; pause between beeps
-	CALL_NS BEEP_OFF_P, 1
+	CALL_NS BEEP_OFF_P
 	IO_DELAY					; pause between beeps
 	DEC	DL
 	JNZ	HLT_LONG_BEEP_LOOP
 HLT_SHORT_BEEP_LOOP:
 	MOV	AX, BEEP_ERR_HIGH			; high F5
-	CALL_NS BEEP_ON_P, 1
+	CALL_NS BEEP_ON_P
 	MOV	CH, 100H * 1/4			; beep on 25%
 	IO_DELAY
-	CALL_NS BEEP_OFF_P, 1
+	CALL_NS BEEP_OFF_P
 	MOV	CH, 100H * 3/4			; beep off 75%
 	IO_DELAY
 	DEC	DH
