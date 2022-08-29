@@ -472,7 +472,7 @@ POST_TAB_COL	EQU	32			; horiz tab width for second column
 POST_TAB_COL_40	EQU	20			; horiz tab width for second column
 
 POST_COL_LBL_W	EQU	7			; column label width
-POST_COL_PAD	EQU	7			; padding (non colored) space between cols
+POST_COL_PAD	EQU	4			; padding (non colored) space between cols
 
 POST_COL_W		EQU	POST_COL_LBL_W-1	; zero-based column index
 
@@ -1648,7 +1648,6 @@ CHECKSUM:
 	LOOP	CHECKSUM 			; loop through entire ROM
 	MOV	BL, 22H 			; on failure, 2 short and 2 long beeps
 	JNZ	HALT_ERROR			; if sum not 0, fail
-
 CHECKSUM_OK:
 			ENDIF
 
@@ -2518,8 +2517,7 @@ KB_RESET_TEST:
 	IO_DELAY_SHORT
 	OUT	DX, AL				; send to PPI port B
 
-	;IO_DELAY_LONG				; CPU cycles for rent, set CX = 0
-	IO_DELAY					; CPU cycles for rent
+	IO_DELAY					; CPU cycles for rent, CX = 0
 
 	IN	AL, PPI_A 				; check KB for extraneous key
 	TEST	AL, AL				; AL should be 0
@@ -7543,6 +7541,8 @@ POST_FD_TEST_DRIVE ENDP
 ;
 ; Note: ROM init's can clobber any or all registers so important to save
 ; any that are used here between calls.
+;
+; Clobbers: AX, SI, ES (anything else the ROM might, except for DS and BP)
 ;----------------------------------------------------------------------------;
 BIOS_ROM_SCAN PROC
 		ASSUME ES:_BDA, DS:NOTHING
@@ -7552,13 +7552,12 @@ BIOS_ROM_SCAN PROC
 CHECK_ROM:
 	MOV	AX, SEG _BDA 			; ES = 0040H (BIOS BDA segment)
 	MOV	ES, AX				; re-set ES for each ROM call
-	PUSH	DS					; save current segment
+	PUSH	DS					; save current DS segment
 	XOR	SI, SI 				; reset offset to 0
 	LODSW 					; AX = first word
 	CMP	AX, MAGIC_WORD			; is it an extension ROM? (0AA55H)
 	JNZ	NEXT_ROM 				; if not, check next 2K block
 FOUND_ROM:
-	PUSH	DI					; save ending segment
 	LODSB						; AL = ROM size in 512B blocks
 	TEST	AL, AL				; is size "reasonable"?
 	JS	NEXT_ROM				; if not, skip
@@ -7568,13 +7567,14 @@ FOUND_ROM:
 ;----------------------------------------------------------------------------;
 ; Call Option ROM's BIOS init routine
 ;
+	PUSH	DI					; save ending segment
 	MOV	DI, OFFSET ROM_INIT_SS		; BDA = temp location for FAR CALL
 	MOV	ES:[DI], SI				; Init vector offset (always 3)
 	MOV	ES:[DI+2], DS			; Init vector segment
 	CALL	DWORD PTR ES:[DI]			; CALL Option ROM init
 	POP	DI					; restore ending segment
 NEXT_ROM:
-	POP	AX					; restore current DS
+	POP	AX					; restore current DS segment
 	ADD	AX, 80H				; next 2k boundary
 	MOV	DS, AX
 	CMP	AX, DI 				; end of extension ROM regions?
