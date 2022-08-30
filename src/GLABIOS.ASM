@@ -57,7 +57,6 @@
 ;
 ; Item					Complete	TODO/Notes
 ;
-; - POST screen display					Formatting in 40 col mode
 ; - POST tests for all ICs			90%	PIT Timer Channel #0? Testing of tests
 ; - Turbo mode 					  	Test with higher (> 8MHz) speeds?
 ;
@@ -1449,10 +1448,10 @@ _BIOS    	SEGMENT
 		ORG	0E000H
 BIOS_TOP	PROC NEAR
 
-VER_BANNER	DB	VER_NAME, ' [', HEART, '] '
+VER_BANNER	DB	LF
+		DB	VER_NAME, ' [', HEART, '] '
 				IF POST_SHOW_VER GT 2
 		DB	"The hero we need but don't deserve"
-		;DB	"An Energy Star Foe"
 		DB	CR, LF
 				ENDIF
 
@@ -1469,7 +1468,7 @@ COPYRIGHT	DB	'(C)'
 
 BIOS_TOP 	ENDP
 
-BYTES_HERE	POWER_ON			; 6 BYTES HERE
+BYTES_HERE	POWER_ON			; 5 BYTES HERE
 
 ;----------------------------------------------------------------------------;
 ; F000:E05B: Beginning of boot execution
@@ -2236,7 +2235,6 @@ RESET_VIDEO_DONE:
 ; Hello Computer (just use the keyboard)
 ;----------------------------------------------------------------------------;
 HELLO_WORLD:
-	CALL	CRLF					; start on second row
 	PRINTLN_SZ	VER_BANNER			; display banner
 
 ;----------------------------------------------------------------------------;
@@ -2304,7 +2302,7 @@ TOGGLE_TURBO ENDP
 			ENDIF
 
 ;
-; 3 BYTES HERE
+; 6 BYTES HERE
 ;
 BYTES_HERE	INT_02
 
@@ -3163,7 +3161,7 @@ IS_ALPHA_DONE:
 IS_ALPHA ENDP
 
 ;
-; 24 BYTES HERE
+; 30 BYTES HERE
 ;
 BYTES_HERE	INT_19
 
@@ -3283,7 +3281,7 @@ INT_14 PROC
 	MOV	DS, DI
 	MOV	DI, DX 				; DI = COM port index (0-3)
 	SHL	DI, 1 				; convert to word index
-	MOV	DX, COM_ADDR[DI] 			; DX = 3F8/2F8 base port address
+	MOV	DX, [DI] 				; DX = 3F8/2F8 base port address
 	SHR	DI, 1 				; back to byte index (cheaper than PUSH/POP)
 	TEST	DX, DX 				; is port index valid (detected)?
 	JZ	INT_14_DONE 			; if not, exit
@@ -3511,16 +3509,16 @@ GET_DISK_PARAMS PROC
 						;  DH = heads, DL = # drives
 						;  ES:DI = drive table
 	JC	_GET_PARAMS_ERR 		; if error, exit
-	MOV	BX, CX 			; BX = last cynlinder
+	MOV	BX, CX 			; BX = last cylinder
 	XCHG	BH, BL 			; swap words
 	ROL	BH, 1 			; rotate high two bits into low bits
 	ROL	BH, 1
 	AND	BH, 11B			; BX = cylinder (10 bits)
 	AND	CX, 00111111B		; CX = logical last index of sectors/track
 	MOV	AL, DH
-	INC	AX				; convert to 1 indexed (count)
-	XOR	DH, DH			; clear high byte of DX
-	INC	BX
+	INC	AX				; convert heads to 1 index (count)
+	INC	BX				; convert cylinders to 1 index
+	XOR	DH, DH			; clear high byte of DX, CF = 0
 _GET_PARAMS_ERR:
 	RET
 GET_DISK_PARAMS ENDP
@@ -3558,7 +3556,7 @@ CHECKSUM_LOOP:
 ROM_CHECKSUM ENDP
 
 ;
-; 0 BYTES HERE
+; 2 BYTES HERE
 ;
 BYTES_HERE	INT_16
 
@@ -3601,9 +3599,8 @@ KB_KEY_STATUS_DONE:
 	POP	DS
 	RETF	2 				; IRET with current flags
 KB_BUF_HAS_KEY:
-	LODSW 				; AX = tail
-	XCHG	AX, SI 			; SI = tail
-	LODSW 				; AX = buffer[tail], SI = next
+	XCHG	AX, SI 			; SI = head
+	LODSW 				; AX = buffer[head], SI = next
 	JMP	SHORT KB_KEY_STATUS_DONE
 KB_KEY_STATUS ENDP
 
@@ -3620,14 +3617,13 @@ KB_WAIT_READ PROC
 	LODSW 				; AX = head, SI = tail ptr
 	CMP	AX, WORD PTR[SI] 		; head == tail?
 	JZ	KB_WAIT_READ 		; if so, buffer is empty
-	LODSW 				; AX = tail
 	XCHG	AX, SI 			; SI = tail
 	LODSW 				; AX = buffer[tail], SI = next
 	CMP	SI, OFFSET KB_BUF_END 	; is next >= end of buffer?
 	JB	KB_GET_READ 		; if not, get tail value
 	MOV	SI, OFFSET KB_BUF 	; otherwise, wrap next to buffer top
 KB_GET_READ:
-	MOV	KB_BUF_TL, SI 		; tail ptr = next
+	MOV	KB_BUF_HD, SI 		; head ptr = next
 INT_16_DONE:
 	STI
 	POP	SI
@@ -3952,7 +3948,7 @@ KB_BUF_CLEAR PROC
 KB_BUF_CLEAR ENDP
 
 ;
-; 1 byte here
+; 10 bytes here
 ;
 BYTES_HERE	INT_09
 
@@ -4185,16 +4181,16 @@ KB_INT_IS_PAUSE:
 ; - put AX into keyboard buffer
 ;
 KB_INT_PUT_BUFFER:
-	MOV	DI, KB_BUF_HD 				; DI = head ptr
+	MOV	DI, KB_BUF_TL 				; DI = tail ptr
 	LEA	SI, [DI+2]					; SI = next (maybe)
 	CMP	SI, OFFSET KB_BUF_END			; is next >= end of buffer?
 	JB	KB_INT_CHECK_FULL 			; if not, check if buffer is full
 	MOV	SI, OFFSET KB_BUF 			; otherwise, wrap to first address
 KB_INT_CHECK_FULL:
-	CMP	SI, KB_BUF_TL 				; next == tail?
+	CMP	SI, KB_BUF_HD 				; next == head?
 	JZ	INT_KB_MEEP_DONE				; Beep if ZF - buffer is full
 	MOV	[DI], AX 					; buffer[head] = AX
-	MOV	KB_BUF_HD, SI 				; head = next
+	MOV	KB_BUF_TL, SI 				; tail = next
 
 ;----------------------------------------------------------------------------;
 ; Send non-specific EOI to PIC, then return
@@ -5535,9 +5531,9 @@ FDC_ERR_MAP_LOOP:
 	LODS	BYTE PTR CS:[SI]			; fetch next error
 	SHL	AH, 1					; CF if this status flag
 	JC	FDC_WAIT_SENSE_ERR_DONE		; jump if flag set
-	JNZ	FDC_ERR_MAP_LOOP			; loop until BL = 0
+	JNZ	FDC_ERR_MAP_LOOP			; loop until AH = 0
 FDC_WAIT_SENSE_ERR_DONE:
-	MOV	AH, AL
+	MOV	AH, AL				; AH = last result
 	POP	SI
 FDC_WAIT_ERR_EXIT:
 	OR	FD_LAST_OP, AH			; BDA 40:41H
@@ -7599,6 +7595,14 @@ POST_COL PROC
 ; - BL: inner text color/attribute
 ; - CX: inner text color length
 ;----------------------------------------------------------------------------;
+
+;----------------------------------------------------------------------------;
+; Handle 40 column mode - move to next line and fall through to col 1
+;
+POST_START_COL_2_40:
+	CALL	CRLF				; move to next line
+	POP	AX				; rebalance stack
+
 POST_START_COL_1 PROC
 	PUSH	AX
 	MOV	AL, POST_COL_W		; column 1 tab width
@@ -7622,11 +7626,16 @@ POST_START_COL_START:
 POST_START_COL_1 ENDP
 
 ;----------------------------------------------------------------------------;
-; Same as POST_START_COL_1 execept starts at column 2 location
+; Same as POST_START_COL_1 except starts at column 2
 ;----------------------------------------------------------------------------;
 POST_START_COL_2 PROC
+			ASSUME DS:_BDA
 	PUSH	AX
-	MOV	AL, POST_TAB_COL			; move to start of column 2
+	MOV	AH, 0FH			; get video mode
+	INT	10H				; AL = video mode
+	CMP	AL, 1				; is 40 column mode?
+	JLE	POST_START_COL_2_40
+	MOV	AL, POST_TAB_COL		; move to start of column 2
 	CALL	MOVE_COL
 	MOV	AL, POST_TAB_COL+POST_COL_W	; set abs. position for column 2 tab
 	JMP	POST_START_COL_START
@@ -7675,7 +7684,7 @@ CRLF ENDP
 OUTLN_SZ ENDP
 
 ;----------------------------------------------------------------------------;
-; Display a zero-terminated string in BIOS CS
+; Display a zero-terminated string in BIOS at CS:[SI]
 ;----------------------------------------------------------------------------;
 ; Input: CS:SI = String
 ;----------------------------------------------------------------------------;
@@ -7821,7 +7830,7 @@ WB_TEST_DONE:
 WB_TEST ENDP
 
 ;
-; 116 bytes here
+; 104 bytes here
 ;
 BYTES_HERE	INT_12
 
@@ -7881,8 +7890,8 @@ INT_11 ENDP
 		ORG 0F859H
 INT_15 PROC
 	STI					; return with interrupts enabled
-	MOV	AH, 86H 			; always return no cassette present
 	STC 					; CF set if function not supported
+	MOV	AH, 86H 			; always return no cassette present
 	RETF	2				; return from INT with CF flag
 INT_15 ENDP
 
@@ -8745,8 +8754,8 @@ INT_IRQ ENDP
 ; Write a space char to console (9 bytes)
 ;----------------------------------------------------------------------------;
 SPACE PROC
-	PUSH	AX
-	MOV	AX, 0E00H OR ' '
+	PUSH	AX				; no clobbery AX
+	MOV	AX, 0E00H OR ' '		; AH = 0Eh, AL = space char
 	INT	10H				; send to console
 	POP	AX
 	RET
