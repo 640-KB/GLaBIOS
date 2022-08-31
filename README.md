@@ -125,8 +125,6 @@ Hampa Hug's excellent [PCE/ibmpc emulator](http://hampa.ch/pce/pce-ibmpc.html) w
 
 - Font bitmaps by "VileR", (CC BY-SA 4.0)
 	https://int10h.org/oldschool-pc-fonts/readme/#legal_stuff
-	
-Many more references in inline comments.
 
 ### Further Credits to:
 
@@ -134,3 +132,7 @@ Many more references in inline comments.
 - Hampa Hug for the excellent PCE software (http://www.hampa.ch/pce/pce-ibmpc.html) that helped make development and debugging much easier.
 - @Raffzahn, Contributor, Advisor and Meckerhut.
 - Dave Nault, my partner in crime for 2 semesters of college assembly language programming classes back in the day. Wherever you are buddy, hope you're doing well!
+
+### Disclaimer
+
+This project is built upon the collective knowledge of the community by and for the benefit of the community.  Unless stated otherwise, cited public sources are considered as "public domain" or "fair use" of the copyrighted material as provided for in section 107 of the US Copyright Law.  If your copyrighted material appears on this web site and you disagree with our assessment that it constitutes "fair use," [contact us](mailto:640kb@glabios.org).
