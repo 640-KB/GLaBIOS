@@ -1806,29 +1806,23 @@ DMA_SETUP_CH:
 ;----------------------------------------------------------------------------;
 			ASSUME DS:_IVT, ES:_IVT
 BASE_RAM_TEST:
-	MOV	DX, PPI_B
-	IN	AL, DX 				; AL = PB0 flags
-	OR	AL, 00110000B 			; reset RAM parity and I/O ch. flags
-	OUT	DX, AL
+	IN	AL, PPI_B 				; AL = PB0 flags
+	OR	AL, MASK PBIO OR MASK PBPC	; disable RAM parity and I/O ch. flags
+	OUT	PPI_B, AL
 	XOR	AX, AX 				; DS and ES = IVT segment 0000
 	MOV	DS, AX
 	MOV	ES, AX
 	MOV	SI, OFFSET WARM_FLAG_ABS	; preserve warm boot flag
 	MOV	DX, WORD PTR[SI]			; save warm boot flag
-
-	XOR	AX, AX 				; AX = zero
 	CALL_NS MEM_CHECK				; clear memory and parity bits
 	JNZ	BASE_RAM_ERROR
-
 	IN	AL, PPI_B				; read PPI channel B
-	OR	AL, 00110000B 			; clear RAM parity and I/O ch. flags
+	OR	AL, MASK PBPC 			; clear MB RAM parity flag only
 	OUT	PPI_B, AL
-	AND	AL, 11001111B 			; enable RAM parity for test
+	AND	AL, NOT MASK PBPC 		; enable MB RAM parity for test
 	OUT	PPI_B, AL
-
 	CALL_NS MEM_ADDR_TEST			; test address lines
 	JZ	BASE_RAM_ZERO			; continue if no errors
-
 BASE_RAM_ERROR:
 	MOV	BL, 13H 				; on failure, 1 short and 3 long beeps
 HALT_BEEP_1:
@@ -1844,13 +1838,13 @@ BASE_RAM_ZERO:
 	INC	AX					; AL = 1
 	MOV	FD_MOTOR_CT_ABS, AL 		; set motor to turn off on next tick
 	IN	AL, PPI_C				; read PPI channel C
-	AND	AL, 11000000B			; check parity and I/O flags
+	AND	AL, MASK PCPE			; check MB RAM parity flag
 	JZ	BASE_RAM_TEST_DONE		; either set?
 	MOV	BL, 14H				; Halt with 1 short beep, 4 long beeps
 	JMP	SHORT HALT_BEEP_1
 BASE_RAM_TEST_DONE:
 	IN	AL, PPI_B
-	OR	AL, 00110000B 			; disable RAM parity and I/O ch. flags
+	OR	AL, MASK PBIO OR MASK PBPC	; disable RAM parity and I/O ch. flags
 	OUT	PPI_B, AL
 
 ;----------------------------------------------------------------------------;
@@ -3214,6 +3208,7 @@ NMI_RESET PROC
 	IN	AL, PPI_B				; read current flags
 	OR	AL, MASK PBIO OR MASK PBPC	; parity, I/O flags high (disable)
 	OUT	PPI_B, AL				; write to PPI
+;	NOP						; allow additional settle time
 	XOR	AL, MASK PBIO OR MASK PBPC	; flags low (enable)
 	OUT	PPI_B, AL				; write to PPI
 	RET
