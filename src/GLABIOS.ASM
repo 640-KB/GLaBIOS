@@ -568,7 +568,7 @@ VPT	ENDS
 ;         |      0	- FPU : FPU installed
 ;         |       1	- IPL : Floppy drive(s) installed (always 1 on 5160)
 ;----------------------------------------------------------------------------;
-EFLAGS RECORD	LPT:2,X1:1,GAM:1,COM:3,DMA:1,FLP:2,VIDM:2,MBRAM:2,FPU:1,IPL:1
+EQFLAGS RECORD	LPT:2,X1:1,GAM:1,COM:3,DMA:1,FLP:2,VIDM:2,MBRAM:2,FPU:1,IPL:1
 
 ;----------------------------------------------------------------------------;
 ; GLaBIOS Equipment Flags (40:12H)
@@ -1267,7 +1267,7 @@ _BDA		SEGMENT AT 40H
 COM_ADDR		DW	4 DUP(?) 		; 00H  COM1-4 base addresses
 LPT_ADDR		DW	3 DUP(?) 		; 08H  LPT1-3 base addresses
 			DW	? 			; 0EH  Extended BIOS data area segment
-EQUIP_FLAGS		EFLAGS <> 			; 10H  Equipment Flags
+EQUIP_FLAGS		EQFLAGS <> 			; 10H  Equipment Flags
 GB_FLAGS		GFLAGS <> 			; 12H  Custom Equipment Flags
 MEM_SZ_KB		DW	?			; 13H  Memory size in kilobytes
 MEM_SZ_PC		DW	?			; 15H  Memory size SW2 on 5150
@@ -7945,8 +7945,10 @@ FPU_CHECK:
 	MOV	SI, OFFSET POST_NONE		; default to 'None'
 	TEST_EFLAG FPU				; is FPU selected on switch?
 	JZ	FPU_DISP_DONE			; jump to output if no FPU
-	CALL	HAS_FPU				; check FPU, ZF if not detected
-	JZ	FPU_DISP_NO
+	PUSH	BP					; BP clobbered by HAS_FPU
+	CALL	HAS_FPU				; check FPU, ZF=0 if not detected
+	POP	BP					; restore BP
+	JNZ	FPU_DISP_NO
 	MOV	SI, OFFSET POST_8087
 	JMP	SHORT FPU_DISP_DONE
 FPU_DISP_NO:
@@ -8898,27 +8900,30 @@ INT_05 ENDP
 ;----------------------------------------------------------------------------;
 ; Check if a 8087 FPU is present and perform quick tests
 ;----------------------------------------------------------------------------;
-; Output: ZF = 0 if no FPU, ZF = 1 if present
+; Input:
+;	SI = any non-zero value
 ;
-; Clobbers: AX, BX, CX
+; Output:
+;	ZF = 0 if no FPU, ZF = 1 if present
+;
+; Clobbers: AX, BP
 ;
 ; Sources:
 ;   https://retrocomputing.stackexchange.com/questions/16529/detecting-the-external-x87-fpu
 ;   Intel(R) App Note AP-485 "Intel(R) Processor Identification and the CPUID Instruction"
 ;----------------------------------------------------------------------------;
 HAS_FPU PROC
-	MOV	CX, 095A5H
 	FNINIT 					; reset FPU, no wait
 FPU_TEST_SW:
-	PUSH	CX 					; init temp word to non-zero
-	MOV	BX, SP	 			; use stack memory
-	FNSTSW WORD PTR[BX]			; store status word
+	PUSH	SI 					; init temp word to non-zero
+	MOV	BP, SP	 			; use stack memory
+	FNSTSW WORD PTR[BP]			; store status word
 	POP	AX 					; AX = control word if FNSTCW executed, or 0 if not
-	TEST	AL, AL 				; if AL = 0, FPU is present
+	TEST	AX, AX 				; if AX = 0, FPU is present
 	JNZ	FPU_TEST_DONE			; ZF = 0 if no FPU
 FPU_TEST_CW:
 	PUSH	AX
-	FNSTCW WORD PTR[BX]			; store control word
+	FNSTCW WORD PTR[BP]			; store control word
 	POP	AX 					; AX = control word
 	AND	AX, 0103FH 				; isolate interesting status flags
 	CMP	AX, 03FH 				; check for 8087 "signature"
