@@ -197,10 +197,10 @@ OPT_ROM_END		EQU	0FE00H	; Option ROM scan ending address
 ;
 VER_NAME		EQU	'GLaBIOS'
 	IFNDEF VER_NUM
-VER_NUM		EQU	'0.1.2'		; (max 6 chars)
+VER_NUM		EQU	'0.1.3'		; (max 6 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'08/28/22' 		; must be MM/DD/YY format
+VER_DATE		EQU	'08/30/22' 		; must be MM/DD/YY format
 	ENDIF
 	IFNDEF COPY_YEAR
 COPY_YEAR		EQU	'2022'		; can be set at build time
@@ -783,7 +783,7 @@ PPI_C_X_H RECORD	PC2PE:1,PC2IE:1,PC2T2:1,PC2CI:1,PCDRV:2,PCVID:2
 ;============================================================================;
 
 ;----------------------------------------------------------------------------;
-; CALL NO STACK - a CALL without a writeable stack
+; CALL NO STACK - a CALL without a writable stack
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	CALL_JMP = address for CALL
@@ -960,8 +960,8 @@ PRINTLN_SZ	MACRO	SZ, SAVE_REGS
 ;----------------------------------------------------------------------------;
 ; Set text attribute for a block of chars starting at current cursor
 ;----------------------------------------------------------------------------;
-; This is a more efficient way to set text colors, so you can use any normal
-; way to write to console.
+; This is a more efficient way to set text colors so any normal way to write
+; to console may be used.
 ;
 ; Example usage:
 ;   SET_SZ_ATTR 0EH, 10			; set attribute to 0EH for next 10 chars
@@ -1279,7 +1279,6 @@ KB_BUF_HD		DW	?			; 1AH  Keyboard buffer head ptr
 KB_BUF_TL		DW	?			; 1CH  Keyboard buffer tail ptr
 KB_BUF		DW	16 DUP(?) 		; 1EH  Keyboard buffer
 KB_BUF_END		LABEL WORD
-		ORG	03EH
 FD_CAL_ST		FDC_SF <>			; 3EH  Floppy drive recalibration status
 							;	0 = drive not calibrated
 							;	high bit = working interrupt flag
@@ -1287,10 +1286,7 @@ FD_MOTOR_ST		FDC_MF <>			; 3FH  FD motor status
 							;	high bit = write operation
 FD_MOTOR_CT		DB	?			; 40H  FD motor shutoff counter (decr. by INT 8)
 FD_LAST_OP		DB	?			; 41H  BIOS Status of last FD operation
-FDC_LAST_ST_W 	LABEL WORD
 FDC_LAST_ST		DB	7 DUP(?)		; 42H  FDC command status last result (7 bytes)
-		ORG	49H
-VID_MODE_WORD	LABEL	WORD
 VID_MODE		DB	?			; 49H  Current video mode
 VID_COLS		DW	?			; 4AH  Number of screen columns
 VID_BUF_SZ		DW	?			; 4CH  Size of video regen buffer in bytes
@@ -1299,23 +1295,17 @@ VID_CURS_POS	DW	8 DUP(?)		; 50H-5FH Cursor position of pages 1-8, high=row, low=
 VID_CURS_TYPE	DW	? 			; 60H  Starting (Top), Ending (bottom) scan line for cursor
 VID_PAGE		DB	? 			; 62H  Active display page number
 VID_PORT		DW	?			; 63H  Base port address for active 6845 CRT controller
-VID_MODE_COL_REG	LABEL	WORD
 VID_MODE_REG	DB	?			; 65H  6845 CRT mode control register value (port 3x8H)
 VID_COLOR		DB	? 			; 66H  CGA current color palette setting (port 3D9H)
 L_VID_BDA		EQU	$-VID_MODE		;      Length in bytes of video data in BDA
 ROM_INIT_SS		DW	?			; 67H  Temp location for SS:SP during block move 
 ROM_INIT_SP 	DW	? 			; 69H	  or Option ROM init
 INT_LAST		DB	? 			; 6BH  Reserved for POST / Interrupt happened?
-TIMER_CT_L_B	LABEL	BYTE
 TIMER_CT_L		DW	?			; 6CH  Timer Counter Low Word (ticks)
 TIMER_CT_H  	DW	? 			; 6EH  Timer Counter High Word (hours)
 TIMER_CT_OF 	DB	? 			; 70H  Timer Overflow flag
 BIOS_BREAK		DB	?			; 71H  BIOS break flag (high bit means ctrl-break)
 WARM_FLAG		DW	?			; 72H  Warm Boot Flag (1234H to bypass RAM test)
-							;  	1234h  Bypass memory tests & CRT init
-							;  	4321h  Preserve memory
-							;  	5678h  System suspend
-							;  	9ABCh  Manufacturer test
 HD_LAST_ST		DB 	? 			; 74H  Status of last hard disk operation (see INT 13,1)
 HD_COUNT		DB 	? 			; 75H  Number of hard disks attached
 HD_CTRL		DB 	? 			; 76H  XT fixed disk drive control byte
@@ -1919,7 +1909,6 @@ BASE_RAM_TEST_DONE:
 ;----------------------------------------------------------------------------;
 ; - Read and write registers (IMR) and verify result
 ;----------------------------------------------------------------------------;
-	;CLI					; interrupts already off
 	MOV	BH, 1				; test 1 port
 	CALL	WB_TEST			; walking bit test of PIC IMR register
 	MOV	BL, 52H			; beep error 5 short, 2 long
@@ -2019,11 +2008,11 @@ BIOS_INT_VECTORS_LOOP:
 ; Check for valid BASIC ROMs and set INT 18H vector if detected
 ;----------------------------------------------------------------------------;
 ; - Scan 4 x 8K ROMs starting at seg 0F600h.
-; - BASIC dectected if for each ROM all are true:
+; - BASIC dectected if for alls ROMs, all of the folowing are true:
 ; 	- first two bytes not option ROM (0AAFFh)
-;	- not the same as the previous ROM (checks to make sure 
-;		are not all 0000 or FFFF)
-;	- has a valid checksum
+;	- first two bytes not the same as the previous ROM (this checks to
+;		 make sure are not all 0000 or FFFF)
+;	- 8K ROM block has a valid checksum at offset 1FFE
 ;----------------------------------------------------------------------------;
 			ASSUME DS:_SEG_BASIC
 INIT_ROM_BASIC_SEG:
@@ -2035,10 +2024,10 @@ CHECK_BASIC_ROM:
 	MOV	DS, BX				; set DS to current segment
 	MOV	AX, WORD PTR[_BASIC]		; AX = first two bytes
 	CMP	AX, MAGIC_WORD			; is an option ROM?
-	JZ	INIT_ROM_BASIC_DONE		; if so, not ROM BASIC
+	JE	INIT_ROM_BASIC_DONE		; if so, not ROM BASIC
 	XCHG	AX, DI				; save last ROM's header to DI
 	CMP	AX, DI				; is same as last ROM?
-	JZ	INIT_ROM_BASIC_DONE		; if so, valid ROM not present
+	JE	INIT_ROM_BASIC_DONE		; if so, valid ROM not present
 	MOV	AL, 10H 				; ROM Size = 8K (10h * 512B)
 	ADD	BH, 2					; BX = next BASIC 8K ROM
 	CALL	ROM_CHECKSUM 			; checksum ROM at DS:0, size AL
@@ -2090,24 +2079,24 @@ CPU_TYPE_DONE:
 ; 5150 Sense Switches:
 ;  Port A - when Port B bit 7 = 1
 ;     High| Low
-; 	00  |				; Disk Drives (00=1, 01=2, 10=3, 11=4)
-; 	  00| 			; Video (00=EGA/VGA, 01=CGA 40, 10=CGA 80, 11=MDA)
-;	    |00			; MB RAM (00=16KB, 01=32K, 10=48K, 11=64K)
-;	    |  0			; FPU installed ("Reserved")
-; 	    |   0			; IPL Floppy Disk Drive
+; 	00  |			; Disk Drives (00=1, 01=2, 10=3, 11=4)
+; 	  00| 		; Video (00=EGA/VGA, 01=CGA 40, 10=CGA 80, 11=MDA)
+;	    |00		; MB RAM (00=16KB, 01=32K, 10=48K, 11=64K)
+;	    |  0		; FPU installed ("Reserved")
+; 	    |   0		; IPL Floppy Disk Drive (0=floppy drive installed)
 ;  Port C - I/O RAM (x 32KB)
 ;	High| Low
-;	    |4321			; RAM size bits 1-4   when Port B bit 2 = 1
-;	     4325			; RAM size bits 5,2-4 when Port B bit 2 = 0
+;	    |4321		; RAM size bits 1-4   when Port B bit 2 = 1
+;	     4325		; RAM size bits 5,2-4 when Port B bit 2 = 0
 ;----------------------------------------------------------------------------;
 ; 5160 Sense Switches:
 ;  Port C
 ;	High| Low
-; 	00  |				; Disk Drives (00=1, 01=2, 10=3, 11=4)
-; 	  00| 			; Video (00=EGA/VGA, 01=CGA 40, 10=CGA 80, 11=MDA)
-;	    |00			; MB RAM Banks (00=Bank 0, Bank 0/1, 10=0/1/2, 11=0/1/2/3)
-;	    |  0			; FPU installed
-; 	    |   0			; Test Loop (always 0)
+; 	00  |			; Disk Drives (00=1, 01=2, 10=3, 11=4)
+; 	  00| 		; Video (00=EGA/VGA, 01=CGA 40, 10=CGA 80, 11=MDA)
+;	    |00		; MB RAM Banks (00=Bank 0, Bank 0/1, 10=0/1/2, 11=0/1/2/3)
+;	    |  0		; FPU installed
+; 	    |   0		; Test Loop (always 0)
 ;
 ; EQUIP_FLAGS: LPT:2,X1:1,GAM:1,COM:3,DMA:1,FLP:2,VIDM:2,MBRAM:2,FPU:1,IPL:1
 ;----------------------------------------------------------------------------;
@@ -2195,7 +2184,7 @@ SETTINGS_5160:
 ; If the flag is still 0 afterwards, no ROMs loaded succesfully.
 ;----------------------------------------------------------------------------;
 	MOV	AX, SEG _VID_BIOS			; starting segment (C000H)
-	MOV	DI, 0C800H				; ending segment for this scan
+	MOV	DI, SEG _OPT_ROM			; ending segment (C800H)
 	PUSH	DX					; save EQUIP_FLAGS for below
 	CALL	BIOS_ROM_SCAN			; scan segments AX to DI for ROMs
 	POP	DX					; restore EQUIP_FLAGS
@@ -2260,7 +2249,7 @@ HELLO_WORLD:
 	INT	10H 					; row = DH, column = DL
 			ELSE
 	PRINT_SZ VER				; display version
-	PRINTLN_SZ REL_DATE				; display build date
+	PRINTLN_SZ REL_DATE			; display build date
 	CALL	CRLF
 			ENDIF
 
@@ -2504,7 +2493,7 @@ KB_RESET_TEST:
 	CLI 						; disable interrupts again
 	POST_FLAG_FLIP PKI			; invert PKI flag: 1 = error, 0 = success
 
-	IO_DELAY_LONG 				; additional delay and set CX = 0
+	IO_DELAY_LONG 				; additional delay, CX = 0
 
 ;----------------------------------------------------------------------------;
 ; Ack scan code, clear keyboard again and check that no scan codes were received
@@ -2591,7 +2580,6 @@ DMA_STATUS_OK:
 ;----------------------------------------------------------------------------;
 	CALL	POST_SYS_CONFIG
 	CALL	CRLF
-
 	CALL	SHOW_CURSOR				; re-enable cursor
 
 ;----------------------------------------------------------------------------;
@@ -2655,11 +2643,9 @@ HDD_POST PROC
 	MOV	AH, 0
 	INT	13H
 	JC	HDD_POST_NONE			; if CF, no HD or reset failure
-
 	MOV	DL, 80H
 	CALL	GET_DISK_PARAMS			; return # HD's in DX
 	JC	HDD_POST_NONE
-
 
 HDD_POST_COUNT PROC
 ;----------------------------------------------------------------------------;
@@ -2667,13 +2653,10 @@ HDD_POST_COUNT PROC
 ;
 	POST_COL_2	POST_HDD, POST_CLR_VAL2	; display HDC column label
 
-	;MOV	CX, DX				; save drive count to CX
 	PUSH	DX					; save drive count
 	XCHG	AX, DX				; AL = drive count
 	CALL	NIB_HEX				; write as hex to console (clobs AX)
-
 	POST_COL_END_NL				; end column
-
 	POP	CX					; CX = drive count
 	JCXZ	HDD_POST_DONE			; reset passed but 0 drives
 
@@ -2688,10 +2671,6 @@ HDD_POST_SHOW_LOOP:
 	INC	DX					; move to next drive
 	LOOP	HDD_POST_SHOW_LOOP
 	JMP	SHORT HDD_POST_DONE
-
-;HDD_POST_ERR:					; unused - controller displays its
-;							; own errors
-;	POST_FLAG_SET PHDC			; mark in POST error flags
 
 HDD_POST_NONE:
 	CALL	CRLF
@@ -2739,13 +2718,10 @@ POST_ERROR:
 	INT	16H
 	CALL	CRLF
 
+POST_OK:
 ;----------------------------------------------------------------------------;
 ; [40] DO BOOTSTRAP!
 ;----------------------------------------------------------------------------;
-POST_OK:
-	;XOR	AX, AX				; pause for screenshot!
-	;INT	16H
-
 CLEAR_POST_SCREEN:
 	MOV	BH, 7					; attribute fill for on blank line
 			IF POST_CLS EQ 1		; clear the whole screen
@@ -2785,7 +2761,7 @@ CLEAR_POST_SCREEN:
 ;----------------------------------------------------------------------------;
 ; Attempt to IPL three times from drive 0h. If failure, call INT 18h / ROM BASIC.
 ;
-	CWD						; IPL from drive 0 A: (set DL = 0h)
+	CWD						; IPL from drive 0 A: (DL = 0h)
 	MOV	CX, 3 				; retry IPL 3 times
 BOOT_RETRY:
 	PUSH	CX					; save retry counter
@@ -2795,8 +2771,8 @@ BOOT_RETRY:
 	LOOP	BOOT_RETRY
 TRY_INT18:
 	INT	18H					; ROM BASIC or boot failure
-	CLI						; should not return, but halt
-	HLT						;  just in case
+	CLI						; INT 18h should never return...
+	HLT						;  but halt just in case
 
 POWER_ON ENDP
 
@@ -2861,11 +2837,12 @@ POST_RSEP		DB	POST_R, 0
 ;
 POST_ERR		DB	CR,LF, 'POST '		; POST Error
 POST_ERR_ERR	DB	'Error ', 0			; Error
-POST_ERR_PKI	DB	'KB INT', 0			; typically "301"
-POST_ERR_PKB	DB	'KB Init', 0		; Reset returned non-success
+POST_ERR_PKI	DB	'KB Init', 0		; Reset returned non-success "301"
+;POST_ERR_PKB	DB	'KB RST', 0			; (unused)
+POST_ERR_PKB	DB	0				; (TODO: remove it)
 POST_ERR_PKEY	DB	'Key Stuck', 0		; Reset did not clear KBC
 POST_ERR_PFDC	DB	'FDC', 0			; General FD init failure
-POST_ERR_PFSK	DB	'FD Seek', 0		; seek test failure
+POST_ERR_PFSK	DB	'FD Seek', 0		; Seek test failure
 POST_ERR_PDMA	DB	'DMA', 0			; DMA TC0 error
 POST_ERR_PMEM	DB	'RAM', 0
 ;POST_ERR_PHDC	DB	'HD', 0			; General HD init failure
@@ -3202,8 +3179,8 @@ INT_19_READ_MBR:
 	XOR	DH, DH 				; DH = head 0	
 	INT	13H					; read 1 sector into ES:BX
 	JC	INT_19_IPL_FAIL			; exit if error
-	CMP	WORD PTR DS:[IPL_ID], MAGIC_WORD	; verify bootable MBR
-	JNZ	INT_19_IPL_FAIL
+	CMP	IPL_ID, MAGIC_WORD		; verify bootable MBR signature
+	JNZ	INT_19_IPL_FAIL			; jump if MBR not bootable
 	JMP 	FAR PTR IPL_TOP 			; jump to IPL segment and boot!
 INT_19_IPL_FAIL:
 	IRET
@@ -3586,13 +3563,25 @@ INT_16 PROC
 ; AH = 1 - Get keystroke status
 ;----------------------------------------------------------------------------;
 ; Check if a key press is in buffer and return. Does not wait or remove.
+; Output:
+;	ZF = 0 if a key pressed (even Ctrl-Break)
+;	AX = 0 if no scan code is available
+;	AH = scan code
+;	AL = ASCII character or zero if special function key
+;----------------------------------------------------------------------------;
+; Note: many PC references refer to the "read" pointer as "head" and "write"
+; pointer as "tail". This seems backwards to me and their typical definition
+; in a circular buffer. For the purposes of being consistent with the PC
+; termonology, "head" and "tail" are defined as:
+;	KB_BUF_HD (1Ah) = (head) next character stored in keyboard buffer
+;	KB_BUF_TL (1Ch) = (tail) next spot available in keyboard buffer
 ;----------------------------------------------------------------------------;
 KB_KEY_STATUS PROC
 	MOV	SI, OFFSET KB_BUF_HD 	; SI = head ptr
 	CLI 					; disable interrupts
 	LODSW 				; AX = head, SI = tail ptr
 	CMP	AX, WORD PTR[SI] 		; head == tail?
-	JNZ	KB_BUF_HAS_KEY 		; if so, buffer is not empty
+	JNE	KB_BUF_HAS_KEY 		; if not, buffer has a key
 KB_KEY_STATUS_DONE:
 	STI					; re-enable interrupts
 	POP	SI
@@ -3601,22 +3590,24 @@ KB_KEY_STATUS_DONE:
 KB_BUF_HAS_KEY:
 	XCHG	AX, SI 			; SI = head
 	LODSW 				; AX = buffer[head], SI = next
-	JMP	SHORT KB_KEY_STATUS_DONE
+	JMP	KB_KEY_STATUS_DONE
 KB_KEY_STATUS ENDP
 
 ;----------------------------------------------------------------------------;
 ; AH = 0 - Wait for keystroke and read
 ;----------------------------------------------------------------------------;
 ; Wait until keystroke is in buffer. Key press is removed from buffer.
-; Output: AH = scan code, AL = ASCII code
+; Output:
+;	AH = scan code
+;	AL = ASCII code
 ;----------------------------------------------------------------------------;
 KB_WAIT_READ PROC
-	STI 					; enable interrupts
+	STI					; enable interrupts
 	MOV	SI, OFFSET KB_BUF_HD 	; SI = head ptr
 	CLI 					; disable interrupts again
 	LODSW 				; AX = head, SI = tail ptr
 	CMP	AX, WORD PTR[SI] 		; head == tail?
-	JZ	KB_WAIT_READ 		; if so, buffer is empty
+	JE	KB_WAIT_READ 		; if so, buffer is empty
 	XCHG	AX, SI 			; SI = tail
 	LODSW 				; AX = buffer[tail], SI = next
 	CMP	SI, OFFSET KB_BUF_END 	; is next >= end of buffer?
@@ -3625,7 +3616,7 @@ KB_WAIT_READ PROC
 KB_GET_READ:
 	MOV	KB_BUF_HD, SI 		; head ptr = next
 INT_16_DONE:
-	STI
+	STI					; enable interrupts (necessary?)
 	POP	SI
 	POP	DS
 	IRET
@@ -3987,6 +3978,8 @@ BYTES_HERE	INT_09
 ;
 ; In short, it needs to do this:
 ;    https://stanislavs.org/helppc/scan_codes.html
+;
+; TODO: this still needs some clean up.
 ;----------------------------------------------------------------------------;
 		ORG 0E987H
 INT_09 PROC
@@ -4194,6 +4187,9 @@ KB_INT_CHECK_FULL:
 
 ;----------------------------------------------------------------------------;
 ; Send non-specific EOI to PIC, then return
+;
+; TODO: can EOI be sent in the beginning? Are there valid cases where it
+; should not be sent?
 ;
 INT_KB_DONE:
 	CLI							; disable interrupts
@@ -4893,6 +4889,8 @@ INT_13_2_5 ENDP
 ;
 ; Output:
 ;	AL = number of sectors read, written or verified
+;
+; TODO: de-duplicate with FDC_FORMAT?
 ;-------------------------------------------------------------------------
 FDC_RWV PROC
 	CMP	AH, 3 				; is write?
@@ -5274,7 +5272,7 @@ FDC_SEND_RECV:
 ;
 	MOV	DX, FDC_STAT 			; port 3F4H - FDC Main Status Register
 	MOV	CX, 2					; CX = # of ticks to wait
-	MOV	AH, TIMER_CT_L_B			; get starting tick counter low byte
+	MOV	AH, BYTE PTR TIMER_CT_L		; get starting tick counter low byte
 
 FDC_SEND_WAIT_POLL:
 	IN	AL, DX				; AL = FDC status register
@@ -5332,7 +5330,7 @@ FDC_WAIT_EXIT:
 ; Check if timeout has expired
 ;
 FDC_SEND_WAIT_TIMER:
-	MOV	AL, TIMER_CT_L_B			; get current tick counter
+	MOV	AL, BYTE PTR TIMER_CT_L		; get current tick counter
 	CMP	AL, AH				; still the same?
 	JZ	FDC_SEND_WAIT_POLL		; loop if the same
 	MOV	AH, AL				; otherwise, save new tick value to AH
@@ -5991,7 +5989,7 @@ INT_10_0_DETECT_DONE:
 	MOV	ES, BP				; ES = video memory segment
 	SUB	DL, 4					; DX = 6845 index register port
 	MOV	VID_PORT, DX			; write BDA video I/O port
-	MOV	VID_MODE_WORD, BX			; write BDA mode and cols
+	MOV	WORD PTR VID_MODE, BX		; write BDA mode and cols
 	MOV	VID_MEM_SEG, BP			; write video segment for later
 
 ;----------------------------------------------------------------------------;
@@ -6035,7 +6033,7 @@ INT_10_0_COLOR_BYTE:
 			ASSUME DS:_BDA
 	POP	DS					; DS = BDA
 	ADD	DL, 4					; DX = control reg
-	MOV	VID_MODE_COL_REG, AX		; write mode and color to BDA
+	MOV	WORD PTR VID_MODE_REG, AX	; write mode and color to BDA
 	OUT	DX, AX				; write mode and color to 6845
 	XCHG	AX, DI				; AX = cursor bytes from CRTC table
 	XCHG	AH, AL				; convert endian for cursor bytes
@@ -7404,7 +7402,7 @@ INT_10_E ENDP
 ;	BH = current display page
 ;----------------------------------------------------------------------------;
 INT_10_F PROC
-	MOV	AX, VID_MODE_WORD
+	MOV	AX, WORD PTR VID_MODE
 	MOV	BH, VID_PAGE
 	RET
 INT_10_F ENDP
@@ -7699,7 +7697,7 @@ OUT_SZ_LOOP:
 	JMP	SHORT OUT_SZ_LOOP
 OUT_SZ_DONE:
 	POP	AX
-	RETN
+	RET
 OUT_SZ ENDP
 
 ;----------------------------------------------------------------------------;
@@ -7749,14 +7747,14 @@ MOVE_COL ENDP
 ; Retrieve a parameter value from the DBT by index
 ;----------------------------------------------------------------------------;
 ; Input: AL = parameter index
-; Output: AL = byte, CF if error
+; Output: AL = byte
 ;
 ; Size: 19 bytes (13h)
 ;----------------------------------------------------------------------------;
 INT_1E_PARAM PROC
-	CMP	AL, 11 				; is valid index?
-	CMC 						; set CF if out of bounds
-	JC	INT_1E_PARAM_DONE 		; if so, just return
+	;CMP	AL, 11 				; is valid index? (necessary to check?)
+	;CMC 						; set CF if out of bounds
+	;JC	INT_1E_PARAM_DONE 		; if so, just return
 	PUSH	DS
 	PUSH	BX
 	XOR	BX, BX 				; BX = IVT
@@ -7830,7 +7828,7 @@ WB_TEST_DONE:
 WB_TEST ENDP
 
 ;
-; 104 bytes here
+; 109 bytes here
 ;
 BYTES_HERE	INT_12
 
@@ -8007,7 +8005,9 @@ POST_SYS_CONFIG ENDP
 ;----------------------------------------------------------------------------;
 ; Display info for POST in drive DL
 ;
-; Return:
+; Input:
+;	DL = drive #
+; Output:
 ;	AH = status
 ;
 ; AL clobbered
@@ -8019,7 +8019,7 @@ SHOW_DISK_PARAMS PROC
 	PUSH	CX
 	PUSH	DX					; save drive ID
 	PUSH	DX					; save drive ID again
-	CALL	GET_DISK_PARAMS
+	CALL	GET_DISK_PARAMS			; AL=heads, BX=cyl, CL=sec, DL=drive
 	POP	DX					; don't need drive count here
 	PUSH	AX					; save return status in AH
 	JC	SHOW_DISK_PARAMS_DONE		; exit if error getting drive
@@ -8031,26 +8031,20 @@ SHOW_DISK_PARAMS PROC
 ; Display Drive letter
 ;
 	AND	AL, 0011B				; only drives 0-3
-	ADD	AL, 'C'				; convert to HD letter
+	ADD	AL, 'C'				; convert to drive letter
 	CALL	OUT_CHAR
 	PUSH	CX					; save sectors/track
 	PUSH	DX					; save heads
 
 ;----------------------------------------------------------------------------;
-; Display HD size
+; Display HD size: MiB = C*H*S*512/1024/1024 = C*H*S/2048
 ;
 	XCHG	AX, DX				; AX = # of heads
 	MUL	CL					; AX = heads * sectors
 	MUL	BX					; DX:AX = heads * sectors * cyl
 	MOV	CX, 2048				; AX = DX:AX / 2048
 	DIV	CX					; (size in MB)
-
 	POST_COL_1	POST_HD, POST_CLR_VAL1, 1
-
-	XCHG	AX, DX				; save AX
-	PUSH	BX					; retreive BX
-	POP	BX					; and re-save
-	XCHG	AX, DX				; restore AX
 	CALL	OUT_DECU				; print size in MB
 
 ;----------------------------------------------------------------------------;
@@ -8308,10 +8302,10 @@ BYTE_HEX PROC
 ; Write low nibble of AL as HEX to console
 ;--------------------------------------------------------------------------
 NIB_HEX PROC
-	AND	AL, 0FH 			; isolate low nibble
+	AND	AL, 1111B 			; isolate low nibble
 	CMP	AL, 10 			; CF if <= 9
 	SBB	AL, 069H 			; convert to hex
-	DAS
+	DAS					; BCD adjust
 
 ;--------------------------------------------------------------------------
 ; Write char in AL to console
@@ -8605,7 +8599,7 @@ INT_08 PROC
 ;
 INT_08_TICK_TIMER:				; Advance the time ticker
 	MOV	DI, OFFSET TIMER_CT_L 		; Low timer at BDA 0040:006C
-	;CLI 						; pause interrupts (is necessary?)
+	;CLI 						; pause interrupts (already off)
 	ADD	WORD PTR [DI], 1			; [23+5] increment low word
 	ADC	WORD PTR [DI+2], 0		; [23+6] maybe increment high word
 	CMP	WORD PTR [DI+2], 24 		; rolled over to next day?
@@ -8824,8 +8818,8 @@ INT_05 PROC
 	MOV	AH, 3					; get cursor position
 	INT	10H					; DH = cursor row, DL = cursor column
 	PUSH	DX					; save starting cursor position
-	;XOR	DX, DX				; start position at row 0, col 0
-	CWD						; start position at row 0, col 0
+	XOR	DX, DX				; start position at row 0, col 0
+	;CWD						; (unsafe, can't trust an INT 10h)
 INT_05_LOOP_1:
 	MOV	AH, 2					; set cursor position
 	INT	10H					; set cursor to DH=row, DL=col
@@ -8939,7 +8933,7 @@ FPU_TEST_DONE:
 HAS_FPU ENDP
 
 ;
-; 1 BYTE HERE
+; 0 BYTES HERE
 ;
 BYTES_HERE	VER
 
