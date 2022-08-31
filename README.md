@@ -119,7 +119,7 @@ Hampa Hug's excellent [PCE/ibmpc emulator](http://hampa.ch/pce/pce-ibmpc.html) w
 ## References and Credits:
 
 - https://stanislavs.org/helppc/
-- https://sites.google.com/site/pcdosretro/
+- [https://sites.google.com/site/pcdosretro/](https://web.archive.org/web/20220223124950/https://sites.google.com/site/pcdosretro/) (now offline)
 - http://www.minuszerodegrees.net/
 - https://www.felixcloutier.com/x86/
 
