@@ -135,4 +135,4 @@ Hampa Hug's excellent [PCE/ibmpc emulator](http://hampa.ch/pce/pce-ibmpc.html) w
 
 ### Disclaimer
 
-This project is built upon the collective knowledge of the community by and for the benefit of the community.  Unless stated otherwise, cited public sources are considered as "public domain" or "fair use" of the copyrighted material as provided for in section 107 of the US Copyright Law.  If your copyrighted material appears on this web site and you disagree with our assessment that it constitutes "fair use," [contact us](mailto:640kb@glabios.org).
+This project is built upon the collective knowledge of the community by and for the benefit of the community.  Unless stated otherwise, cited public sources are considered as "public domain" or "fair use" of the copyrighted material as provided for in section 107 of the US Copyright Law.  If your copyrighted material appears in this project or on this web site and you disagree with our assessment that it constitutes "fair use," [contact us](mailto:640kb@glabios.org).
