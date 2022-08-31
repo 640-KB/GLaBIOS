@@ -16,7 +16,7 @@ Copyright &copy; 2022, [640KB](mailto:640kb@glabios.org) and contributors.
 
 ## Contact
 
-Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org.
+Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org or submit an [Issue](../../issues).
 
 ## Features
 
