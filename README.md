@@ -123,8 +123,8 @@ Hampa Hug's excellent [PCE/ibmpc emulator](http://hampa.ch/pce/pce-ibmpc.html) w
 - http://www.minuszerodegrees.net/
 - https://www.felixcloutier.com/x86/
 
-- Font bitmaps by "VileR", (CC BY-SA 4.0)
-	https://int10h.org/oldschool-pc-fonts/readme/#legal_stuff
+- Font bitmaps by "VileR", ([CC BY-SA 4.0](https://int10h.org/oldschool-pc-fonts/readme/#legal_stuff))
+	
 
 ### Further Credits to:
 
