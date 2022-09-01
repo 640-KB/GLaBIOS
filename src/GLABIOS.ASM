@@ -56,9 +56,8 @@
 ; TODO:
 ;
 ; Item					Complete	TODO/Notes
-;
-; - POST tests for all ICs			90%	PIT Timer Channel #0? Testing of tests
 ; - Turbo mode 					  	Test with higher (> 8MHz) speeds?
+; - CGA smooth scrolling				Looking for help on this one
 ;
 ;----------------------------------------------------------------------------;
 ; BUILD NOTES:
@@ -197,10 +196,10 @@ OPT_ROM_END		EQU	0FE00H	; Option ROM scan ending address
 ;
 VER_NAME		EQU	'GLaBIOS'
 	IFNDEF VER_NUM
-VER_NUM		EQU	'0.1.3'		; (max 6 chars)
+VER_NUM		EQU	'0.1.4'		; (max 6 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'08/30/22' 		; must be MM/DD/YY format
+VER_DATE		EQU	'09/01/22' 		; must be MM/DD/YY format
 	ENDIF
 	IFNDEF COPY_YEAR
 COPY_YEAR		EQU	'2022'		; can be set at build time
@@ -383,6 +382,7 @@ WARM_BOOT_TEST	EQU	9ABCH			; Warm Boot - Manufacturer test
 
 VID_DEF_COLS	EQU	80			; standard video mode columns
 VID_DEF_ROWS	EQU	24			; standard video mode rows
+VID_SP		EQU	' '			; fill byte for blank video RAM char
 
 ;----------------------------------------------------------------------------;
 ; Useful CP-437 Chars
@@ -592,17 +592,16 @@ GFLAGS RECORD	GTBD1:1,TURBO:1,V20:1,RTCMS:1,RTCMM:1,GTBD2:3
 ; 76543210
 ; x 	    |			- WARM  : Warm Boot flag
 ;  x 	    |			- PKI   : POST Keyboard Interrupt Received
-;   x	    |			- PKB   : Keyboard Init Error
-;    x    |			- PKEY  : Keyboard key stuck
-;     x   |			- PFDC  : FDC init failure
-;      x  |			- PFSK  : FDC seek test failure
-;       x |			- PDMA  : DMA error
-;        x|			- PMEM  : Memory Error
-;         |x		- PHDC  : HDC error
+;   x     |			- PKEY  : Keyboard key stuck
+;    x    |			- PFDC  : FDC init failure
+;     x   |			- PFSK  : FDC seek test failure
+;      x  |			- PDMA  : DMA error
+;       x |			- PMEM  : Memory Error
+;        x|			- PHDC  : HDC error
 ;         | xxxxxxxx	- TBD
 ; 84218421
 ;----------------------------------------------------------------------------;
-PFLAGS RECORD WARM:1,PKI:1,PKB:1,PKEY:1,PFDC:1,PFSK:1,PDMA:1,PMEM:1,PHDC:1,PTBD2:7
+PFLAGS RECORD WARM:1,PKI:1,PKEY:1,PFDC:1,PFSK:1,PDMA:1,PMEM:1,PHDC:1,PTBD2:8
 
 ;----------------------------------------------------------------------------;
 ; BDA Keyboard Flags
@@ -854,8 +853,12 @@ GET_EFLAG	MACRO	FLAG, SET_BDA
 			ENDIF
 	MOV	AX, EQUIP_FLAGS
 	AND	AX, MASK FLAG
+			IF CPU_TYPE	EQ CPU_V20
+	SHR	AX, FLAG
+			ELSE
 	MOV	CL, FLAG
 	SHR	AX, CL
+			ENDIF
 			IFNB <SET_BDA>
 	POP	DS
 	POP	CX
@@ -904,8 +907,12 @@ SET_EFLAG	MACRO	FLAG, NO_REGS
 	MOV	DS, CX
 			ENDIF
 	AND	AL, MASK FLAG SHR FLAG		; isolate flag's bit width
+			IF CPU_TYPE	EQ CPU_V20
+	SHL	AX, FLAG				; shift value into position
+			ELSE
 	MOV	CL, FLAG				; CL = bit(s) position of record
 	SHL	AX, CL				; shift value into position
+			ENDIF
 	AND	EQUIP_FLAGS, NOT MASK FLAG	; clear existing flags
 	OR	EQUIP_FLAGS, AX 			; set new flags
 			IFB <NO_REGS>
@@ -1216,7 +1223,6 @@ IN_VSYNC:
 ;----------------------------------------------------------------------------;
 _IVT		SEGMENT AT 0H
 		ORG 8H*4
-_INT_08H_DD	LABEL	DWORD 
 _INT_08H 		DW	?			; INT 08H - Timer
 _INT_08H_SEG	DW	?			; INT 08H - Timer Segment
 _INT_09H 		DW	?			; INT 09H - Keyboard
@@ -1231,9 +1237,6 @@ _INT_18H_SEG	DW	?			; INT 18H - Segment
 _INT_1DH		DD	?			; INT 1DH - CRTC param table
 _INT_1EH		DD	?			; INT 1EH - Floppy param table
 _INT_1FH		DD	?			; INT 1FH - User Font bitmap table
-		ORG 44H*4
-_INT_44H		DD	?			; INT 44H - used for BIOS testing
-_INT_44H_SEG	DD	?
 _IVT 		ENDS
 
 ;----------------------------------------------------------------------------;
@@ -1722,7 +1725,7 @@ DMA_PASS:
 	OUT	DMA_0_C, AL			; write low order bits
 	IO_DELAY_SHORT
 	OUT	DMA_0_C, AL			; write high order bits
-	IO_DELAY_SHORT			; necessary?
+	;IO_DELAY_SHORT			; necessary?
 
 ;----------------------------------------------------------------------------;
 ; [13] Set Mode DMA Channel 0
@@ -1962,8 +1965,6 @@ PIC_INT_PASS:
 ;    11		- RW: Read/Write 2xR/2xW
 ;      011		- M:  Mode 3, Square Wave
 ;         0		- BCD: 0
-;
-; TODO: test timer channel 0?
 ;----------------------------------------------------------------------------;
 	MOV	AL, 00110110B 		; Send CW to Counter 0 (see above)
 	OUT	PIT_CTRL, AL
@@ -2164,6 +2165,17 @@ SETTINGS_5160:
 
 		ENDIF
 
+;----------------------------------------------------------------------------;
+; If set on MB DIP SW1, test and verify FPU. If not detected, disable in BDA.
+;
+	TEST	AL, MASK FPU			; is FPU set?
+	JZ	SETTINGS_SAVE			; if not, skip to save flags
+	XCHG	AX, DI				; save AX (clobbered by HAS_FPU)
+	CALL	HAS_FPU				; check FPU, ZF=0 if not detected
+	XCHG	AX, DI
+	JZ	SETTINGS_SAVE			; if detected, save flags
+	AND	AL, NOT MASK FPU			; otherwise clear FPU flag
+SETTINGS_SAVE:
 	MOV	BYTE PTR EQUIP_FLAGS, AL	; set to low byte of EQUIP_FLAGS
 	XCHG	AX, DX				; save EQUIP_FLAGS to DL for later
 	POP	AX
@@ -2189,8 +2201,7 @@ SETTINGS_5160:
 ;  - If MB video switch is 0 (option ROM), skip reset
 ;  - If not 0, determine correct 6845 video mode and do INT 10H reset
 ;----------------------------------------------------------------------------;
-	GET_EFLAG VIDM				; AL = 00=error, 01=CGA 40, 10=CGA 80, 11=MDA
-	TEST	AL, AL				; check if BDA initial video mode is 0
+	GET_EFLAG VIDM				; AL = 00=error(ZF), 01=CGA 40, 10=CGA 80, 11=MDA
 	XCHG	AX, DX				; AL = EQUIP_FLAGS, DL = BDA initial video mode
 	JNZ	VID_MODE_OK				; jump if mode valid or video option ROM loaded
 	MOV	BL, 33H				; Beep 3 long, 3 short
@@ -2285,7 +2296,7 @@ TOGGLE_TURBO ENDP
 			ENDIF
 
 ;
-; 6 BYTES HERE
+; 1 BYTE HERE
 ;
 BYTES_HERE	INT_02
 
@@ -2368,9 +2379,6 @@ POST_DETECT_GAM ENDP
 ; Input:
 ;	BX = high byte of EQUIP_FLAGS
 ;	ES, DS = BDA segment
-;
-; TODO: this seems to produce erratic results with a "Tiny Turbo 286" card
-; Alternate method? https://www.sci.muni.cz/docs/pc/serport.txt
 ;----------------------------------------------------------------------------;
 POST_DETECT_COM PROC
 	MOV	CX, 4
@@ -2797,6 +2805,11 @@ ANY_KEY		DB	'Press the Any Key', 0
 
 BANNER_STRINGS ENDP
 
+NMI_STRINGS PROC
+NMI_ERR_PAR		DB	'PARITY', 0			; NMI Parity Error
+NMI_ERR_IO		DB	'NMI', 0			; NMI I/O Error
+NMI_STRINGS ENDP
+
 POST_STRINGS PROC
 ;----------------------------------------------------------------------------;
 ; POST Test Strings
@@ -2814,9 +2827,8 @@ POST_COM		DB	'COM',  0
 POST_FDD		DB	'FDD',  0
 POST_HDD		DB	'HDD',  0
 POST_HD		DB	':',    0
-POST_MB		DB	' MB (', 0
+POST_MB		DB	' MB (',0
 POST_NONE		DB	'None', 0
-POST_FAIL		DB	'FAIL', 0
 POST_MEMORY		DB	CR, 'RAM', 0		; RAM Memory test
 				IF POST_SHOW_VER GT 2
 POST_KB_OK		DB	' KB OK',0
@@ -2832,8 +2844,6 @@ POST_RSEP		DB	POST_R, 0
 POST_ERR		DB	CR,LF, 'POST '		; POST Error
 POST_ERR_ERR	DB	'Error ', 0			; Error
 POST_ERR_PKI	DB	'KB Init', 0		; Reset returned non-success "301"
-;POST_ERR_PKB	DB	'KB RST', 0			; (unused)
-POST_ERR_PKB	DB	0				; (TODO: remove it)
 POST_ERR_PKEY	DB	'Key Stuck', 0		; Reset did not clear KBC
 POST_ERR_PFDC	DB	'FDC', 0			; General FD init failure
 POST_ERR_PFSK	DB	'FD Seek', 0		; Seek test failure
@@ -2841,10 +2851,20 @@ POST_ERR_PDMA	DB	'DMA', 0			; DMA TC0 error
 POST_ERR_PMEM	DB	'RAM', 0
 ;POST_ERR_PHDC	DB	'HD', 0			; General HD init failure
 
-POST_STRINGS ENDP
+;----------------------------------------------------------------------------;
+; POST String Vectors - indexed by PFLAGS
+;
+POST_ERRORS LABEL WORD
+	DW	OFFSET POST_ERR_PKI		; PKI  : Keyboard Interrupt Error
+	DW	OFFSET POST_ERR_PKEY		; PKEY : Keyboard key stuck
+	DW	OFFSET POST_ERR_PFDC		; PFDC : FDC init failure
+	DW	OFFSET POST_ERR_PFSK		; PFSK : FDC seek test failure
+	DW	OFFSET POST_ERR_PDMA		; PDMA : DMA TC0 Error
+	DW	OFFSET POST_ERR_PMEM		; PMEM : RAM Error
+	;DW	OFFSET POST_ERR_PHDC		; PHDC : HDC Error
+L_POST_ERRORS	EQU	($-POST_ERRORS)/SIZE POST_ERRORS
 
-NMI_ERR_PAR		DB	'PARITY', 0			; NMI Parity Error
-NMI_ERR_IO		DB	'NMI', 0			; NMI I/O Error
+POST_STRINGS ENDP
 
 STRINGS ENDP
 
@@ -2857,23 +2877,13 @@ STRINGS ENDP
 ;----------------------------------------------------------------------------;
 ; Display all POST messages
 ;----------------------------------------------------------------------------;
-; BP:
-; x 				- WARM  : Warm Boot flag
-;  x 				- PKI   : POST Keyboard Interrupt Received
-;   x				- PKB   : Keyboard Init Error
-;    x			- PKEY  : Keyboard key stuck
-;     x			- PFDC  : FDC init failure
-;      x			- PFSK  : FDC seek test failure
-;       x			- PMEM  : Memory Check Error
-;        xxxxxxxxxx	- TBD
-;PFLAGS RECORD	WARM:1,PKI:1,PKB:1,PKEY:1,PFDC:1,PFSK:1,PV20:1,PMEM:1,PTBD2:7
-;
+; See PFLAGS
 ; Output: BP = 0
 ;----------------------------------------------------------------------------;
 POST_ERROR_MSG PROC
 	SHL	BP, 1
 	JZ	POST_ERROR_MSG_EXIT		; no errors?
-	MOV	CX, 7					; MOV	CX, L_POST_ERRORS
+	MOV	CX, L_POST_ERRORS			; # of available POST error messages
 	MOV	SI, OFFSET POST_ERRORS
 POST_ERROR_MSG_LOOP:
 	LODS	WORD PTR CS:[SI]			; AX = next message offset
@@ -2888,21 +2898,6 @@ POST_ERROR_MSG_NEXT:
 	LOOP	POST_ERROR_MSG_LOOP
 POST_ERROR_MSG_EXIT:
 	RET
-
-;----------------------------------------------------------------------------;
-; POST String Vectors
-;
-POST_ERRORS LABEL WORD
-	DW	OFFSET POST_ERR_PKI		; PKI  : POST Keyboard Interrupt
-	DW	OFFSET POST_ERR_PKB		; PKB  : Keyboard Init Error
-	DW	OFFSET POST_ERR_PKEY		; PKEY : Keyboard key stuck
-	DW	OFFSET POST_ERR_PFDC		; PFDC : FDC init failure
-	DW	OFFSET POST_ERR_PFSK		; PFSK : FDC seek test failure
-	DW	OFFSET POST_ERR_PDMA		; PDMA : DMA TC0 Error	
-	DW	OFFSET POST_ERR_PMEM		; PMEM : RAM Error
-	;DW	OFFSET POST_ERR_PHDC		; PHDC : HDC Error
-L_POST_ERRORS	EQU	($-POST_ERRORS)/2
-
 POST_ERROR_MSG ENDP
 
 ;----------------------------------------------------------------------------;
@@ -3131,8 +3126,62 @@ IS_ALPHA_DONE:
 	RET
 IS_ALPHA ENDP
 
+;----------------------------------------------------------------------------;
+; Locate cursor to column on current line
+;----------------------------------------------------------------------------;
+; Input:
+; - AL = new col
 ;
-; 30 BYTES HERE
+; Size: 23 bytes
+;----------------------------------------------------------------------------;
+MOVE_COL PROC
+	PUSH	AX				; must preserve all of these
+	PUSH	BX
+	PUSH	CX
+	PUSH	DX
+	PUSH	AX				; preserve AL on INT 10H call
+	XOR	BH, BH 			; video page 0
+	MOV	AH, 3 			; get cursor position
+	INT	10H 				; DH = row, DL = column
+	POP	AX
+MOVE_COL_SET:
+	MOV	DL, AL			; set new column
+	MOV	AH, 2 			; set cursor position
+	INT	10H 				; row = DH, column = DL
+	POP	DX
+	POP	CX
+	POP	BX
+	POP	AX
+	RET
+MOVE_COL ENDP
+
+;----------------------------------------------------------------------------;
+; Retrieve a parameter value from the DBT by index
+;----------------------------------------------------------------------------;
+; Input: AL = parameter index
+; Output: AL = byte
+;
+; Size: 19 bytes (13h)
+;----------------------------------------------------------------------------;
+INT_1E_PARAM PROC
+	;CMP	AL, 11 				; is valid index? (necessary to check?)
+	;CMC 						; set CF if out of bounds
+	;JC	INT_1E_PARAM_DONE 		; if so, just return
+	PUSH	DS
+	PUSH	BX
+	XOR	BX, BX 				; BX = IVT
+	MOV	DS, BX 				; DS = IVT
+			ASSUME DS:_IVT
+	LDS	BX, _INT_1EH			; set DS:BX to INT_1E
+	XLAT 						; AL = byte
+	POP	BX
+	POP	DS
+INT_1E_PARAM_DONE:
+	RET
+INT_1E_PARAM ENDP
+
+;
+; 7 BYTES HERE
 ;
 BYTES_HERE	INT_19
 
@@ -3804,34 +3853,6 @@ OUT_DECU ENDP
 OUT_DECU_R ENDP
 
 ;----------------------------------------------------------------------------;
-; Hide cursor display
-;----------------------------------------------------------------------------;
-; Clobbers CX
-;----------------------------------------------------------------------------;
-HIDE_CURSOR PROC
-	MOV	CX, 2000H			; hide cursor
-	JMP	SHORT SET_CURSOR
-
-;----------------------------------------------------------------------------;
-; Show cursor display - restores saved cursor in CURSOR_DEFAULT
-;----------------------------------------------------------------------------;
-; Input:
-; 	DS = BDA
-; Clobbers CX
-;----------------------------------------------------------------------------;
-SHOW_CURSOR PROC
-		ASSUME DS:_BDA
-	MOV	CX, CURSOR_DEFAULT	; reset to original
-SET_CURSOR:
-	PUSH	AX
-	MOV	AH, 1
-	INT	10H
-	POP	AX
-	RET
-SHOW_CURSOR ENDP
-HIDE_CURSOR ENDP
-
-;----------------------------------------------------------------------------;
 ; INT 9 - Test keyboard during POST
 ;----------------------------------------------------------------------------;
 INT_09_POST PROC
@@ -3850,6 +3871,10 @@ INT_09_POST_DONE:
 	POP	AX
 	IRET
 INT_09_POST ENDP
+
+;----------------------------------------------------------------------------;
+; Additional INT 9h - Keyboard Code
+;----------------------------------------------------------------------------;
 
 ;----------------------------------------------------------------------------;
 ; KB Ctrl-NumLock Screen Pause
@@ -3934,7 +3959,7 @@ KB_BUF_CLEAR PROC
 KB_BUF_CLEAR ENDP
 
 ;
-; 10 bytes here
+; 26 bytes here
 ;
 BYTES_HERE	INT_09
 
@@ -5159,10 +5184,8 @@ FDC_INIT_DMA PROC
 			IF CPU_TYPE EQ CPU_V20
 	ROL	DX, 4				; V20 only
 			ELSE
-	ROL	DX, 1 			; DL = highest and lowest nibble of ES
-	ROL	DX, 1 			; DH = middle nibbles
-	ROL	DX, 1
-	ROL	DX, 1
+	MOV	CL, 4				; DL = highest and lowest nibble of ES
+	ROL	DX, CL			; DH = middle nibbles
 			ENDIF
 	XCHG	AL, AH			; AL = DMA mode, AH = sectors to read
 	OUT	DMA_MODE, AL		; write to DMA mode reg (port 0BH)
@@ -5442,7 +5465,7 @@ FDC_WAIT_SENSE_EXIT:
 FDC_RECV_ALL ENDP
 
 ;
-; 1 BYTE HERE
+; 5 BYTES HERE
 ;
 BYTES_HERE	INT_0E
 
@@ -5950,7 +5973,7 @@ INT_10_0 PROC
 	MOV	BH, VID_DEF_COLS			; default 80 columns
 	MOV	CH, HIGH OFFSET MDA_MEM		; Total MDA video memory = 1000H (4K)
 	MOV	VID_BUF_SZ, CX			; MDA/CGA 80x25 page size = 1000H (4K)
-	MOV	DI, 0700H OR ' '			; fill memory with attr 7 and space
+	MOV	DI, 0700H OR VID_SP		; fill memory with attr 7 and space
 	JNZ	INT_10_0_IS_CGA
 	INC	AX					; 1 = MDA disable video signal value
 	MOV	BP, SEG _MDA_MEM			; BP = MDA memory segment (0B000H)
@@ -6422,7 +6445,7 @@ INT_10_6_TXT_MOVE_LOOP:
 ; Clear (fill with spaces) the newly cleared area
 ;
 INT_10_6_TXT_CLR:
-	MOV	AL, ' '			; fill blank lines with spaces
+	MOV	AL, VID_SP			; fill blank lines with spaces
 INT_10_6_TXT_CLR_LOOP:
 	MOV	CL, DL			; write rect width number of blank chars
 	REP	STOSW				; write attribute and space to col
@@ -7712,58 +7735,6 @@ OUT_SZ_ATTR PROC
 OUT_SZ_ATTR ENDP
 
 ;----------------------------------------------------------------------------;
-; Locate cursor to column on current line
-;----------------------------------------------------------------------------;
-; Input:
-; - AL = new col
-;----------------------------------------------------------------------------;
-MOVE_COL PROC
-	PUSH	AX				; must preserve all of these
-	PUSH	BX
-	PUSH	CX
-	PUSH	DX
-	PUSH	AX				; preserve AL on INT 10H call
-	XOR	BH, BH 			; video page 0
-	MOV	AH, 3 			; get cursor position
-	INT	10H 				; DH = row, DL = column
-	POP	AX
-MOVE_COL_SET:
-	MOV	DL, AL			; set new column
-	MOV	AH, 2 			; set cursor position 
-	INT	10H 				; row = DH, column = DL
-	POP	DX
-	POP	CX
-	POP	BX
-	POP	AX
-	RET
-MOVE_COL ENDP
-
-;----------------------------------------------------------------------------;
-; Retrieve a parameter value from the DBT by index
-;----------------------------------------------------------------------------;
-; Input: AL = parameter index
-; Output: AL = byte
-;
-; Size: 19 bytes (13h)
-;----------------------------------------------------------------------------;
-INT_1E_PARAM PROC
-	;CMP	AL, 11 				; is valid index? (necessary to check?)
-	;CMC 						; set CF if out of bounds
-	;JC	INT_1E_PARAM_DONE 		; if so, just return
-	PUSH	DS
-	PUSH	BX
-	XOR	BX, BX 				; BX = IVT
-	MOV	DS, BX 				; DS = IVT
-			ASSUME DS:_IVT
-	LDS	BX, _INT_1EH			; set DS:BX to INT_1E
-	XLAT 						; AL = byte
-	POP	BX
-	POP	DS
-INT_1E_PARAM_DONE:
-	RET
-INT_1E_PARAM ENDP
-
-;----------------------------------------------------------------------------;
 ; Walking Bit/March I/O port register test
 ;----------------------------------------------------------------------------;
 ; Input:
@@ -7823,7 +7794,7 @@ WB_TEST_DONE:
 WB_TEST ENDP
 
 ;
-; 109 bytes here
+; 146 bytes here
 ;
 BYTES_HERE	INT_12
 
@@ -7943,16 +7914,9 @@ CPU_CHECK_TYPE_2_DONE:
 FPU_CHECK:
 	POST_COL_2	POST_FPU, POST_CLR_VAL1
 	MOV	SI, OFFSET POST_NONE		; default to 'None'
-	TEST_EFLAG FPU				; is FPU selected on switch?
+	TEST_EFLAG FPU				; was FPU detected?
 	JZ	FPU_DISP_DONE			; jump to output if no FPU
-	PUSH	BP					; BP clobbered by HAS_FPU
-	CALL	HAS_FPU				; check FPU, ZF=0 if not detected
-	POP	BP					; restore BP
-	JNZ	FPU_DISP_NO
 	MOV	SI, OFFSET POST_8087
-	JMP	SHORT FPU_DISP_DONE
-FPU_DISP_NO:
-	MOV	SI, OFFSET POST_FAIL		; switch set to FPU, but not detected
 FPU_DISP_DONE:
 	CALL	OUT_SZ				; display string
 	POST_COL_END_NL				; end second column, move to NL
@@ -8344,8 +8308,36 @@ MDA_COLOR_FIX_DONE:
 	RET
 MDA_COLOR_FIX ENDP
 
+;----------------------------------------------------------------------------;
+; Hide cursor display
+;----------------------------------------------------------------------------;
+; Clobbers CX
+;----------------------------------------------------------------------------;
+HIDE_CURSOR PROC
+	MOV	CX, 2000H			; hide cursor
+	JMP	SHORT SET_CURSOR
+
+;----------------------------------------------------------------------------;
+; Show cursor display - restores saved cursor in CURSOR_DEFAULT
+;----------------------------------------------------------------------------;
+; Input:
+; 	DS = BDA
+; Clobbers CX
+;----------------------------------------------------------------------------;
+SHOW_CURSOR PROC
+		ASSUME DS:_BDA
+	MOV	CX, CURSOR_DEFAULT	; reset to original
+SET_CURSOR:
+	PUSH	AX
+	MOV	AH, 1
+	INT	10H
+	POP	AX
+	RET
+SHOW_CURSOR ENDP
+HIDE_CURSOR ENDP
+
 ;
-; 2 BYTES HERE
+; 0 BYTES HERE
 ;
 BYTES_HERE	GFX_CHARSET
 
@@ -8496,7 +8488,7 @@ GFX_CHARSET LABEL BYTE
 			ASSUME DS:_BDA
 INT_1A PROC
 	STI
-	CMP	AH, 1 				; is function 0 or 1?
+	SUB	AH, 1 				; is function 0 or 1?
 	JA	INT_1A_EXIT 			; if not, exit
 	PUSH	DS
 	PUSH	SI
@@ -8533,21 +8525,21 @@ INT_1A_READ ENDP
 ; INT 1A,1   Set system clock counter
 ;----------------------------------------------------------------------------;
 ; Input:
+;	AH = 0
 ;	CX = high order word of tick count
 ;	DX = low order word of tick count
 ;----------------------------------------------------------------------------;
 INT_1A_SET PROC
 	MOV	WORD PTR [SI], DX			; set low word ticks (seconds)
 	MOV	WORD PTR [SI+2], CX		; set high word ticks (hours)
-	MOV	BYTE PTR [SI+4], 0		; reset midnight flag
-	;MOV	BYTE PTR [SI+4], CH		; -1 byte if willing to trust user input?
+	MOV	BYTE PTR [SI+4], AH		; reset midnight flag
 	JMP	SHORT INT_1A_DONE
 INT_1A_SET ENDP
 
 INT_1A ENDP
 
 ;
-; 0 BYTES HERE
+; 1 BYTE HERE
 ;
 BYTES_HERE	INT_08_PROC
 
@@ -8558,7 +8550,7 @@ INT_08_PROC PROC
 ;----------------------------------------------------------------------------;
 INT_08_MOTOR_OFF:
 	MOV	AL, 11110000B 			; BDA motor off on all drives
-	AND	[DI][FD_MOTOR_ST-TIMER_CT_L], AL	; -1 byte (AND FD_MOTOR_ST, AL)
+	AND	[DI][FD_MOTOR_ST-TIMER_CT_L], AL ; -1 byte vs AND FD_MOTOR_ST, AL
 	XOR	AL, 11111100B 			; FDC motor off on all drives
 	MOV	DX, FDC_CTRL 			; FD control port
 	OUT	DX, AL 				; write to controller
@@ -8805,7 +8797,7 @@ INT_05 PROC
 	STI						; Interrupts should be okay now
 	DEC	DI					; undo earlier SCASB increment
 	STOSB						; update status to 1
-	PUSH	BX					; call-preserve working registers
+	PUSH	BX					; preserve working registers
 	PUSH	CX
 	PUSH	DX
 	MOV	AH, 0FH				; get video state (columns)
@@ -8900,13 +8892,10 @@ INT_05 ENDP
 ;----------------------------------------------------------------------------;
 ; Check if a 8087 FPU is present and perform quick tests
 ;----------------------------------------------------------------------------;
-; Input:
-;	SI = any non-zero value
-;
 ; Output:
 ;	ZF = 0 if no FPU, ZF = 1 if present
 ;
-; Clobbers: AX, BP
+; Clobbers: AX, BX
 ;
 ; Sources:
 ;   https://retrocomputing.stackexchange.com/questions/16529/detecting-the-external-x87-fpu
@@ -8914,16 +8903,25 @@ INT_05 ENDP
 ;----------------------------------------------------------------------------;
 HAS_FPU PROC
 	FNINIT 					; reset FPU, no wait
+	MOV	AH, HIGH RAM_TEST			; any non-zero value
+
+;----------------------------------------------------------------------------;
+; Test Status Word
+;
 FPU_TEST_SW:
-	PUSH	SI 					; init temp word to non-zero
-	MOV	BP, SP	 			; use stack memory
-	FNSTSW WORD PTR[BP]			; store status word
+	PUSH	AX 					; init temp word to non-zero
+	MOV	BX, SP	 			; use stack memory
+	FNSTSW WORD PTR SS:[BX]			; store status word
 	POP	AX 					; AX = control word if FNSTCW executed, or 0 if not
 	TEST	AX, AX 				; if AX = 0, FPU is present
 	JNZ	FPU_TEST_DONE			; ZF = 0 if no FPU
+
+;----------------------------------------------------------------------------;
+; Test Control Word
+;
 FPU_TEST_CW:
 	PUSH	AX
-	FNSTCW WORD PTR[BP]			; store control word
+	FNSTCW WORD PTR SS:[BX]			; store control word
 	POP	AX 					; AX = control word
 	AND	AX, 0103FH 				; isolate interesting status flags
 	CMP	AX, 03FH 				; check for 8087 "signature"
@@ -8941,7 +8939,7 @@ BYTES_HERE	VER
 ; Version and Build Strings
 ;
 VER_STRING_ORG	EQU	_X86_RESET-(VER_END-VER)
-		ORG	0FFE0H		; use VER_STRING_ORG for this
+		ORG	0FFE1H		; use VER_STRING_ORG for this
 VER:
 	DB	'Ver: '
 	DB	VER_NUM
