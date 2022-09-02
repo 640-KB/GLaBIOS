@@ -1080,6 +1080,7 @@ BEEP_OFF MACRO
 ; in generated listing.
 ;
 ; WTF: why can't MASM %OUT display the value of NEXT_LBL-$?
+; WTF2: how to fix for MASM 6.1?
 ;
 	.LALL
 BYTES_HERE	MACRO	NEXT_LBL
@@ -1087,10 +1088,12 @@ BYTES_HERE	MACRO	NEXT_LBL
 
 BYTES_HERE_&NEXT_LBL = NEXT_LBL-$
 
+		IFDEF BYTES_HERE_&NEXT_LBL
 		IF2
 		IF BYTES_HERE_&NEXT_LBL LT 0
 		.ERR2
 	%OUT WARNING: Out of space at: NEXT_LBL (&BYTES_HERE_&NEXT_LBL)
+		ENDIF
 		ENDIF
 		ENDIF
 		ENDM
@@ -1807,7 +1810,7 @@ DMA_SETUP_CH:
 ; - Read/Write Error: 1 short, 3 long beeps
 ; - Parity Error: 1 short, 4 long beeps
 ;----------------------------------------------------------------------------;
-			ASSUME DS:_IVT, ES:_IVT
+			ASSUME DS:_BDA_ABS, ES:_IVT
 BASE_RAM_TEST:
 	IN	AL, PPI_B 				; AL = PB0 flags
 	OR	AL, MASK PBIO OR MASK PBPC	; disable RAM parity and I/O ch. flags
@@ -4723,7 +4726,7 @@ INT_13_DONE:
 ; Input:
 ;	AH = 00
 ;	DL = drive number (0=A:, 1=2nd floppy, 80h=drive 0, 81h=drive 1)
-;		(this is ignored however)
+;		(unused - drive is determined by BDA motor status)
 ;
 ; Output:
 ;	AH = disk operation status  (see INT 13,STATUS)
@@ -4743,13 +4746,12 @@ INT_13_DONE:
 ;
 ;	- if a motor flag is on in BDA, turn it on in the FDC also
 ;	- clear reset flag in controller and pull heads to track 0
-;	- set ALL disks need recalibration on next seek (DL is not used)
-;		Why all drives?
+;	- set ALL disks need recalibration on next seek (Why all drives?)
 ;	- setting the controller reset flag causes the disk to recalibrate
 ;	  	on the next disk operation
 ;	- if bit 7 is set, the diskette drive indicated by the lower 7 bits
 ;		will reset then the hard disk will follow; return code in AH is
-;		for the drive requested (this is done by HD BIOS?)
+;		for the drive requested (this is done by HD BIOS)
 ;
 ;----------------------------------------------------------------------------;
 INT_13_0 PROC
@@ -4785,7 +4787,7 @@ INT_13_0_1:
 INT_13_0_2:
 	OR	AL, 1000B 				; enable DMA & I/O interface, FDC reset
 	OUT	DX, AL				; send to FDC
-	XOR	CX, CX 				; clear CX					(3)
+	XOR	CX, CX 				; clear CX, delay for FDC to settle	(3)
 	MOV	FD_CAL_ST, CL 			; flag all drives for recalibration	(19)
 	MOV	FD_LAST_OP, CL 			; clear last operation flags		(19)
 	IO_DELAY_SHORT 				; additional 15 clock cycle delay 	(15)
@@ -4797,11 +4799,15 @@ INT_13_0_2:
 	OR	AL, 0100B 				; set FDC enable 				(4)
 	OUT	DX, AL				; send to FDC
 	STI 						; enable interrupts
-	CALL	FDC_WAIT_INT			; wait for FDC to signal interrupt
-	JC	INT_13_DONE 			; timeout
+	CALL	FDC_WAIT_SENSE			; wait for FDC to signal interrupt
+	CMP	FDC_LAST_ST, 11000000B		; was successful reset?
+	JZ	INT_13_0_RESET_DONE		; jump if success, AH = 0
+	MOV	AH, FDC_ST_ERR_FDC		; otherwise, controller failure
+INT_13_0_RESET_DONE:
+	MOV	FD_LAST_OP, AH			; set last result
 
 ;----------------------------------------------------------------------------;
-; Re-send Specify bytes to FDC
+; (Re)send Specify bytes to FDC
 ;
 	MOV	AL, FDC_CMD_SPEC 			; [0] FDC Specify command
 	CALL	FDC_SEND 				; send command in AL, CF if error
@@ -5040,7 +5046,6 @@ FDC_WAIT_STATUS ENDP
 ;-------------------------------------------------------------------------
 FDC_SEEK PROC
 	PUSH	AX
-	CALL	FDC_MOTOR_ON
 	CALL	FDC_RECAL 				; recalibrate if needed
 	JC	FDC_SEEK_RECAL_ERR
 	MOV	AL, FDC_CMD_SEEK			; seek command (0FH)
@@ -5072,6 +5077,7 @@ FDC_SEEK ENDP
 ;-------------------------------------------------------------------------
 ; Input:
 ; 	DL = drive number
+; Clobbers: CX
 ;-------------------------------------------------------------------------
 ; Things you must do:
 ;	- is motor already on? Skip wait for spin up
@@ -5083,7 +5089,6 @@ FDC_SEEK ENDP
 ;-------------------------------------------------------------------------
 FDC_MOTOR_ON PROC
 	PUSH	AX
-	PUSH	CX
 	PUSH	DX
 
 ;-------------------------------------------------------------------------
@@ -5103,9 +5108,9 @@ FDC_MOTOR_ON PROC
 	OUT	DX, AL				; port 3F2H, FDC Digital Output
 	MOV	AL, CH 				; AL = FD_MOTOR_ST
 	AND	AL, 11110000B 			; clear low nibble of FD_MOTOR_ST
-	OR	AL, AH
-	MOV	FD_MOTOR_ST, AL			; write to Diskette motor status
-	MOV	FD_MOTOR_CT, 0FFH			; restart timer to max for motor spinup
+	OR	AL, AH				; combine nibbles
+	MOV	AH, 0FFH				; restart timer to max for motor spinup
+	MOV	WORD PTR FD_MOTOR_ST, AX	; write to motor status and timer
 	STI 						; enable interrupts
 	TEST	AL, MASK FWRT			; Delay for motor spinup if write operation
 	JZ	FDC_DRIVE_STARTED 		; if not, bypass delay
@@ -5124,7 +5129,6 @@ FDC_DRV_ALREADY_ON:
 	STI
 FDC_DRIVE_STARTED:
 	POP	DX
-	POP	CX
 	POP	AX
 	RET
 FDC_MOTOR_ON ENDP
@@ -5399,7 +5403,10 @@ FDC_WAIT_INT ENDP
 ;-------------------------------------------------------------------------
 ; FDC_WAIT_SENSE - wait for WIF, Sense Status and check for error
 ;-------------------------------------------------------------------------
-; Output: CF if error, AL = BDA Floppy drive status
+; Output:
+;	CF if error
+;	AL = FDC_LAST_ST (BDA Floppy drive status)
+;	AH = FD_LAST_OP (0 if success)
 ;-------------------------------------------------------------------------
 FDC_WAIT_SENSE PROC
 	CALL	FDC_WAIT_INT 			; wait for WIF
@@ -5427,19 +5434,18 @@ FDC_RECV_ALL PROC
 	MOV	DI, OFFSET FDC_LAST_ST 		; FDC Command Status Last Result
 	MOV	CX, 7					; loop up to 7 FDC bytes
 FDC_RECV_ALL_LOOP:
-	CALL	FDC_RECV				; AL = next byte
-	JC	FDC_RECV_ALL_DONE
+	CALL	FDC_RECV				; AL = next byte, AH = 0 if success
+	JC	FDC_RECV_ALL_DONE			; CF if failure
 	STOSB						; write to BDA
 
 ;----------------------------------------------------------------------------;
-; Additional ~120 clock cycles delay needed
-; (Q: but why?)
-; (A: It fails on Turbo hardware without it)
+; Additional ~170 clock cycles delay needed
+; (Q: but why? A: It fails on Turbo hardware without it)
 ;
-	PUSH	CX					; (15)
-	MOV	CL, 8					; (4)
-	IO_DELAY					; (90)
-	POP	CX					; (15)
+	MOV	AL, 10				; [4]
+FDC_RECV_DELAY:
+	DEC	AX					; [3]
+	JNZ	FDC_RECV_DELAY			; [4+16n]
 
 ;----------------------------------------------------------------------------;
 ; Check for additional bytes to be read from FDC registers
@@ -5465,7 +5471,7 @@ FDC_WAIT_SENSE_EXIT:
 FDC_RECV_ALL ENDP
 
 ;
-; 5 BYTES HERE
+; 3 BYTES HERE
 ;
 BYTES_HERE	INT_0E
 
@@ -5491,53 +5497,16 @@ INT_0E PROC
 INT_0E ENDP
 
 ;-------------------------------------------------------------------------
-; FDC_RECAL: recalibrate drive, if necessary
-;-------------------------------------------------------------------------
-; Input:
-;	DL = drive to recalibrate
-; Output:
-;	CF if error
-;
-; AX clobbered
-;-------------------------------------------------------------------------
-FDC_RECAL PROC
-	PUSH	CX
-	MOV	CL, DL 				; move to CL for shift
-	AND	CL, 0011B 				; mask just drive number in CL
-	MOV	AL, 0001B 				; AL shift to FDC drive # bit
-	SHL	AL, CL 				; shift drive flags
-	TEST	AL, FD_CAL_ST 			; 0 means drive is uncalibrated
-	JNZ	FDC_RECAL_DONE 			; if drive is calibrated, exit
-	MOV	CH, AL 				; CH = drive bits
-	MOV	AL, FDC_CMD_RECAL 		; recalibrate command (07H)
-	CALL	FDC_SEND 				; send command, CF if error
-	JC	FDC_RECAL_ERR
-	MOV	AL, CL 				; AL = drive number
-	CALL	FDC_SEND 				; send command, CF if error
-	JC	FDC_RECAL_ERR
-	CALL	FDC_WAIT_SENSE 			; wait for WIF, sense and get status
-	JC	FDC_RECAL_ERR
-	OR	FD_CAL_ST, CH 			; mark drive as calibrated
-FDC_RECAL_DONE:
-	POP	CX
-	RET
-FDC_RECAL_ERR:
-	MOV	FD_LAST_OP, FDC_ST_ERR_SEEK
-	JMP	SHORT	FDC_RECAL_DONE
-FDC_RECAL ENDP
-
-;-------------------------------------------------------------------------
 ; FDC_WAIT_SENSE_ERR: Map FDC Command Status Register 1 to BDA error codes
 ;-------------------------------------------------------------------------
 ; Input:
-;	Last result from FDC_LAST_ST
+;	AL = Last result from FDC_LAST_ST
 ; Output:
 ;	CF if error
 ;	AH/AL = BDA Floppy drive status
 ;-------------------------------------------------------------------------
 FDC_WAIT_SENSE_ERR PROC
 	PUSH	SI
-	MOV	AL, FDC_LAST_ST			; last status byte 0
 	TEST	AL, 01000000B			; command terminated abnormally?
 	MOV	AH, FDC_ST_ERR_FDC		; if not, FDC error
 	JZ	FDC_WAIT_SENSE_ERR_DONE
@@ -5573,10 +5542,49 @@ FDC_ERR1_MAP LABEL BYTE
 FDC_WAIT_SENSE_ERR ENDP
 FDC_WAIT_SENSE ENDP
 
+;-------------------------------------------------------------------------
+; FDC_RECAL: recalibrate drive, if necessary
+;-------------------------------------------------------------------------
+; Input:
+;	DL = drive to recalibrate
+; Output:
+;	CF if error
+;
+; AX clobbered
+; Size: 43 bytes
+;-------------------------------------------------------------------------
+FDC_RECAL PROC
+	PUSH	CX
+	CALL	FDC_MOTOR_ON
+	MOV	CL, DL 				; move to CL for shift
+	AND	CL, 0011B 				; mask just drive number in CL
+	MOV	AL, 0001B 				; AL shift to FDC drive # bit
+	SHL	AL, CL 				; shift drive flags
+	TEST	AL, FD_CAL_ST 			; 0 means drive is uncalibrated
+	JNZ	FDC_RECAL_DONE 			; if drive is calibrated, exit
+	MOV	CH, AL 				; CH = drive bits
+	MOV	AL, FDC_CMD_RECAL 		; recalibrate command (07H)
+	CALL	FDC_SEND 				; send command, CF if error
+	JC	FDC_RECAL_ERR
+	MOV	AL, CL 				; AL = drive number
+	CALL	FDC_SEND 				; send command, CF if error
+	JC	FDC_RECAL_ERR
+	CALL	FDC_WAIT_SENSE 			; wait for WIF, sense and get status
+	JC	FDC_RECAL_ERR
+	OR	FD_CAL_ST, CH 			; mark drive as calibrated
+FDC_RECAL_ERR:
+FDC_RECAL_DONE:
+	POP	CX
+	RET
+;FDC_RECAL_ERR:
+;	MOV	FD_LAST_OP, FDC_ST_ERR_SEEK
+;	JMP	SHORT	FDC_RECAL_DONE
+FDC_RECAL ENDP
+
 INT_13 ENDP
 
 ;
-; 0 BYTES HERE
+; 7 BYTES HERE
 ;
 BYTES_HERE	INT_1E
 
@@ -6739,7 +6747,9 @@ INT_10_8_GFX_SEARCH_CHR:
 ;
 	XOR	DX, DX			; DS = IVT
 	MOV	DS, DX
+			ASSUME DS:_IVT
 	LDS	SI, _INT_1FH		; ES:SI = user charset
+			ASSUME DS:_BDA
 	MOV	DX, DS			; make sure custom table has been vectored
 	TEST	DX, SI			; and not the default of 0000:0000
 	JNZ	INT_10_8_GFX_SEARCH_TBL	; if okay, continue search 
@@ -6900,7 +6910,9 @@ INT_10_9A_MODE_GFX PROC
 	AND	AL, 01111111b		; AL = low 7 bits of CP
 	XOR	DX, DX			; Set DS to IVT to load DS and SI from
 	MOV	DS, DX			; INT 1Fh
+			ASSUME DS:_IVT
 	LDS	SI, _INT_1FH		; use custom font table
+			ASSUME DS:_BDA
 
 INT_10_9A_GFX_2:
 	CBW					; AH = 0
@@ -7516,13 +7528,12 @@ POST_FD_TEST_DRIVE PROC
 	PUSH	AX
 	PUSH	CX
 	PUSH	SI
-	CALL	FDC_MOTOR_ON			; FDC_RECAL does this
-	CALL	FDC_RECAL				; DL = drive
+	CALL	FDC_RECAL				; Motor on, recal, DL = drive
 	JC	FDC_TEST_DRIVE_DONE		; exit if error
 	JWB	FDC_TEST_DRIVE_DONE		; skip seek tests on warm boot (nah)
 	IO_DELAY_LONG				; just because?
 	MOV	SI, OFFSET FDC_TEST_DRIVE_CYL
-	CALL	FDC_MOTOR_ON			; reset motor run count
+	CALL	FDC_MOTOR_ON			; reset motor run count (clobbers CX)
 FDC_TEST_DRIVE_SEEK:
 	LODS	BYTE PTR CS:[SI]
 	TEST	AL, AL				; end of pattern (-1)?
@@ -7662,12 +7673,13 @@ POST_START_COL_2 ENDP
 ;----------------------------------------------------------------------------;
 ; Display right separator in color POST_CLR_TXT
 ;----------------------------------------------------------------------------;
-POST_END_COL PROC
+POST_END_COL PROC NEAR
 	MOV	SI, OFFSET POST_RSEP
-POST_END_COL_STR:
+POST_END_COL_STR PROC NEAR
 	MOV	CX, 2
 	MOV	BX, LOW POST_CLR_TXT
 	JMP	SHORT OUT_SZ_ATTR			; CALL and RET
+POST_END_COL_STR ENDP
 POST_END_COL ENDP
 
 ;----------------------------------------------------------------------------;
@@ -7953,10 +7965,10 @@ PORT_COUNT_LOOP:
 	CALL	SPACE					; separate ports with space
 	LOOP	PORT_COUNT_LOOP
 	MOV	SI, OFFSET POST_RSEP[1]		; skip leading space in right sep.
-	JMP	POST_END_COL_STR			; display end with sep. in SI and RET
+	JMP	NEAR PTR POST_END_COL_STR	; display end with sep. in SI and RET
 PORT_COUNT_NONE:
 	PRINT_SZ	POST_NONE			; display "None"
-	JMP	POST_END_COL			; display end sep and RET
+	JMP	NEAR PTR POST_END_COL		; display end sep and RET
 SHOW_PORT_COUNT ENDP
 
 POST_SYS_CONFIG ENDP
