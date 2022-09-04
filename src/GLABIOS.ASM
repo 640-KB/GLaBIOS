@@ -196,10 +196,10 @@ OPT_ROM_END		EQU	0FE00H	; Option ROM scan ending address
 ;
 VER_NAME		EQU	'GLaBIOS'
 	IFNDEF VER_NUM
-VER_NUM		EQU	'0.1.4'		; (max 6 chars)
+VER_NUM		EQU	'0.1.5'		; (max 6 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'09/01/22' 		; must be MM/DD/YY format
+VER_DATE		EQU	'09/04/22' 		; must be MM/DD/YY format
 	ENDIF
 	IFNDEF COPY_YEAR
 COPY_YEAR		EQU	'2022'		; can be set at build time
@@ -2882,6 +2882,7 @@ STRINGS ENDP
 ;----------------------------------------------------------------------------;
 ; See PFLAGS
 ; Output: BP = 0
+; Size: 28 bytes
 ;----------------------------------------------------------------------------;
 POST_ERROR_MSG PROC
 	SHL	BP, 1
@@ -2902,6 +2903,60 @@ POST_ERROR_MSG_NEXT:
 POST_ERROR_MSG_EXIT:
 	RET
 POST_ERROR_MSG ENDP
+
+;----------------------------------------------------------------------------;
+; Scan, checksum and call BIOS ROMs
+;----------------------------------------------------------------------------;
+; Input:
+;	AX = starting segment
+;	DI = ending segment
+;
+; Note: ROM init's can clobber any or all registers so important to save
+; any that are used here between calls.
+;
+; Clobbers: AX, SI, ES (anything else the ROM might, except for DS and BP)
+; Size: 56 bytes
+;----------------------------------------------------------------------------;
+BIOS_ROM_SCAN PROC
+		ASSUME ES:_BDA
+	PUSH	BP					; some option ROMs may clobber BP
+	PUSH	DS					; call preserve DS
+	MOV	DS, AX 				; DS = starting segment
+CHECK_ROM:
+	MOV	AX, SEG _BDA 			; ES = 0040H (BIOS BDA segment)
+	MOV	ES, AX				; re-set ES for each ROM call
+	PUSH	DS					; save current DS segment
+	XOR	SI, SI 				; reset offset to 0
+	LODSW 					; AX = first word
+	CMP	AX, MAGIC_WORD			; is it an extension ROM? (0AA55H)
+	JNZ	NEXT_ROM 				; if not, check next 2K block
+FOUND_ROM:
+	LODSB						; AL = ROM size in 512B blocks
+	TEST	AL, AL				; is size "reasonable"?
+	JS	NEXT_ROM				; if not, skip
+	CALL	ROM_CHECKSUM 			; checksum ROM at DS:0, size AL
+	JNZ	NEXT_ROM				; if NZ, checksum failed, skip it
+
+;----------------------------------------------------------------------------;
+; Call Option ROM's BIOS init routine
+;
+	PUSH	DI					; save ending segment
+	MOV	DI, OFFSET ROM_INIT_SS		; BDA = temp location for FAR CALL
+	MOV	ES:[DI], SI				; Init vector offset (always 3)
+	MOV	ES:[DI+2], DS			; Init vector segment
+	CALL	DWORD PTR ES:[DI]			; CALL Option ROM init
+	POP	DI					; restore ending segment
+NEXT_ROM:
+	POP	AX					; restore current DS segment
+	ADD	AX, 80H				; next 2k boundary
+	MOV	DS, AX
+	CMP	AX, DI 				; end of extension ROM regions?
+	JB	CHECK_ROM 				; if not, check next
+ROM_SCAN_DONE:
+	POP	DS 					; restore regs
+	POP	BP
+	RET
+BIOS_ROM_SCAN ENDP
 
 ;----------------------------------------------------------------------------;
 ; DETECT_MEMORY - Detect, test and clear RAM
@@ -3035,7 +3090,7 @@ DETECT_MEMORY ENDP
 ;----------------------------------------------------------------------------;
 ; Display Video Type
 ;----------------------------------------------------------------------------;
-; Note: size is 109 bytes
+; Size: 109 bytes
 ;----------------------------------------------------------------------------;
 POST_SYS_VIDEO PROC
 	POST_COL_2	POST_VIDEO, POST_CLR_VAL1	; display "Video" left column
@@ -3109,82 +3164,8 @@ POST_MDA		DB	'MDA', 0
 POST_SYS_VIDEO ENDP
 				ENDIF
 
-;----------------------------------------------------------------------------;
-; Check if AL is alpha char [A-Za-z]
-;----------------------------------------------------------------------------;
-; Input:
-;	AL = char 'A'-'Z' or 'a'-'z'
-; Output:
-;	CF = 0 (NC) if alpha, CF = 1 (CY) if not alpha
-;----------------------------------------------------------------------------;
-IS_ALPHA PROC
-	PUSH	AX
-	OR	AL, 'a'-'A'			; lowercase it for comparison
-	CMP	AL, 'a'			; is less than 'a'?
-	JB	IS_ALPHA_DONE		; CF if not alpha
-	CMP	AL, 'z'+1			; is greater than 'z'?
-	CMC					; CF if not alpha
-IS_ALPHA_DONE:
-	POP	AX
-	RET
-IS_ALPHA ENDP
-
-;----------------------------------------------------------------------------;
-; Locate cursor to column on current line
-;----------------------------------------------------------------------------;
-; Input:
-; - AL = new col
 ;
-; Size: 23 bytes
-;----------------------------------------------------------------------------;
-MOVE_COL PROC
-	PUSH	AX				; must preserve all of these
-	PUSH	BX
-	PUSH	CX
-	PUSH	DX
-	PUSH	AX				; preserve AL on INT 10H call
-	XOR	BH, BH 			; video page 0
-	MOV	AH, 3 			; get cursor position
-	INT	10H 				; DH = row, DL = column
-	POP	AX
-MOVE_COL_SET:
-	MOV	DL, AL			; set new column
-	MOV	AH, 2 			; set cursor position
-	INT	10H 				; row = DH, column = DL
-	POP	DX
-	POP	CX
-	POP	BX
-	POP	AX
-	RET
-MOVE_COL ENDP
-
-;----------------------------------------------------------------------------;
-; Retrieve a parameter value from the DBT by index
-;----------------------------------------------------------------------------;
-; Input: AL = parameter index
-; Output: AL = byte
-;
-; Size: 19 bytes (13h)
-;----------------------------------------------------------------------------;
-INT_1E_PARAM PROC
-	;CMP	AL, 11 				; is valid index? (necessary to check?)
-	;CMC 						; set CF if out of bounds
-	;JC	INT_1E_PARAM_DONE 		; if so, just return
-	PUSH	DS
-	PUSH	BX
-	XOR	BX, BX 				; BX = IVT
-	MOV	DS, BX 				; DS = IVT
-			ASSUME DS:_IVT
-	LDS	BX, _INT_1EH			; set DS:BX to INT_1E
-	XLAT 						; AL = byte
-	POP	BX
-	POP	DS
-INT_1E_PARAM_DONE:
-	RET
-INT_1E_PARAM ENDP
-
-;
-; 7 BYTES HERE
+; 5 BYTES HERE
 ;
 BYTES_HERE	INT_19
 
@@ -3876,6 +3857,35 @@ INT_09_POST_DONE:
 INT_09_POST ENDP
 
 ;----------------------------------------------------------------------------;
+; Locate cursor to column on current line
+;----------------------------------------------------------------------------;
+; Input:
+; - AL = new col
+;
+; Size: 23 bytes
+;----------------------------------------------------------------------------;
+MOVE_COL PROC
+	PUSH	AX				; must preserve all of these
+	PUSH	BX
+	PUSH	CX
+	PUSH	DX
+	PUSH	AX				; preserve AL on INT 10H call
+	XOR	BH, BH 			; video page 0
+	MOV	AH, 3 			; get cursor position
+	INT	10H 				; DH = row, DL = column
+	POP	AX
+MOVE_COL_SET:
+	MOV	DL, AL			; set new column
+	MOV	AH, 2 			; set cursor position
+	INT	10H 				; row = DH, column = DL
+	POP	DX
+	POP	CX
+	POP	BX
+	POP	AX
+	RET
+MOVE_COL ENDP
+
+;----------------------------------------------------------------------------;
 ; Additional INT 9h - Keyboard Code
 ;----------------------------------------------------------------------------;
 
@@ -3962,7 +3972,7 @@ KB_BUF_CLEAR PROC
 KB_BUF_CLEAR ENDP
 
 ;
-; 26 bytes here
+; 3 bytes here
 ;
 BYTES_HERE	INT_09
 
@@ -4633,7 +4643,7 @@ L_KEY_SCAN_TBL EQU $-KEY_SCAN_TBL
 INT_09 ENDP
 
 ;
-; 0 BYTE HERE
+; 0 BYTES HERE
 ;
 BYTES_HERE	INT_13
 
@@ -4752,7 +4762,6 @@ INT_13_DONE:
 ;	- if bit 7 is set, the diskette drive indicated by the lower 7 bits
 ;		will reset then the hard disk will follow; return code in AH is
 ;		for the drive requested (this is done by HD BIOS)
-;
 ;----------------------------------------------------------------------------;
 INT_13_0 PROC
 	MOV	DX, FDC_CTRL			; port 3F2H, FDC Digital Output
@@ -4817,6 +4826,7 @@ INT_13_0_RESET_DONE:
 	JC	INT_13_DONE
 	MOV	AL, 1					; [2] head load time (01H), DMA mode
 	CALL	FDC_SEND_PARAM
+INT_13_0_DONE:
 	JMP	SHORT INT_13_DONE
 INT_13_0 ENDP
 
@@ -4836,7 +4846,7 @@ INT_13_1 PROC
 INT_13_1 ENDP
 
 ;----------------------------------------------------------------------------;
-; INT 13, 2-5: Various FDC commands
+; INT 13, AH=2-5: FDC read/write operations
 ;----------------------------------------------------------------------------;
 ; All commands:
 ;
@@ -4866,40 +4876,54 @@ INT_13_1 ENDP
 ;	- Check if drive is valid? Check if exists in BDA and not a hard drive
 ;----------------------------------------------------------------------------;
 INT_13_2_5 PROC
-	AND	FD_LAST_OP, 0 				; clear last operation
-	CALL	FDC_SEEK 					; Turn on motor, CH = track, DL = drive
-	JC	INT_13_DONE					; exit if seek error
+	AND	FD_LAST_OP, 0 			; clear last operation
+	CALL	FDC_SEEK 				; Turn on motor, CH = track, DL = drive
+	JC	INT_13_DONE				; exit if seek error
 	PUSH	AX
 	PUSH	DX
-	XCHG	AX, DX 					; DL = sectors count
-	MOV	AL, DH					; AL = function number
-	MOV	DH, 01001010B 				; set DMA 8237A write/format mode (AH = 3,5)
-	OR	FD_MOTOR_ST, MASK FWRT			; turn on write flag default
-	TEST	AL, 1B 					; is write or format mode?
-	JNZ	INT_13_2_5_SETUP_DMA			; proceed to setup
-	AND	FD_MOTOR_ST, NOT MASK FWRT		; otherwise read or verify (turn off write flag)
-	MOV	DH, 01000010B				; 8237A verify mode (AH = 4)
-	CMP	AL, 4 					; is verify?
-	JZ	INT_13_2_5_SETUP_DMA			; proceed to setup
-	MOV	DH, 01000110B				; otherwise, set 8237A read mode (AH = 2)
+	XCHG	AX, DX 				; DL = sectors count
+	MOV	AL, DH				; AL = function number
+	MOV	DH, 01001010B 			; set DMA 8237A write/format mode (AH = 3,5)
+	OR	FD_MOTOR_ST, MASK FWRT		; turn on write flag default
+	TEST	AL, 1B 				; is write or format mode?
+	JNZ	INT_13_2_5_SETUP_DMA		; proceed to setup
+	AND	FD_MOTOR_ST, NOT MASK FWRT	; otherwise read or verify (turn off write flag)
+	MOV	DH, 01000010B			; 8237A verify mode (AH = 4)
+	CMP	AL, 4 				; is verify?
+	JZ	INT_13_2_5_SETUP_DMA		; proceed to setup
+	MOV	DH, 01000110B			; otherwise, set 8237A read mode (AH = 2)
 INT_13_2_5_SETUP_DMA:
-	XCHG	AX, DX					; AL = sectors to read, AH = DMA mode
-	CALL	FDC_INIT_DMA 				; set up DMA
-	POP	DX 						; restore drive number DL
-	POP	AX						; restore function number AH
-	JC	INT_13_2_5_ERR
-	CMP	AH, 5 					; is format command?
-	JZ	FDC_CMD_FORMAT 				; jump if so
-	CALL	FDC_RWV					; otherwise read/verify/write
-								;   returns AL = sectors read
-	POP	CX						; discard original AX from INT_13 PROC
-	PUSH	AX						; replace with AL = sectors read
-	JMP	INT_13_DONE
-FDC_CMD_FORMAT:
-	CALL	FDC_FORMAT
-INT_13_2_5_ERR:
-	JMP	INT_13_DONE
-INT_13_2_5 ENDP
+	XCHG	AX, DX				; AL = sectors to read, AH = DMA mode
+	CALL	FDC_INIT_DMA 			; set up DMA
+	POP	DX 					; restore drive number DL
+	POP	AX					; restore function number AH
+	JC	INT_13_0_DONE			; jump if DMA error
+	MOV	AL, 11000101B			; FDC write command
+	CMP	AH, 3 				; is write?
+	JE	FDC_RWVF				; jump if write
+	MOV	AL, 01001101B			; format command w/MFM
+	CMP	AH, 5 				; is format command?
+	JE	FDC_RWVF 				; jump if format
+	MOV	AL, 11100110B 			; FDC read command
+
+;-------------------------------------------------------------------------
+; FDC_RWVF: read, write, format or verify sectors
+;-------------------------------------------------------------------------
+FDC_RWVF:
+	PUSH	AX					; preserve AH function number
+	CALL	FDC_SEND 				; [0] send command in AL, CF if error
+	POP	AX
+	JC	FDC_RWV_ERR
+	MOV	AL, DH				; AL = head
+	XCHG	AX, DX				; AL = drive, AH = head, DL = head, DH = function
+	AND	AX, 103H				;  xxxxx     ; unused
+	SHL	AH, 1					;       h    ; head number (bit 3)
+	SHL	AH, 1					;        dd  ; drive number (bit 1,2)
+	OR	AL, AH 				; [1] head / drive
+	CALL	FDC_SEND 				; send command in AL, CF if error
+	JC	FDC_RWV_ERR
+	CMP	DH, 5					; is format?
+	JE	FDC_FORMAT
 
 ;-------------------------------------------------------------------------
 ; FDC_RWV: read, write or verify sectors
@@ -4915,28 +4939,12 @@ INT_13_2_5 ENDP
 ;
 ; Output:
 ;	AL = number of sectors read, written or verified
-;
-; TODO: de-duplicate with FDC_FORMAT?
 ;-------------------------------------------------------------------------
 FDC_RWV PROC
-	CMP	AH, 3 				; is write?
-	MOV	AL, 11100110B 			; FDC read command
-	JNZ	FDC_RW_START 			; if not, proceed
-	MOV	AL, 11000101B			; FDC write command
-FDC_RW_START:
-	CALL	FDC_SEND 				; [0] send command in AL, CF if error
-	JC	FDC_RWV_ERR
-	MOV	AX, DX 				; AL = drive number, AH/DH = head number
-	AND	AX, 103H				;  xxxxx     ; unused
-	SHL	AH, 1					;       h    ; head number (bit 3)
-	SHL	AH, 1					;        dd  ; drive number (bit 1,2)
-	OR	AL, AH 				; [1] head / drive
-	CALL	FDC_SEND 				; send command in AL, CF if error
-	JC	FDC_RWV_ERR
 	MOV	AL, CH 				; [2] cylinder number
 	CALL	FDC_SEND 				; send command in AL, CF if error
 	JC	FDC_RWV_ERR
-	MOV	AL, DH 				; [3] head number
+	MOV	AL, DL 				; [3] head number
 	CALL	FDC_SEND 				; send command in AL, CF if error
 	JC	FDC_RWV_ERR
 	MOV	AL, CL 				; [4] sector number
@@ -4983,13 +4991,23 @@ FDC_SEC_COUNT PROC
 	INC	AX					; fix INT 13 1-based sector index
 FDC_SEC_COUNT_SAME:
 	SUB	AL, CL				; AL = last_sector - starting_sector
-	RET
-FDC_RWV_ERR:
-	MOV	AL, 0					; on error: sectors xfr'd = 0
-	RET
-FDC_SEC_COUNT ENDP
+FDC_SEC_COUNT ENDP				;   returns AL = sectors read
 
-FDC_RWV ENDP
+FDC_RWV ENDP					; fall through for exit
+
+;----------------------------------------------------------------------------;
+; Done with all disk operations and return AL
+;
+INT_13_2_5_DONE:
+	POP	CX					; discard original AX from INT_13 PROC
+	PUSH	AX					; replace with AL = sectors read
+INT_13_2_5_EXIT:
+	JMP	INT_13_DONE
+
+FDC_RWV_ERR:
+FDC_FORMAT_ERR:
+	MOV	AL, 0					; on error: sectors read = 0
+	JMP	SHORT INT_13_2_5_DONE
 
 ;----------------------------------------------------------------------------;
 ; INT 13, 5: Format Track
@@ -5003,39 +5021,23 @@ FDC_RWV ENDP
 ;	ES:BX = pointer to block of "track address fields" (provided by DOS)
 ;----------------------------------------------------------------------------;
 FDC_FORMAT PROC
-	MOV	AL, 1001101B			; format command w/MFM
-	CALL	FDC_SEND 				; [0] send command in AL, CF if error
-	JC	FDC_FORMAT_ERR
-	XCHG	AX, DX 				; AL = drive number, AH = head number
-	AND	AX, 103H				;  xxxxx    : unused
-	SHL	AH, 1					;       h   ; head number (bit 3)
-	SHL	AH, 1					;        dd ; drive number (bit 1,2)
-	OR	AL, AH 				; [1] head / drive
-	CALL	FDC_SEND 				; send command in AL, CF if error
-	JC	FDC_FORMAT_ERR
 	MOV	AL, 3					; [2] bytes per sector
 	CALL	FDC_SEND_PARAM
-	JC	FDC_FORMAT_ERR 
+	JC	FDC_FORMAT_ERR
 	MOV	AL, 4					; [3] sectors per track
 	CALL	FDC_SEND_PARAM
-	JC	FDC_FORMAT_ERR 
+	JC	FDC_FORMAT_ERR
 	MOV	AL, 7					; [4] gap length
 	CALL	FDC_SEND_PARAM
-	JC	FDC_FORMAT_ERR 
+	JC	FDC_FORMAT_ERR
 	MOV	AL, 8					; [5] fill byte
 	CALL	FDC_SEND_PARAM
-	JC	FDC_FORMAT_ERR 
-							; Fall through to wait for WIF
-							; and get status
+	JC	FDC_FORMAT_ERR
+	CALL	FDC_WAIT_STATUS			; wait for WIF and get status
+	JMP	SHORT INT_13_2_5_EXIT		; (-1 byte for short double jump)
 FDC_FORMAT ENDP
 
-;-------------------------------------------------------------------------
-; FDC_WAIT_STATUS: Wait for WIF and check for error
-;-------------------------------------------------------------------------
-FDC_WAIT_STATUS PROC
-	CALL	FDC_WAIT_INT 			; wait for WIF
-	JMP	FDC_RECV_STATUS			; and read FDC status into BDA
-FDC_WAIT_STATUS ENDP
+INT_13_2_5 ENDP
 
 ;-------------------------------------------------------------------------
 ; FDC_SEEK: Seek to track
@@ -5063,7 +5065,6 @@ FDC_SEEK PROC
 	JC	FDC_SEEK_ERR
 FDC_SEEK_DONE:
 	POP	AX
-FDC_FORMAT_ERR:
 	RET
 FDC_SEEK_ERR:
 	OR	FD_LAST_OP, FDC_ST_ERR_SEEK
@@ -5151,7 +5152,6 @@ FDC_MOTOR_ON ENDP
 ;
 ; Output:
 ;  CF = 0 success, 1 if error DMA exceeds segment
-;
 ;-------------------------------------------------------------------------
 ; Things you must do:
 ;	- Calculate # of bytes to transfer by multiplying AL (sectors) by
@@ -5257,7 +5257,6 @@ FDC_RECV PROC
 	XOR	BX, BX				; flag is 0 if RECV operation
 	MOV	BH, AL				; save byte to send
 	JMP	SHORT FDC_SEND_RECV
-FDC_RECV ENDP
 
 ;----------------------------------------------------------------------------;
 ; FDC_SEND_PARAM: Wait for FDC ready and send a floppy param in AL
@@ -5265,7 +5264,7 @@ FDC_RECV ENDP
 ; Same as below except AL input is INT_1E param index
 ;----------------------------------------------------------------------------;
 FDC_SEND_PARAM PROC
-	CALL	INT_1E_PARAM 		; AL = INT_1E[AL] param
+	CALL	INT_1E_PARAM 			; AL = INT_1E[AL] param
 
 ;----------------------------------------------------------------------------;
 ; FDC_SEND: Wait for FDC ready to receive and send a single command
@@ -5366,39 +5365,52 @@ FDC_WAIT_TIMEOUT:
 
 FDC_SEND ENDP
 FDC_SEND_PARAM ENDP
+FDC_RECV ENDP
 
-;----------------------------------------------------------------------------;
-; FDC_WAIT_INT: Wait for BDA Working Interrupt Flag from FDC
-;----------------------------------------------------------------------------;
-; Input: DS = BDA
-; Output: CF if timeout
-;
-; Size: 41 bytes.
-;----------------------------------------------------------------------------;
-FDC_WAIT_INT PROC
-	STI						; ensure interrupts are on
-	PUSH	AX 					; call preserve regs
-	PUSH	CX
-	MOV	CX, 2 * (1000/55) + 1		; timeout ~2 sec (37 ticks)
-FDC_WAIT_INT_LOOP1:
-	MOV	AX, TIMER_CT_L			; AX = time ticks
-FDC_WAIT_INT_LOOP2:
-	TEST	FD_CAL_ST, MASK FWIF 		; check for WIF in FD_CAL_ST (3EH)
-	JNZ	FDC_WAIT_INT_OK			; if so, exit
-	HLT						; wait for any INT
-	CMP	AX, TIMER_CT_L			; has timer tick changed?
-	JZ	FDC_WAIT_INT_LOOP2		; if not, wait for next INT
-	LOOP	FDC_WAIT_INT_LOOP1		; decrement tick counter and resume loop
-	OR	FD_LAST_OP, FDC_ST_TIMEOUT 	; FDC result set time out, drive not ready
+;-------------------------------------------------------------------------
+; FDC_WAIT_SENSE_ERR: Map FDC Command Status Register 1 to BDA error codes
+;-------------------------------------------------------------------------
+; Input:
+;	AL = Last result from FDC_LAST_ST
+; Output:
+;	CF if error
+;	AH/AL = BDA Floppy drive status
+;-------------------------------------------------------------------------
+FDC_WAIT_SENSE_ERR PROC
+	PUSH	SI
+	TEST	AL, 01000000B			; command terminated abnormally?
+	MOV	AH, FDC_ST_ERR_FDC		; if not, FDC error
+	JZ	FDC_WAIT_SENSE_ERR_DONE
+	MOV	SI, OFFSET FDC_ERR1_MAP
+	MOV	AH, FDC_LAST_ST[1]		; AH = last status byte 1
+FDC_ERR_MAP_LOOP:
+	LODS	BYTE PTR CS:[SI]			; fetch next error
+	SHL	AH, 1					; CF if this status flag
+	JC	FDC_WAIT_SENSE_ERR_DONE		; jump if flag set
+	JNZ	FDC_ERR_MAP_LOOP			; loop until AH = 0
+FDC_WAIT_SENSE_ERR_DONE:
+	MOV	AH, AL				; AH = last result
+	POP	SI
+FDC_WAIT_ERR_EXIT:
+	OR	FD_LAST_OP, AH			; BDA 40:41H
 	STC
-	JMP	SHORT FDC_WAIT_INT_DONE
-FDC_WAIT_INT_OK:
-	AND	FD_CAL_ST, NOT MASK FWIF 	; clear working interrupt flag
-FDC_WAIT_INT_DONE:
-	POP	CX
-	POP	AX
-	RET
-FDC_WAIT_INT ENDP
+	JMP	SHORT FDC_RECV_ALL_DONE
+
+;-------------------------------------------------------------------------
+; Note: Must check from most sig bit to lowest since higher
+; bits are more meaningful.
+;
+FDC_ERR1_MAP LABEL BYTE
+	DB	FDC_ST_ERR_SEC			; 80 end of cylinder
+	DB	FDC_ST_ERR_FDC			; 40 unused (always zero)
+	DB	FDC_ST_ERR_CRC			; 20 data error CRC
+	DB	FDC_ST_DMA_OVR			; 10 over-run
+	DB	FDC_ST_ERR_FDC			; 08 unused (always zero)
+	DB	FDC_ST_ERR_SEC			; 04 Sector Not Found
+	DB	FDC_ST_ERR_WP			; 02 Write Protect
+	DB	FDC_ST_ERR_MARK			; 01 Address mark not found or bad sector
+
+FDC_WAIT_SENSE_ERR ENDP
 
 ;-------------------------------------------------------------------------
 ; FDC_WAIT_SENSE - wait for WIF, Sense Status and check for error
@@ -5470,8 +5482,55 @@ FDC_WAIT_SENSE_EXIT:
 	RET
 FDC_RECV_ALL ENDP
 
+FDC_WAIT_SENSE ENDP
+
+;----------------------------------------------------------------------------;
+; Retrieve a parameter value from the DBT by index
+;----------------------------------------------------------------------------;
+; Input:
+;	AL = parameter index (bounds not checked)
+; Output:
+;	AL = byte
 ;
-; 3 BYTES HERE
+; Size: 15 bytes
+;----------------------------------------------------------------------------;
+INT_1E_PARAM PROC
+	PUSH	DS
+	PUSH	BX
+	XOR	BX, BX 				; BX = IVT
+	MOV	DS, BX 				; DS = IVT
+			ASSUME DS:_IVT
+	LDS	BX, _INT_1EH			; set DS:BX to INT_1E
+	XLAT 						; AL = byte
+	POP	BX
+	POP	DS
+INT_1E_PARAM_DONE:
+	RET
+INT_1E_PARAM ENDP
+
+;----------------------------------------------------------------------------;
+; Check if AL is alpha char [A-Za-z]
+;----------------------------------------------------------------------------;
+; Input:
+;	AL = char 'A'-'Z' or 'a'-'z'
+; Output:
+;	CF = 0 (NC) if alpha, CF = 1 (CY) if not alpha
+; Size: 12 bytes
+;----------------------------------------------------------------------------;
+IS_ALPHA PROC
+	PUSH	AX
+	OR	AL, 'a'-'A'			; lowercase it for comparison
+	CMP	AL, 'a'			; is less than 'a'?
+	JB	IS_ALPHA_DONE		; CF if not alpha
+	CMP	AL, 'z'+1			; is greater than 'z'?
+	CMC					; CF if not alpha
+IS_ALPHA_DONE:
+	POP	AX
+	RET
+IS_ALPHA ENDP
+
+;
+; 0 BYTES HERE
 ;
 BYTES_HERE	INT_0E
 
@@ -5497,50 +5556,43 @@ INT_0E PROC
 INT_0E ENDP
 
 ;-------------------------------------------------------------------------
-; FDC_WAIT_SENSE_ERR: Map FDC Command Status Register 1 to BDA error codes
+; FDC_WAIT_STATUS: Wait for WIF and check for error
 ;-------------------------------------------------------------------------
-; Input:
-;	AL = Last result from FDC_LAST_ST
-; Output:
-;	CF if error
-;	AH/AL = BDA Floppy drive status
-;-------------------------------------------------------------------------
-FDC_WAIT_SENSE_ERR PROC
-	PUSH	SI
-	TEST	AL, 01000000B			; command terminated abnormally?
-	MOV	AH, FDC_ST_ERR_FDC		; if not, FDC error
-	JZ	FDC_WAIT_SENSE_ERR_DONE
-	MOV	SI, OFFSET FDC_ERR1_MAP
-	MOV	AH, FDC_LAST_ST[1]		; AH = last status byte 1
-FDC_ERR_MAP_LOOP:
-	LODS	BYTE PTR CS:[SI]			; fetch next error
-	SHL	AH, 1					; CF if this status flag
-	JC	FDC_WAIT_SENSE_ERR_DONE		; jump if flag set
-	JNZ	FDC_ERR_MAP_LOOP			; loop until AH = 0
-FDC_WAIT_SENSE_ERR_DONE:
-	MOV	AH, AL				; AH = last result
-	POP	SI
-FDC_WAIT_ERR_EXIT:
-	OR	FD_LAST_OP, AH			; BDA 40:41H
+FDC_WAIT_STATUS PROC
+	CALL	FDC_WAIT_INT 			; wait for WIF
+	JMP	SHORT FDC_RECV_STATUS			; and read FDC status into BDA
+FDC_WAIT_STATUS ENDP
+
+;----------------------------------------------------------------------------;
+; FDC_WAIT_INT: Wait for BDA Working Interrupt Flag from FDC
+;----------------------------------------------------------------------------;
+; Input: DS = BDA
+; Output: CF if timeout
+;----------------------------------------------------------------------------;
+FDC_WAIT_INT PROC
+	STI						; ensure interrupts are on
+	PUSH	AX 					; call preserve regs
+	PUSH	CX
+	MOV	CX, 2 * (1000/55) + 1		; timeout ~2 sec (37 ticks)
+FDC_WAIT_INT_LOOP1:
+	MOV	AX, TIMER_CT_L			; AX = time ticks
+FDC_WAIT_INT_LOOP2:
+	TEST	FD_CAL_ST, MASK FWIF 		; check for WIF in FD_CAL_ST (3EH)
+	JNZ	FDC_WAIT_INT_OK			; if so, exit
+	HLT						; wait for any INT
+	CMP	AX, TIMER_CT_L			; has timer tick changed?
+	JZ	FDC_WAIT_INT_LOOP2		; if not, wait for next INT
+	LOOP	FDC_WAIT_INT_LOOP1		; decrement tick counter and resume loop
+	OR	FD_LAST_OP, FDC_ST_TIMEOUT 	; FDC result set time out, drive not ready
 	STC
-	JMP	SHORT FDC_RECV_ALL_DONE
-
-;-------------------------------------------------------------------------
-; Note: Must check from most sig bit to lowest since higher
-; bits are more meaningful.
-;
-FDC_ERR1_MAP LABEL BYTE
-	DB	FDC_ST_ERR_SEC			; 80 end of cylinder
-	DB	FDC_ST_ERR_FDC			; 40 unused (always zero)
-	DB	FDC_ST_ERR_CRC			; 20 data error CRC
-	DB	FDC_ST_DMA_OVR			; 10 over-run
-	DB	FDC_ST_ERR_FDC			; 08 unused (always zero)
-	DB	FDC_ST_ERR_SEC			; 04 Sector Not Found
-	DB	FDC_ST_ERR_WP			; 02 Write Protect
-	DB	FDC_ST_ERR_MARK			; 01 Address mark not found or bad sector
-
-FDC_WAIT_SENSE_ERR ENDP
-FDC_WAIT_SENSE ENDP
+	JMP	SHORT FDC_WAIT_INT_DONE
+FDC_WAIT_INT_OK:
+	AND	FD_CAL_ST, NOT MASK FWIF 	; clear working interrupt flag
+FDC_WAIT_INT_DONE:
+	POP	CX
+	POP	AX
+	RET
+FDC_WAIT_INT ENDP
 
 ;-------------------------------------------------------------------------
 ; FDC_RECAL: recalibrate drive, if necessary
@@ -5551,7 +5603,6 @@ FDC_WAIT_SENSE ENDP
 ;	CF if error
 ;
 ; AX clobbered
-; Size: 43 bytes
 ;-------------------------------------------------------------------------
 FDC_RECAL PROC
 	PUSH	CX
@@ -5576,15 +5627,12 @@ FDC_RECAL_ERR:
 FDC_RECAL_DONE:
 	POP	CX
 	RET
-;FDC_RECAL_ERR:
-;	MOV	FD_LAST_OP, FDC_ST_ERR_SEEK
-;	JMP	SHORT	FDC_RECAL_DONE
 FDC_RECAL ENDP
 
 INT_13 ENDP
 
 ;
-; 7 BYTES HERE
+; 1 BYTE HERE
 ;
 BYTES_HERE	INT_1E
 
@@ -7523,6 +7571,7 @@ INT_10 ENDP
 ;	DL = drive # to test (0 = A:, 1 = B:)
 ; Output:
 ;	CF if error
+; Size: 49 bytes
 ;-------------------------------------------------------------------------
 POST_FD_TEST_DRIVE PROC
 	PUSH	AX
@@ -7530,7 +7579,7 @@ POST_FD_TEST_DRIVE PROC
 	PUSH	SI
 	CALL	FDC_RECAL				; Motor on, recal, DL = drive
 	JC	FDC_TEST_DRIVE_DONE		; exit if error
-	JWB	FDC_TEST_DRIVE_DONE		; skip seek tests on warm boot (nah)
+	JWB	FDC_TEST_DRIVE_DONE		; skip seek tests on warm boot
 	IO_DELAY_LONG				; just because?
 	MOV	SI, OFFSET FDC_TEST_DRIVE_CYL
 	CALL	FDC_MOTOR_ON			; reset motor run count (clobbers CX)
@@ -7554,59 +7603,6 @@ FDC_TEST_DRIVE_DONE:
 FDC_TEST_DRIVE_CYL	DB	0, 38, 2, 20, 0, -1	; tracks (-1 is end)
 
 POST_FD_TEST_DRIVE ENDP
-
-;----------------------------------------------------------------------------;
-; Scan, checksum and call BIOS ROMs
-;----------------------------------------------------------------------------;
-; Input:
-;	AX = starting segment
-;	DI = ending segment
-;
-; Note: ROM init's can clobber any or all registers so important to save
-; any that are used here between calls.
-;
-; Clobbers: AX, SI, ES (anything else the ROM might, except for DS and BP)
-;----------------------------------------------------------------------------;
-BIOS_ROM_SCAN PROC
-		ASSUME ES:_BDA, DS:NOTHING
-	PUSH	BP					; some option ROMs may clobber BP
-	PUSH	DS					; call preserve DS
-	MOV	DS, AX 				; DS = starting segment
-CHECK_ROM:
-	MOV	AX, SEG _BDA 			; ES = 0040H (BIOS BDA segment)
-	MOV	ES, AX				; re-set ES for each ROM call
-	PUSH	DS					; save current DS segment
-	XOR	SI, SI 				; reset offset to 0
-	LODSW 					; AX = first word
-	CMP	AX, MAGIC_WORD			; is it an extension ROM? (0AA55H)
-	JNZ	NEXT_ROM 				; if not, check next 2K block
-FOUND_ROM:
-	LODSB						; AL = ROM size in 512B blocks
-	TEST	AL, AL				; is size "reasonable"?
-	JS	NEXT_ROM				; if not, skip
-	CALL	ROM_CHECKSUM 			; checksum ROM at DS:0, size AL
-	JNZ	NEXT_ROM				; if NZ, checksum failed, skip it
-
-;----------------------------------------------------------------------------;
-; Call Option ROM's BIOS init routine
-;
-	PUSH	DI					; save ending segment
-	MOV	DI, OFFSET ROM_INIT_SS		; BDA = temp location for FAR CALL
-	MOV	ES:[DI], SI				; Init vector offset (always 3)
-	MOV	ES:[DI+2], DS			; Init vector segment
-	CALL	DWORD PTR ES:[DI]			; CALL Option ROM init
-	POP	DI					; restore ending segment
-NEXT_ROM:
-	POP	AX					; restore current DS segment
-	ADD	AX, 80H				; next 2k boundary
-	MOV	DS, AX
-	CMP	AX, DI 				; end of extension ROM regions?
-	JB	CHECK_ROM 				; if not, check next
-ROM_SCAN_DONE:
-	POP	DS 					; restore regs
-	POP	BP
-	RET
-BIOS_ROM_SCAN ENDP
 
 POST_COL PROC
 ;----------------------------------------------------------------------------;
@@ -7728,7 +7724,6 @@ OUT_SZ_LOOP:
 OUT_SZ_DONE:
 	POP	AX
 	RET
-OUT_SZ ENDP
 
 ;----------------------------------------------------------------------------;
 ; Write a zero-terminated string to console with attributes, no cursor move
@@ -7745,6 +7740,8 @@ OUT_SZ_ATTR PROC
 	POP	AX
 	JMP	SHORT OUT_SZ
 OUT_SZ_ATTR ENDP
+
+OUT_SZ ENDP
 
 ;----------------------------------------------------------------------------;
 ; Walking Bit/March I/O port register test
@@ -7806,7 +7803,7 @@ WB_TEST_DONE:
 WB_TEST ENDP
 
 ;
-; 146 bytes here
+; 205 bytes here
 ;
 BYTES_HERE	INT_12
 
@@ -7899,6 +7896,7 @@ POST_UI PROC
 ;	DS = BDA (0040)
 ;
 ; Clobs AX, BX, CX, SI
+; Size: 133 bytes
 ;----------------------------------------------------------------------------;
 POST_SYS_CONFIG PROC
 		ASSUME DS:_BDA
@@ -8053,6 +8051,7 @@ POST_UI ENDP
 ;	AL = wait in 125 ms increments
 ;
 ; AX clobbered
+; Size: 53 bytes
 ;----------------------------------------------------------------------------;
 IO_WAIT_MS_125 PROC
 	MOV	AH, 125
@@ -8077,8 +8076,6 @@ IO_WAIT_MS_125 PROC
 ; https://stanislavs.org/helppc/8253.html
 ;----------------------------------------------------------------------------;
 IO_DELAY_MS PROC
-	;TEST	AX, AX			; if AX = 0, just exit
-	;JZ	IO_WAIT_MS_DONE		; (unnecessary use of bytes)
 	PUSH	BX
 	PUSH	CX
 	PUSH	DX
@@ -8168,6 +8165,7 @@ BEEP ENDP
 
 ;----------------------------------------------------------------------------;
 ; Two very short beeps
+; Size: 27 bytes
 ;----------------------------------------------------------------------------;
 MEEPMEEP PROC
 	CALL MEEP
@@ -8199,7 +8197,8 @@ MEEPMEEP ENDP
 ;
 ; Note: must use LOOP for beep since BEEP could occur if PIT is not working
 ; Note 2: cannot use stack since HALT_BEEP could occur before stack
-; Note 3: this is 68 bytes. Can golf down?
+;
+; Size: 68 bytes
 ;----------------------------------------------------------------------------;
 HALT_BEEP PROC NEAR
 	MOV	DX, CS 				; SS to CS
@@ -8324,6 +8323,7 @@ MDA_COLOR_FIX ENDP
 ; Hide cursor display
 ;----------------------------------------------------------------------------;
 ; Clobbers CX
+; Size: 16 bytes
 ;----------------------------------------------------------------------------;
 HIDE_CURSOR PROC
 	MOV	CX, 2000H			; hide cursor
