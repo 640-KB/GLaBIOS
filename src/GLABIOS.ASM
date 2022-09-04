@@ -9004,7 +9004,7 @@ _BIOS		ENDS
 ;-------------------------------------------------------------------------
 ; Fixed BIOS Entry Points
 ;-------------------------------------------------------------------------
-; The fixed entry points in F000:xxxx must be supported for traditional 
+; The fixed entry points in F000:xxxx must be supported for compatibility
 ; reasons. The table below lists the fixed BIOS entry points.
 ;
 ;  X = complete
