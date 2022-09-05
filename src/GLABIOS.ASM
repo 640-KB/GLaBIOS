@@ -1939,7 +1939,7 @@ PIC_VECT_TMP_LOOP:
 	LOOP	PIC_VECT_TMP_LOOP
 
 ;----------------------------------------------------------------------------;
-; - Disable all interrupts and ensure none are received
+; - Mask all interrupts and ensure none are received
 ;
 	MOV	DI, OFFSET INT_LAST_ABS
 	MOV	[DI], DH			; clear last interrupt flag
@@ -1947,7 +1947,7 @@ PIC_VECT_TMP_LOOP:
 	IO_DELAY				; wait for it...
 	CLI
 	INC	BX				; beep error 5 short, 3 long (out of bytes!)
-	TEST	[DI], AL			; did any interrupts happen?
+	OR	[DI], AL			; did any interrupts happen?
 
 			IF POST_TEST_PIC_REG EQ 1
 	JNZ	PIC_INT_FAIL
