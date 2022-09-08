@@ -8,7 +8,7 @@ Copyright &copy; 2022, [640KB](mailto:640kb@glabios.org) and contributors.
 
 [Download Ver 0.1.5 ROMs](https://github.com/640-KB/GLaBIOS/releases)
 
-[Source Code](src/)
+[Source Code](https://github.com/640-KB/GLaBIOS/tree/main/src)
 
 ## License
 
@@ -52,7 +52,7 @@ There are several other excellent BIOS projects out there each with it's own des
 
 ### Where is the source code?
 
-[Right here](src)
+[Right here](https://github.com/640-KB/GLaBIOS/tree/main/src)
 
 ### Screenshots
 
