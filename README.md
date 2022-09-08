@@ -8,7 +8,7 @@ Copyright &copy; 2022, [640KB](mailto:640kb@glabios.org) and contributors.
 
 [Download Ver 0.1.5 ROMs](https://github.com/640-KB/GLaBIOS/releases)
 
-[Source Code](src)
+[Source Code](src/)
 
 ## License
 
