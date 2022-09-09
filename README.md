@@ -64,9 +64,13 @@ EGA with V20:
 
 ![Screenshot VGA 07-29-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.11_ega_1.png)
 
-CGA:
+CGA with 736K memory:
 
-![Screenshot CGA 07-29-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.11_cga_2.png)
+![Screenshot CGA 09-08-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.1.5_cga_mem_1.png)
+
+Bad RAM detected! Use standard [address and bit indicator](http://minuszerodegrees.net/5160/ram/5160_ram_201_error_breakdown.jpg) to locate failed IC:
+
+![Screenshot CGA 09-08-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.1.5_cga_memtst_1.png)
 
 MDA with example POST error:
 
