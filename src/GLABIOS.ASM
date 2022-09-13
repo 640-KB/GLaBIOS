@@ -52,12 +52,7 @@
 ;  Dave Nault, my partner-in-crime for 2 semesters of assembly language programming
 ;  classes in college back in the day. Wherever you are buddy, thanks!
 ;
-;----------------------------------------------------------------------------;
-; TODO:
-;
-; Item					Complete	TODO/Notes
-; - Turbo mode 					  	Test with higher (> 8MHz) speeds?
-; - CGA smooth scrolling				Looking for help on this one
+;  @MadMaxx12345 and @Makefile - testing, QC and ideas.
 ;
 ;----------------------------------------------------------------------------;
 ; BUILD NOTES:
@@ -124,6 +119,12 @@ CPU_V20		EQU	'V'			; V20 only
 BOOT_TURBO		EQU	'T'
 BOOT_NORMAL		EQU	'N'
 
+;
+; Turbo Switch Type
+;
+TURBO_STD		EQU	1			; standard PPI B, 04h
+TURBO_REV		EQU	2			; reversed PPI B, 04h
+TURBO_90H		EQU	3			; ST-xx/UNIQUE Port 90h
 
 ;----------------------------------------------------------------------------;
 ; BEGIN Configurable Build Options
@@ -148,14 +149,28 @@ CPU_TYPE		EQU	CPU_8088		; CPU_8088 or CPU_V20
 	ENDIF
 
 ;----------------------------------------------------------------------------;
+; Turbo Type
+;
+; Some motherboards boot in Normal mode by default and the BIOS may or may not
+; switch to Turbo speed on boot. Other motherboards invert this behavior where
+; it appears reversed to the BIOS. Use these options to customize for your
+; motheboard.
+;
+	IFNDEF TURBO_TYPE
+;TURBO_TYPE		=	TURBO_STD	; standard PPI 61h (1=turbo, 0=normal)
+TURBO_TYPE		=	TURBO_REV	; reversed PPI 61h (1=normal, 0=turbo)
+;TURBO_TYPE		=	TURBO_90H	; ST-xx/UNIQUE Port 90h
+	ENDIF
+
+;----------------------------------------------------------------------------;
 ; Additional Build-time Support
 ;
-BASIC_ROM		EQU	1			; BASIC ROM support at 0F600h
+BASIC_ROM		=	1		; BASIC ROM support at 0F600h
 
 ;----------------------------------------------------------------------------;
 ; CGA Snow Removal Method
 ;
-CGA_SNOW_REMOVE	EQU	3		; 0: Snow, Normal Flashing, Fastest
+CGA_SNOW_REMOVE	=	3		; 0: Snow, Normal Flashing, Fastest
 						; 1: Less Snow, Some Flashing, Medium Fast
 						; 2: No Snow, Moderate Flashing, Fast
 						; 3: No Snow, More Flashing, Quite Fast
@@ -163,28 +178,30 @@ CGA_SNOW_REMOVE	EQU	3		; 0: Snow, Normal Flashing, Fastest
 ;----------------------------------------------------------------------------;
 ; Personality Traits
 ;
-POST_GLADOS		EQU	0		; say "Starting GLaDOS..." on boot
-POST_CLS		EQU	0		; clear screen after POST
-POST_SHOW_VER	EQU	3		; display Version verbosity (0-3)
-POST_VIDEO_TYPE	EQU	1		; display Video adapter type
+POST_GLADOS		=	0		; say "Starting GLaDOS..." on boot
+POST_CLS		=	0		; clear screen after POST
+POST_SHOW_VER	=	3		; display version verbosity (0-3)
+POST_VIDEO_TYPE	=	1		; display video adapter type
 
 ;----------------------------------------------------------------------------;
 ; Enable/Disable POST tests - Not all tests can be enabled due to 8K ROM space
 ;
-POST_TEST_INST	EQU	0		; POST CPU Instruction Test
-POST_TEST_DMA	EQU	1		; POST DMA Register Test
-POST_TEST_PIT_1	EQU	1		; POST Timer Channel 1 Test
-POST_TEST_PIC_REG	EQU	1		; POST PIC Register Test
-POST_TEST_PIC_INT	EQU	1		; POST PIC Interrupt Test
-POST_TEST_CHK_ROM	EQU	1		; POST Checksum ROM
+POST_TEST_INST	=	0		; POST CPU Instruction Test
+POST_TEST_DMA	=	1		; POST DMA Register Test
+POST_TEST_PIT_1	=	1		; POST Timer Channel 1 Test
+POST_TEST_PIC_REG	=	1		; POST PIC Register Test
+POST_TEST_PIC_INT	=	1		; POST PIC Interrupt Test
+POST_TEST_CHK_ROM	=	1		; POST Checksum ROM
 
 ;----------------------------------------------------------------------------;
 ; Advanced Options (may void your warranty)
 ;
-MAX_RAM 		EQU	640		; Max detectable RAM (in KB)
-DRAM_REFRESH	EQU	1		; 1: Use standard DMA DRAM refresh
+MAX_RAM 		=	640		; Max detectable RAM (in KB)
+DRAM_REFRESH	=	1		; 1: Use standard DMA DRAM refresh
 						; 0: Disable refresh (use only with SRAM!)
-OPT_ROM_END		EQU	0FE00H	; Option ROM scan ending address
+OPT_ROM_END		=	0FE00H	; Option ROM scan ending address
+FDC_HTL_WAIT	=	1		; Halt CPU during FD access
+
 
 ;----------------------------------------------------------------------------;
 ; END Configurable Build Options
@@ -196,10 +213,10 @@ OPT_ROM_END		EQU	0FE00H	; Option ROM scan ending address
 ;
 VER_NAME		EQU	'GLaBIOS'
 	IFNDEF VER_NUM
-VER_NUM		EQU	'0.1.5'		; (max 6 chars)
+VER_NUM		EQU	'0.1.6'		; (max 6 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'09/04/22' 		; must be MM/DD/YY format
+VER_DATE		EQU	'09/13/22' 		; must be MM/DD/YY format
 	ENDIF
 	IFNDEF COPY_YEAR
 COPY_YEAR		EQU	'2022'		; can be set at build time
@@ -215,6 +232,14 @@ VER_BLD		EQU	'0000'
 BOOT_SPEED		EQU	BOOT_TURBO
 	ELSE
 BOOT_SPEED		EQU	BOOT_NORMAL
+	ENDIF
+
+;----------------------------------------------------------------------------;
+; Configuration for ST-xx/90h boards
+;
+	IF TURBO_TYPE EQ TURBO_90H
+BASIC_ROM		= 	0			; remove for space reasons
+FDC_HTL_WAIT	=	0			; seems to cause issues on ST-xx
 	ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -288,6 +313,9 @@ PPI_CW		EQU	63H			; PPI (8255) Port Control Word
 
 ; POST TEST card I/O
 POST_CARD_PORT	EQU	80H			; can be 60H, 80H, 300H, 313H
+
+; 90H ST/UNIQUE Turbo Control
+TURBO_CTRL_90H	EQU	90H			; Write 2 for Turbo, 3 for Normal
 
 ; NMI flip/flop
 NMI_R0		EQU	0A0H			; CPU NMI Register
@@ -739,13 +767,35 @@ VID_STAT RECORD	VSX:4,VSVS:1,VSPE:1,VSPT:1,VSHS:1
 ;   5     |			- PBIO	0=enable i/o check, 1=disable
 ;    4    |			- PBPC	0=enable memory parity check, 1=disable
 ;     3   |			- PBSW	0=read SW1-4, 1=read SW-5-8
-;      2  |			- PBTB	0=turbo
+;      2  |			- PBTB	0=turbo, 1=normal
 ;       1 |			- PBSP	0=turn off speaker, 1=turn on
 ;        0|			- PBST	0=turn off timer 2, 1=turn on 
 PPI_B_F RECORD	PBKB:1,PBKC:1,PBIO:1,PBPC:1,PBSW:1,PBTB:1,PBSP:1,PBST:1
 
-; Default Power-On - KB hold low+disable, NMI on, spkr data off, turbo off
-PPI_B_BOOT	=	MASK PBKB OR MASK PBIO OR MASK PBSW OR MASK PBST
+;----------------------------------------------------------------------------;
+; Set up boot mode (PPI_B_BOOT) for PPI Channel B
+;----------------------------------------------------------------------------;
+
+			IF BOOT_SPEED EQ BOOT_TURBO
+;----------------------------------------------------------------------------;
+; Default Power-On: KB hold low+disable, NMI on, spkr data off, turbo OFF
+;
+PPI_B_BOOT	= MASK PBKB OR MASK PBIO OR MASK PBSW OR MASK PBST
+
+			ELSE
+;----------------------------------------------------------------------------;
+; Default Power-On: KB hold low+disable, NMI on, spkr data off, turbo ON
+;
+PPI_B_BOOT	= MASK PBKB OR MASK PBIO OR MASK PBSW OR MASK PBST OR MASK PBTB
+
+			ENDIF
+
+			IF TURBO_TYPE EQ TURBO_REV
+;----------------------------------------------------------------------------;
+; Reverse Turbo states
+;
+PPI_B_BOOT	= PPI_B_BOOT XOR MASK PBTB
+			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; 8255 PPI Channel C Flags (5160)
@@ -1609,19 +1659,24 @@ RESET_PPI:
 	MOV	AL, 10011001B 		; set 8255 A,C to INPUT, B to OUTPUT
 	OUT	PPI_CW, AL 			; send to PPI control port
 
-			IF BOOT_SPEED EQ BOOT_TURBO
 ;----------------------------------------------------------------------------;
-; Setup PPI port B: KB hold low+disable, NMI on, spkr data off, turbo ON
+; Set up PPI port B
 ;
-	MOV	AL, MASK PBKB OR MASK PBIO OR MASK PBSW OR MASK PBTB
-			ELSE
-;----------------------------------------------------------------------------;
-; Setup PPI port B: KB hold low+disable, NMI on, spkr data off, turbo OFF
-;
-	MOV	AL, MASK PBKB OR MASK PBIO OR MASK PBSW OR MASK PBST
-			ENDIF
-
+	MOV	AL, PPI_B_BOOT		; KB hold low+disable, NMI on, spkr off
 	OUT	PPI_B, AL			; send to 8255 Port B
+
+			IF TURBO_TYPE EQ TURBO_90H
+;----------------------------------------------------------------------------;
+; Set up Turbo mode for ST-xx
+;
+	IN	AL, TURBO_CTRL_90H	; read current register
+			IF BOOT_SPEED EQ BOOT_TURBO
+	MOV	AL, 0010B
+			ELSE
+	MOV	AL, 0011B
+			ENDIF
+	OUT	TURBO_CTRL_90H, AL	; write new register
+			ENDIF
 
 			IF POST_TEST_CHK_ROM EQ 1
 ;----------------------------------------------------------------------------;
@@ -2270,9 +2325,8 @@ HELLO_WORLD:
 ;----------------------------------------------------------------------------;
 ; Toggle Turbo mode on/off
 ;----------------------------------------------------------------------------;
-; Note: some references state that flipping both bit 2 and 3 (0CH) are
-; required, and some only bit 2 (04H). Flipping both seems to do no harm so
-; that's what's going on here.
+; Note: some references state that flipping both bit 2 and 3 (0Ch) are
+; required, and some only bit 2 (04h). Flipping only bit 2 seems to work fine.
 ;
 ; Size: 25 bytes
 ;
@@ -2283,17 +2337,43 @@ HELLO_WORLD:
 TOGGLE_TURBO PROC
 			ASSUME DS:_BDA
 	CLI						; interrupts off
+
+			IF TURBO_TYPE EQ TURBO_90H
+;----------------------------------------------------------------------------;
+; ST-xx Port 90h Turbo switch
+; If port 90 == 1, send 2 (0010b) Normal -> Turbo
+; If port 90 == 0, send 3 (0011b) Turbo -> Normal
+;
+	IN	AL, TURBO_CTRL_90H		; read current state
+	CMP	AL, 0001b				; is 1 or 0?
+	JA	TOGGLE_TURBO_DONE			; exit if register not valid
+	OR	AL, 0010b				; add "set" bit
+	XOR	AL, 0001b				; flip 2 <=> 3
+	OUT	TURBO_CTRL_90H, AL		; write to board
+
+			ELSE
+;----------------------------------------------------------------------------;
+; Standard PPI B Turbo switch
+;
 	IN	AL, PPI_B				; read PPI
-	XOR	AL, 00001100B 			; flip turbo bit(s)?
+	XOR	AL, MASK PBTB			; flip turbo bit
 	OUT	PPI_B, AL
+			ENDIF
+
 	MOV	CX, CURSOR_DEFAULT		; original power-on cursor
-	TEST	AL, 00001100B			; turbo bits set?
+			IF TURBO_TYPE EQ TURBO_90H
+	CMP	AL, 0011b				; turbo on?
+			ELSE
+	TEST	AL, MASK PBTB			; turbo bit set?
+			ENDIF
 	JNZ	TOGGLE_TURBO_CURSOR		; Jump if turbo, use original cursor
 	XOR	CH, CH 				; starting scan line 0 ("big cursor")
 TOGGLE_TURBO_CURSOR:
 	MOV	AH, 1					; Video set cursor
-	STI						; Enable interrupts
 	INT	10H
+
+TOGGLE_TURBO_DONE:
+	STI						; Enable interrupts
 	RET
 TOGGLE_TURBO ENDP
 			ENDIF
@@ -2467,6 +2547,12 @@ KB_CLEAR:
 	XCHG	AX, DI				; save AX
 	MOV	AX, 30				; I/O delay for at least 20ms
 	CALL	IO_DELAY_MS
+
+	IN	AL, INT_P1 				; get PIC Port 1 INT mask
+	XCHG	AX, SI 				; SI = save previous INT mask
+	MOV	AL, 11111101B 			; enable only keyboard interrupt
+	OUT	INT_P1, AL
+
 	XCHG	AX, DI				; restore AX
 	OR	AL, 11000000B 			; keyboard clock hold LOW and clear HIGH
 	OUT	DX, AL				; send to PPI port B
@@ -2475,10 +2561,6 @@ KB_CLEAR:
 ;----------------------------------------------------------------------------;
 ; Unmask KB interrupt and keyboard reset
 ;
-	IN	AL, INT_P1 				; get PIC Port 1 INT mask
-	XCHG	AX, DI 				; DI = save previous INT mask
-	MOV	AL, 11111101B 			; enable only keyboard interrupt
-	OUT	INT_P1, AL
 	MOV	AL, BL				; restore original flags
 	OR	AL, 01000000B			; keyboard clear LOW (enable KB)
 	OUT	DX, AL				; send to PPI port B
@@ -2494,7 +2576,7 @@ KB_RESET_TEST:
 	NOP 						; give a little more time
 	NOP 						;  and a little more time still
 	POST_FLAG_TEST PKI			; KB test flag yet?
-	LOOPZ KB_RESET_TEST			; Loop until KB flag OR CX (timeout) is 0
+	LOOPZ KB_RESET_TEST			; Loop until KB flag OR CX is 0 (timeout)
 	CLI 						; disable interrupts again
 	POST_FLAG_FLIP PKI			; invert PKI flag: 1 = error, 0 = success
 
@@ -2524,7 +2606,7 @@ KB_HAPPY:
 	OR	AL, 11000000B 			; keyboard clock hold off and clear HIGH
 	OUT	DX, AL				; send to PPI port B
 
-	XCHG	AX, DI 				; restore interrupt mask register
+	XCHG	AX, SI 				; restore interrupt mask register
 	OUT	INT_P1, AL
 
 ;----------------------------------------------------------------------------;
@@ -2804,7 +2886,11 @@ NL_Z			DB	CR,LF,0				; one NL, null term'd
 BOOT_FAIL		DB	'Disk Boot Fail. You monster.'
 NL2_ANY_KEY		DB	LF
 NL_ANY_KEY		DB	CR,LF
-ANY_KEY		DB	'Press the Any Key', 0
+ANY_KEY		DB	'Press the Any Key.'
+				IF ARCH_TYPE NE ARCH_5150	; omit for space reasons
+			DB	'..'
+				ENDIF
+			DB	 0
 
 BANNER_STRINGS ENDP
 
@@ -2981,19 +3067,20 @@ DETECT_MEMORY PROC
 	MOV	CL, 4					; shift counter
 	SHR	AX, CL				; Number of 16KB RAM blocks
 	XCHG	AX, CX				; CX = 16KB RAM blocks
+	DEC	CX					;  after first 16K block
 			ELSE
-	MOV	CX, MAX_RAM SHR 4			; Max number of 16KB RAM blocks
+	MOV	CX, (MAX_RAM SHR 4) - 1		; Max number of 16KB RAM blocks
+							; (ex: 640K / 16K = 40)
 			ENDIF
-
-	XOR	AX, AX				;  (640K / 16K = 40)
-	MOV	ES, AX				; ES = seg 0000H
-	MOV	AX, RAM_TEST			; Test pattern to read/write
+	MOV	DX, 400H				; Start at second 16KB block
+	MOV	ES, DX				; ES = seg 0400H
 BLOCK_LOOP:
-	MOV	DX, ES
-	ADD	DH, 4					; add 400H paras (4000H WORDs)
-	MOV	ES, DX
 	CALL	MEM_ADDR_TEST			; address test on 16KB RAM block at ES
-	LOOPZ	BLOCK_LOOP				; loop until MAX_RAM or test failed
+	JNZ	BLOCK_LOOP_DONE			; exit loop if test failed
+	ADD	DH, 4					; add 400h paras (4000h bytes)
+	MOV	ES, DX
+	LOOP	BLOCK_LOOP				; loop until MAX_RAM
+BLOCK_LOOP_DONE:
 
 ;----------------------------------------------------------------------------;
 ; Test and clear RAM, show memory count
@@ -3004,7 +3091,7 @@ BLOCK_LOOP:
 ;
 			IF CPU_TYPE	EQ CPU_V20
 	SHR	DX, 6					; V20: shift right 6 times to get K
-			ELSE	
+			ELSE
 	MOV	CL, 6					; 8088: shift right 6 times to get K
 	SHR	DX, CL
 			ENDIF
@@ -3019,7 +3106,7 @@ ZERO_ALL_RAM:
 	ADD	AX, 0400H				; move to next segment/block
 	CMP	AX, DX				; is last segment of RAM?
 	JNB	DONE_ZERO_ALL_RAM			; exit if end
-	MOV	ES, AX				; ES = last segment test
+	MOV	ES, AX				; ES = last segment tested
 	JWB	ZERO_ALL_START			; skip long tests on warm boot
 
 ;----------------------------------------------------------------------------;
@@ -3165,7 +3252,7 @@ POST_SYS_VIDEO ENDP
 				ENDIF
 
 ;
-; 5 BYTES HERE
+; 0 BYTES HERE
 ;
 BYTES_HERE	INT_19
 
@@ -3677,7 +3764,7 @@ INT_16 ENDP
 ;	ZF if okay, NZ if fail
 ;	BX = offset of failed byte/line, DI
 ;
-; Clobbers AX
+; Clobbers AL
 ;
 ; Inspired by:
 ; http://www.ganssle.com/testingram.htm
@@ -3691,15 +3778,15 @@ MEM_ADDR_TEST PROC
 MEM_ADDR_LOOP:
 	MOV	ES:[BX], AL				; write to base address
 	NOT	AL					; invert value
-	MOV	ES:[BX][DI], AL			; write inverted value
+	MOV	ES:[DI], AL				; write inverted value
 	NOT	AL					; revert value
 	CMP	ES:[BX], AL				; is base value the same?
 	JNZ	MEM_ADDR_ERR			; jump if not
 	NOT	AL					; invert value again
-	CMP	ES:[BX][DI], AL			; is second value the same?
+	CMP	ES:[DI], AL				; is second value the same?
 	JNZ	MEM_ADDR_ERR			; jump if not
 	NOT	AL					; revert value again
-	ROL	AL, 1					; alter test value
+	ROL	AL, 1					; walk test value
 	SHR	DI, 1					; move to next address line
 	JNZ	MEM_ADDR_LOOP			; loop until offset is 0
 MEM_ADDR_ERR:
@@ -3972,7 +4059,7 @@ KB_BUF_CLEAR PROC
 KB_BUF_CLEAR ENDP
 
 ;
-; 3 bytes here
+; 2 bytes here
 ;
 BYTES_HERE	INT_09
 
@@ -4696,6 +4783,7 @@ BYTES_HERE	INT_13
 		ORG 0EC59H
 INT_13 PROC
 	STI 						; enable interrupts
+	CLD
 	PUSH	DS
 	PUSH	DX
 	PUSH	CX	
@@ -4726,7 +4814,7 @@ INT_13_DONE:
 	POP	DS
 	CMP	AH, FDC_ST_OK+1			; check AH for error (CF = AH < 1)
 	CMC   					; invert CF for return (CF = ! CF)
-	RETF	2 					; return from int and discard old flags
+	RETF	2 					; return from int with current flags
 
 ;----------------------------------------------------------------------------;
 ; INT 13, 0: Reset disk system
@@ -5119,13 +5207,13 @@ FDC_MOTOR_ON PROC
 ;-------------------------------------------------------------------------
 ; Delay using timer tick counter
 ;
-	MOV	AX, 10 				; AL = param 10, AH = 0 (for IO_DELAY_TIMER)
-	CALL	INT_1E_PARAM 			; AX = motor startup time (in 125ms)
+	MOV	AL, 10				; AL = INT_1E[10]
+	CALL	INT_1E_PARAM 			; AL = motor startup time (in 125ms)
 	CALL	IO_WAIT_MS_125			; wait AL * 125ms
 
 FDC_DRV_ALREADY_ON:
-	MOV	AL, 2 				; reset motor counter
-	CALL	INT_1E_PARAM
+	MOV	AL, 2 				; AL = INT_1E[2]
+	CALL	INT_1E_PARAM			; AL = reset motor counter
 	MOV	FD_MOTOR_CT, AL
 	STI
 FDC_DRIVE_STARTED:
@@ -5404,7 +5492,7 @@ FDC_ERR1_MAP LABEL BYTE
 	DB	FDC_ST_ERR_SEC			; 80 end of cylinder
 	DB	FDC_ST_ERR_FDC			; 40 unused (always zero)
 	DB	FDC_ST_ERR_CRC			; 20 data error CRC
-	DB	FDC_ST_DMA_OVR			; 10 over-run
+	DB	FDC_ST_DMA_OVR			; 10 DMA timeout/overrun
 	DB	FDC_ST_ERR_FDC			; 08 unused (always zero)
 	DB	FDC_ST_ERR_SEC			; 04 Sector Not Found
 	DB	FDC_ST_ERR_WP			; 02 Write Protect
@@ -5451,10 +5539,13 @@ FDC_RECV_ALL_LOOP:
 	STOSB						; write to BDA
 
 ;----------------------------------------------------------------------------;
-; Additional ~170 clock cycles delay needed
-; (Q: but why? A: It fails on Turbo hardware without it)
+; Additional delay for FDC to settle
 ;
-	MOV	AL, 10				; [4]
+		IF ARCH_TYPE EQ ARCH_TURBO
+	MOV	AL, 20				; [4]
+		ELSE
+	MOV	AL, 8					; [4]
+		ENDIF
 FDC_RECV_DELAY:
 	DEC	AX					; [3]
 	JNZ	FDC_RECV_DELAY			; [4+16n]
@@ -5463,11 +5554,11 @@ FDC_RECV_DELAY:
 ; Check for additional bytes to be read from FDC registers
 ;
 	IN	AL, DX				; DX = 03F4H
-	TEST	AL, 10000B 				; is FDC R/W command in progress flag?
+	TEST	AL, 00010000B 			; is FDC R/W command in progress flag?
 	LOOPNZ FDC_RECV_ALL_LOOP		; loop until no flag or 7 bytes read
 	JCXZ	FDC_RECV_CHECK_ERR 		; if all done, check for error
 	XOR	AX, AX 				; otherwise, zero out rest of 
-	REP	STOSB					; results in BDA
+	REP	STOSB					;  results in BDA
 FDC_RECV_CHECK_ERR:
 	MOV	AL, FDC_LAST_ST 			; AL = last FDC status byte 0
 	TEST	AL, 11000000B			; check Last Command Status
@@ -5560,7 +5651,7 @@ INT_0E ENDP
 ;-------------------------------------------------------------------------
 FDC_WAIT_STATUS PROC
 	CALL	FDC_WAIT_INT 			; wait for WIF
-	JMP	SHORT FDC_RECV_STATUS			; and read FDC status into BDA
+	JMP	SHORT FDC_RECV_STATUS		; and read FDC status into BDA
 FDC_WAIT_STATUS ENDP
 
 ;----------------------------------------------------------------------------;
@@ -5579,7 +5670,11 @@ FDC_WAIT_INT_LOOP1:
 FDC_WAIT_INT_LOOP2:
 	TEST	FD_CAL_ST, MASK FWIF 		; check for WIF in FD_CAL_ST (3EH)
 	JNZ	FDC_WAIT_INT_OK			; if so, exit
+			IF FDC_HTL_WAIT GT 0
 	HLT						; wait for any INT
+			ELSE
+	NOP						; allow extra time for INTs
+			ENDIF
 	CMP	AX, TIMER_CT_L			; has timer tick changed?
 	JZ	FDC_WAIT_INT_LOOP2		; if not, wait for next INT
 	LOOP	FDC_WAIT_INT_LOOP1		; decrement tick counter and resume loop
@@ -5825,7 +5920,7 @@ INT_17 ENDP
 ;----------------------------------------------------------------------------;
 INT_KB_TOGGLE_TURBO PROC
 	IN	AL, PPI_B
-	TEST	AL, 00000100B				; is in Turbo mode?
+	TEST	AL, MASK PBTB				; is in Turbo mode?
 	JNZ	INT_KB_TURBO_IS_ON			; if so, only one meep since
 	CALL	MEEP						;  switching to low speed
 INT_KB_TURBO_IS_ON:
@@ -8275,9 +8370,15 @@ BYTE_HEX PROC
 ;--------------------------------------------------------------------------
 NIB_HEX PROC
 	AND	AL, 1111B 			; isolate low nibble
-	CMP	AL, 10 			; CF if <= 9
-	SBB	AL, 069H 			; convert to hex
-	DAS					; BCD adjust
+	CMP	AL, 0AH 			; if < 0Ah, CF=1 and setup a -1 for ASCII
+						;  adjust since 'A'-'9' is 7 (not 6)
+	SBB	AL, -('0'+66H+1) 		; BCD bias for ASCII (30h + 66h + CF)
+						;  AF = AL < 0Ah, CF = 1
+						;  if > 9, high_nibble = 0Ah
+						;  if <=9, high_nibble = 09h
+	DAS					; BCD adjust to ASCII
+						;  if low_nibble < 0Ah, low_nibble -= 6
+						;  high_nibble -= 6
 
 ;--------------------------------------------------------------------------
 ; Write char in AL to console
@@ -8904,6 +9005,8 @@ INT_05 ENDP
 ;----------------------------------------------------------------------------;
 ; Check if a 8087 FPU is present and perform quick tests
 ;----------------------------------------------------------------------------;
+; Input:
+;	AX = any non-zero value
 ; Output:
 ;	ZF = 0 if no FPU, ZF = 1 if present
 ;
@@ -8915,7 +9018,6 @@ INT_05 ENDP
 ;----------------------------------------------------------------------------;
 HAS_FPU PROC
 	FNINIT 					; reset FPU, no wait
-	MOV	AH, HIGH RAM_TEST			; any non-zero value
 
 ;----------------------------------------------------------------------------;
 ; Test Status Word
@@ -8924,9 +9026,10 @@ FPU_TEST_SW:
 	PUSH	AX 					; init temp word to non-zero
 	MOV	BX, SP	 			; use stack memory
 	FNSTSW WORD PTR SS:[BX]			; store status word
-	POP	AX 					; AX = control word if FNSTCW executed, or 0 if not
-	TEST	AX, AX 				; if AX = 0, FPU is present
-	JNZ	FPU_TEST_DONE			; ZF = 0 if no FPU
+	NOP						; delay to allow FPU to complete
+	POP	AX 					; AX = control word if FNSTCW executed
+	TEST	AL, AL 				; check exception flags
+	JNZ	FPU_TEST_DONE			; if flags = 00, FPU is present
 
 ;----------------------------------------------------------------------------;
 ; Test Control Word
@@ -8934,6 +9037,7 @@ FPU_TEST_SW:
 FPU_TEST_CW:
 	PUSH	AX
 	FNSTCW WORD PTR SS:[BX]			; store control word
+	NOP						; delay to allow FPU to complete
 	POP	AX 					; AX = control word
 	AND	AX, 0103FH 				; isolate interesting status flags
 	CMP	AX, 03FH 				; check for 8087 "signature"
