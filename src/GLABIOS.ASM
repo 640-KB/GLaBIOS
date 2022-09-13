@@ -778,13 +778,13 @@ PPI_B_F RECORD	PBKB:1,PBKC:1,PBIO:1,PBPC:1,PBSW:1,PBTB:1,PBSP:1,PBST:1
 
 			IF BOOT_SPEED EQ BOOT_TURBO
 ;----------------------------------------------------------------------------;
-; Default Power-On: KB hold low+disable, NMI on, spkr data off, turbo OFF
+; Default Power-On: KB hold low+disable, NMI on, spkr data off, turbo ON/OFF
 ;
 PPI_B_BOOT	= MASK PBKB OR MASK PBIO OR MASK PBSW OR MASK PBST
 
 			ELSE
 ;----------------------------------------------------------------------------;
-; Default Power-On: KB hold low+disable, NMI on, spkr data off, turbo ON
+; Default Power-On: KB hold low+disable, NMI on, spkr data off, turbo OFF/ON
 ;
 PPI_B_BOOT	= MASK PBKB OR MASK PBIO OR MASK PBSW OR MASK PBST OR MASK PBTB
 
@@ -2523,6 +2523,16 @@ NEXT_LPT_PORT:
 POST_DETECT_LPT ENDP
 
 ;----------------------------------------------------------------------------;
+; Reset Keyboard Interface
+;----------------------------------------------------------------------------;
+POST_KB_RESET PROC
+	MOV	DX, PPI_B 				; DX = PPI port B (61H)
+	IN	AL, DX
+	AND	AL, 00111111B 			; keyboard clock hold LOW and enable
+	OUT	DX, AL				; send to PPI port B
+	XCHG	AX, SI				; save modified PPI port B
+
+;----------------------------------------------------------------------------;
 ; [31] - Set up and clear keyboard buffer
 ;----------------------------------------------------------------------------;
 	MOV	AX, OFFSET KB_BUF 		; AX = initial start of buffer
@@ -2531,45 +2541,34 @@ POST_DETECT_LPT ENDP
 	STOSW 					; write to tail pointer
 	MOV	DI, OFFSET KB_BUF_ST 		; setup buffer start and end
 	STOSW
-	MOV	AX, OFFSET KB_BUF_END
+	MOV	AL, LOW OFFSET KB_BUF_END	; (AH already 00)
 	STOSW
 
 ;----------------------------------------------------------------------------;
-; Reset Keyboard Interface
-;----------------------------------------------------------------------------;
-POST_KB_RESET PROC
-	MOV	DX, PPI_B 				; DX = PPI port B (61H)
-	IN	AL, DX
-	AND	AL, 00111111B 			; keyboard clock hold and enable LOW
-	MOV	BL, AL				; save original flags
-	OUT	DX, AL				; send to PPI port B
-KB_CLEAR:
-	XCHG	AX, DI				; save AX
-	MOV	AX, 30				; I/O delay for at least 20ms
+; Hold clock low 20ms to signal keyboard to reset. Clear and re-enable.
+;
+	MOV	AL, 30				; I/O delay for at least 20ms
 	CALL	IO_DELAY_MS
+	XCHG	AX, SI				; restore modified PPI port B
 
+	OR	AL, 11000000B 			; keyboard enable clock and clear
+	OUT	DX, AL				; send to PPI port B
+	AND	AL, 01111111B			; keyboard enable (clear low)
+	OUT	DX, AL				; send to PPI port B
+
+;----------------------------------------------------------------------------;
+; Unmask KB interrupt IRQ1
+;
 	IN	AL, INT_P1 				; get PIC Port 1 INT mask
 	XCHG	AX, SI 				; SI = save previous INT mask
 	MOV	AL, 11111101B 			; enable only keyboard interrupt
 	OUT	INT_P1, AL
 
-	XCHG	AX, DI				; restore AX
-	OR	AL, 11000000B 			; keyboard clock hold LOW and clear HIGH
-	OUT	DX, AL				; send to PPI port B
-	IO_DELAY_SHORT
-
-;----------------------------------------------------------------------------;
-; Unmask KB interrupt and keyboard reset
-;
-	MOV	AL, BL				; restore original flags
-	OR	AL, 01000000B			; keyboard clear LOW (enable KB)
-	OUT	DX, AL				; send to PPI port B
-
 ;----------------------------------------------------------------------------;
 ; Check if reset scan code was received
 ;
 ; Temporary INT_09_POST interrupt will set 4000H flag on BP
-; when IRQ6 is received with successful reset code of 0AAH
+; when IRQ1 is received with successful reset code of 0AAh
 ;
 	STI 						; enable interrupts
 KB_RESET_TEST:
@@ -2585,10 +2584,9 @@ KB_RESET_TEST:
 ;----------------------------------------------------------------------------;
 ; Ack scan code, clear keyboard again and check that no scan codes were received
 ;
-	OR	AL, 11000000B 			; keyboard clock hold off and clear HIGH
+	OR	AL, 11000000B 			; keyboard enable clock and clear
 	OUT	DX, AL				; send to PPI port B
-	AND	AL, 01111111B			; keyboard clear LOW (enable KB)
-	IO_DELAY_SHORT
+	AND	AL, 01111111B			; keyboard enable (clear low)
 	OUT	DX, AL				; send to PPI port B
 
 	IO_DELAY					; CPU cycles for rent, CX = 0
@@ -2945,9 +2943,9 @@ POST_ERR_PMEM	DB	'RAM', 0
 ;
 POST_ERRORS LABEL WORD
 	DW	OFFSET POST_ERR_PKI		; PKI  : Keyboard Interrupt Error
-	DW	OFFSET POST_ERR_PKEY		; PKEY : Keyboard key stuck
-	DW	OFFSET POST_ERR_PFDC		; PFDC : FDC init failure
-	DW	OFFSET POST_ERR_PFSK		; PFSK : FDC seek test failure
+	DW	OFFSET POST_ERR_PKEY		; PKEY : Keyboard Key Stuck
+	DW	OFFSET POST_ERR_PFDC		; PFDC : FDC Init Failure
+	DW	OFFSET POST_ERR_PFSK		; PFSK : FDC Seek Test Failure
 	DW	OFFSET POST_ERR_PDMA		; PDMA : DMA TC0 Error
 	DW	OFFSET POST_ERR_PMEM		; PMEM : RAM Error
 	;DW	OFFSET POST_ERR_PHDC		; PHDC : HDC Error
@@ -3252,7 +3250,7 @@ POST_SYS_VIDEO ENDP
 				ENDIF
 
 ;
-; 0 BYTES HERE
+; 10 BYTES HERE
 ;
 BYTES_HERE	INT_19
 
@@ -4484,7 +4482,7 @@ INT_KB_CTRL_ALT PROC
 ; Handle Ctrl-Alt-Del - warm reboot
 ;
 INT_KB_CTRL_ALT_DEL:
-	CALL	BEEP
+	CALL	MEEP
 	MOV	WARM_FLAG, WARM_BOOT			; set warm boot flag
 	JMP	POWER_ON					; warm reboot
 
