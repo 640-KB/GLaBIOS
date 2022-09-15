@@ -2528,7 +2528,7 @@ POST_DETECT_LPT ENDP
 POST_KB_RESET PROC
 	MOV	DX, PPI_B 				; DX = PPI port B (61H)
 	IN	AL, DX
-	AND	AL, 00111111B 			; keyboard clock hold LOW and enable
+	AND	AL, NOT (MASK PBKB OR MASK PBKC) ; keyboard clock hold LOW and enable
 	OUT	DX, AL				; send to PPI port B
 	XCHG	AX, SI				; save modified PPI port B
 
@@ -2551,9 +2551,9 @@ POST_KB_RESET PROC
 	CALL	IO_DELAY_MS
 	XCHG	AX, SI				; restore modified PPI port B
 
-	OR	AL, 11000000B 			; keyboard enable clock and clear
+	OR	AL, MASK PBKB OR MASK PBKC	; keyboard enable clock and clear
 	OUT	DX, AL				; send to PPI port B
-	AND	AL, 01111111B			; keyboard enable (clear low)
+	AND	AL, NOT MASK PBKB			; keyboard enable (clear low)
 	OUT	DX, AL				; send to PPI port B
 
 ;----------------------------------------------------------------------------;
@@ -2584,12 +2584,12 @@ KB_RESET_TEST:
 ;----------------------------------------------------------------------------;
 ; Ack scan code, clear keyboard again and check that no scan codes were received
 ;
-	OR	AL, 11000000B 			; keyboard enable clock and clear
+	OR	AL, MASK PBKB OR MASK PBKC	; keyboard enable clock and clear
 	OUT	DX, AL				; send to PPI port B
-	AND	AL, 01111111B			; keyboard enable (clear low)
+	AND	AL, NOT MASK PBKB			; keyboard enable (clear low)
 	OUT	DX, AL				; send to PPI port B
 
-	IO_DELAY					; CPU cycles for rent, CX = 0
+	IO_DELAY					; delay for KBC, CX = 0
 
 	IN	AL, PPI_A 				; check KB for extraneous key
 	TEST	AL, AL				; AL should be 0
@@ -3250,7 +3250,7 @@ POST_SYS_VIDEO ENDP
 				ENDIF
 
 ;
-; 10 BYTES HERE
+; 14 BYTES HERE
 ;
 BYTES_HERE	INT_19
 
@@ -3924,6 +3924,16 @@ OUT_DECU_R ENDP
 ;----------------------------------------------------------------------------;
 ; INT 9 - Test keyboard during POST
 ;----------------------------------------------------------------------------;
+; KB Status Port 61h high bits:
+; 01 - normal operation. wait for keypress, when one comes in,
+;		force data line low (forcing keyboard to buffer additional
+;		keypresses) and raise IRQ1 high
+; 11 - stop forcing data line low. lower IRQ1 and don't raise it again.
+;		drop all incoming keypresses on the floor.
+; 10 - lower IRQ1 and force clock line low, resetting keyboard
+; 00 - force clock line low, resetting keyboard, but on a 01->00 transition,
+;		IRQ1 would remain high
+;----------------------------------------------------------------------------;
 INT_09_POST PROC
 	PUSH	AX
 	POST_FLAG_CLR PKI				; clear POST test int flag
@@ -3932,10 +3942,10 @@ INT_09_POST PROC
 	JNZ	INT_09_POST_DONE
 	POST_FLAG_SET PKI				; POST keyboard test flag
 INT_09_POST_DONE:
-	IN	AL, PPI_B
-	OR	AL, 11000000B 			; clear keyboard 
-	OUT	PPI_B, AL
-	MOV	AL, INT_EOI				; AL=20H End of Interrupt
+	IN	AL, PPI_B				; read keyboard status
+	OR	AL, MASK PBKB OR MASK PBKC	; set clear keyboard and enable clock
+	OUT	PPI_B, AL				; write to PPI Control Port B
+	MOV	AL, INT_EOI				; Send End of Interrupt
 	OUT	INT_P0, AL
 	POP	AX
 	IRET
@@ -3989,7 +3999,7 @@ INT_KB_SET_PAUSE PROC
 ; Make sure CGA is not currently being blanked
 ;
 	CALL	INT_10_IS_CGA80			; ZF = 1 if CGA 80 col
-	JZ	INT_KB_PAUSE_LOOP			; jump if not CGA 80 col
+	JNZ	INT_KB_PAUSE_LOOP			; jump if not CGA 80 col
 	MOV	AL, VID_MODE_REG			; get default CGA control register
 	MOV	DX, CGA_CTRL			; DX = CGA control port 03D8h
 	OUT	DX, AL				; enable video signal
@@ -4003,7 +4013,7 @@ INT_KB_PAUSE_LOOP:
 	NOP						; let another interrupt happen
 	TEST	BYTE PTR [BX], MASK K2PA	; check the Pause flag
 	JNZ	INT_KB_PAUSE_LOOP			; loop until clear
-	JMP	INT_KB_EXIT				; exit INT
+	JMP	INT_KB_DONE				; exit INT
 INT_KB_SET_PAUSE ENDP
 
 ;----------------------------------------------------------------------------;
@@ -4102,32 +4112,35 @@ BYTES_HERE	INT_09
 		ORG 0E987H
 INT_09 PROC
 			ASSUME DS:_BDA
+	PUSH	AX						; save AX first
+	IN	AL, PPI_A 					; read scan code from PPI Port A
+	MOV	AH, AL					; save scan code to AH
+	IN	AL, PPI_B 					; read Control Port B
+	PUSH	AX						; save status, and I/O delay
+	OR	AL, MASK PBKB				; set clear keyboard bit
+	OUT	PPI_B, AL 					; write to Control Port B
+	POP	AX						; restore status, and I/O delay
+	OUT	PPI_B, AL 					; write to Control Port B
+
+;----------------------------------------------------------------------------;
+; Send non-specific EOI to PIC
+;
+	MOV	AL, INT_EOI 				; End of Interrupt OCW
+	OUT	INT_P0, AL					; write EOI to port 0
 	STI							; enable interrupts
 	CLD							; string functions increment
-	PUSH	AX						; save all used registers
-	PUSH	BX
-	PUSH	CX
+	PUSH	BX						; save other used registers
+	PUSH	CX						; (now that interrupts are on)
 	PUSH	DX
 	PUSH	DI
 	PUSH	SI
 	PUSH	DS
 	PUSH	ES
-	MOV	AX, SEG _BDA 				; DS = BIOS Data Area
-	MOV	DS, AX
-	IN	AL, PPI_A 					; read scan code from PPI Port A
-	XCHG	AX, DX 					; save to DL
-	IN	AL, PPI_B 					; read Control Port B status
-	PUSH	AX						; save status, and I/O delay
-	OR	AL, 10000000B				; set clear keyboard bit
-	OUT	PPI_B, AL 					; write to Control Port B
-	POP	AX						; restore status, and I/O delay
-	OUT	PPI_B, AL 					; write to Control Port B status
-	XCHG	AX, DX 					; AL = original scan code
+	MOV	AL, AH					; AL = original scan code
 	CMP	AL, 0FFH 					; check for Detection Error/Overrun
-	JNZ	KB_INT_CHECK_NOT_OVR			;
-	JMP	INT_KB_MEEP_DONE				; If overrun, meep and exit
-KB_INT_CHECK_NOT_OVR:
-	MOV	AH, AL 					; save scan code to AH
+	JZ	INT_KB_MEEP_DONE				; If overrun, meep and exit
+	MOV	DX, SEG _BDA 				; DS = BIOS Data Area
+	MOV	DS, DX
 	MOV	DX, KB_FLAGS				; DL=KB_FLAGS1, DH=KB_FLAGS2
 
 ;----------------------------------------------------------------------------;
@@ -4135,9 +4148,9 @@ KB_INT_CHECK_NOT_OVR:
 ; Function keys have different scan codes based on shift, ALT or CTRL state
 ;
 KB_INT_CHECK_FN_KEY:
-	CMP	AH, 044H					; is above F10 scan code?
+	CMP	AL, 044H					; is above F10 scan code?
 	JA	KB_INT_CHECK_FN_KEY_DONE
-	CMP	AH, 03BH					; is below F1 scan code?
+	CMP	AL, 03BH					; is below F1 scan code?
 	JB	KB_INT_CHECK_FN_KEY_DONE
 	MOV	AL, 0						; ASCII always 0 on F-keys
 
@@ -4176,23 +4189,31 @@ KB_INT_CHECK_FN_KEY_DONE:				; not a function key
 ;----------------------------------------------------------------------------;
 ; Is Ctrl-Break?
 ;
-	CMP	AH, 46H					; Scroll Lock (Break)
+	CMP	AL, 46H					; Scroll Lock (Break)
 	JNZ	INT_KB_CHECK_CTRL_NUM			; jump if not Break
 
 INT_KB_CTRL_BREAK:
 	CALL	KB_BUF_CLEAR				; clear keyboard buffer
 	MOV	BIOS_BREAK, 10000000b			; BIOS break flag
 	INT	1BH						; call BIOS Break Handler
-	JMP	INT_KB_DONE
+	JMP	SHORT INT_KB_DONE_2
 
 ;----------------------------------------------------------------------------;
 ; Is Ctrl-NumLock (Pause)?
 ;
 INT_KB_CHECK_CTRL_NUM:
-	CMP	AH, 45H					; is Num Lock key?
-	;CMP	AH, 35H					; key pad / (for testing)
+	CMP	AL, 45H					; is Num Lock key?
+	;CMP	AL, 35H					; key pad / (for testing)
 	JNZ	KB_INT_IS_NUM				; if not, continue to num pad
 	JMP	INT_KB_SET_PAUSE				; otherwise put in Pause
+
+;----------------------------------------------------------------------------;
+; Emit a feeble meep and exit
+;
+INT_KB_MEEP_DONE:
+	CALL	MEEP
+INT_KB_DONE_2:
+	JMP	SHORT INT_KB_DONE
 
 ;----------------------------------------------------------------------------;
 ; 3. Handle numeric keypad entry according to the following:
@@ -4304,17 +4325,9 @@ KB_INT_CHECK_FULL:
 	MOV	KB_BUF_TL, SI 				; tail = next
 
 ;----------------------------------------------------------------------------;
-; Send non-specific EOI to PIC, then return
-;
-; TODO: can EOI be sent in the beginning? Are there valid cases where it
-; should not be sent?
+; Restore registers and exit
 ;
 INT_KB_DONE:
-	CLI							; disable interrupts
-	MOV	AL, INT_EOI 				; End of Interrupt OCW
-	OUT	INT_P0, AL					; write EOI to port 0
-
-INT_KB_EXIT:
 	POP	ES
 	POP	DS
 	POP	SI
@@ -4326,21 +4339,11 @@ INT_KB_EXIT:
 	IRET
 
 ;----------------------------------------------------------------------------;
-; Emit a feeble meep and exit
-;
-INT_KB_MEEP_DONE:
-	CALL	MEEP
-	JMP	SHORT INT_KB_DONE
-
-;----------------------------------------------------------------------------;
 ; Handle Shift-PrtSc
 ;
 KB_INT_PRTSC:
-	CLI							; disable interrupts
-	MOV	AL, INT_EOI 				; End of Interrupt OCW
-	OUT	INT_P0, AL					; write EOI to port 0
 	INT	5H						; call break handler
-	JMP	SHORT INT_KB_EXIT
+	JMP	SHORT INT_KB_DONE
 
 ;----------------------------------------------------------------------------;
 ; 6. Only ALT key is held (no CTRL)
@@ -4351,7 +4354,6 @@ KB_INT_PRTSC:
 INT_KB_ALT PROC
 	CMP	AH, 39H					; is space bar?
 	JZ	KB_INT_IS_ALT_DONE			; continue
-
 	MOV	BX, AX
 	MOV	AL, 0						; AL will be 0 for any others
 
@@ -4482,7 +4484,7 @@ INT_KB_CTRL_ALT PROC
 ; Handle Ctrl-Alt-Del - warm reboot
 ;
 INT_KB_CTRL_ALT_DEL:
-	CALL	MEEP
+	CALL	BEEP
 	MOV	WARM_FLAG, WARM_BOOT			; set warm boot flag
 	JMP	POWER_ON					; warm reboot
 
@@ -8596,8 +8598,8 @@ GFX_CHARSET LABEL BYTE
 ; INT 1A,1   Set system clock counter
 ;----------------------------------------------------------------------------;
 		ORG 0FE6EH
-			ASSUME DS:_BDA
 INT_1A PROC
+		ASSUME DS:_BDA
 	STI
 	SUB	AH, 1 				; is function 0 or 1?
 	JA	INT_1A_EXIT 			; if not, exit
