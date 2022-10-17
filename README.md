@@ -27,7 +27,7 @@ Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org or
 - Accurate PIT-based I/O timing. Better stability at faster clock speeds and increased speed on slower PCs.
 - NEC V20 enhanced instruction set support (enabled at build-time).
 - POST test screen colors support easily customized themes (build-time).
-- Beeps pitched correctly at A<sub>5</sub> (880Hz), &frac14; second long regardless of clock speed (nobody wants a half-fast, flat beep).
+- **Coming Soon:** 5150 Cassette tape support.
 
 ## FAQ
 
@@ -136,6 +136,8 @@ Hampa Hug's excellent [PCE/ibmpc emulator](http://hampa.ch/pce/pce-ibmpc.html) w
 - Hampa Hug for the excellent [PCE software](http://www.hampa.ch/pce/pce-ibmpc.html) that helped make development and debugging much easier.
 - @Raffzahn, Contributor, Advisor and Meckerhut.
 - Dave Nault, my partner in crime for 2 semesters of college assembly language programming classes back in the day. Wherever you are buddy, hope you're doing well!
+
+#### Huge thanks to @MadMaxx12345, @Makefile and @punishedbunny for testing, bug finding and feature suggestions.
 
 ### Disclaimer
 
