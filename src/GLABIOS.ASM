@@ -37,23 +37,9 @@
 ;  Font bitmaps by "VileR", (CC BY-SA 4.0)
 ;  https://int10h.org/oldschool-pc-fonts/readme/#legal_stuff
 ;
-;  (Many more inline...)
+;  @Raffzahn, Contributor, Mentor and Meckerhut.
 ;
-; Further Credits to:
-;
-;  Hampa Hug for the excellent PCE software <http://hampa.ch/pce/pce-ibmpc.html> that
-;  helped make development and debugging possible.
-;
-;  The Code Golf (CGCC) community on Stack Exchange for helping me to become a better 
-;  ASM programmer.
-;
-;  @Raffzahn, Contributor and Meckerhut.
-;
-;  Dave Nault, my partner-in-crime for 2 semesters of assembly language programming
-;  classes in college back in the day. Wherever you are buddy, thanks!
-;
-;  @MadMaxx12345 and @Makefile - testing, QC and ideas.
-;
+;  https://github.com/640-KB/GLaBIOS#further-credits-to
 ;----------------------------------------------------------------------------;
 ; BUILD NOTES:
 ;
@@ -180,13 +166,13 @@ CGA_SNOW_REMOVE	=	3		; 0: Snow, Normal Flashing, Fastest
 ;
 POST_GLADOS		=	0		; say "Starting GLaDOS..." on boot
 POST_CLS		=	0		; clear screen after POST
-POST_SHOW_VER	=	3		; display version verbosity (0-3)
-POST_VIDEO_TYPE	=	1		; display video adapter type
+POST_SHOW_VER	=	3		; POST screen verbosity (0-3)
+POST_VIDEO_TYPE	=	1		; show the video adapter type on POST
 
 ;----------------------------------------------------------------------------;
 ; Enable/Disable POST tests - Not all tests can be enabled due to 8K ROM space
 ;
-POST_TEST_INST	=	0		; POST CPU Instruction Test
+POST_TEST_INST	=	0		; POST CPU Instruction/Flag Test
 POST_TEST_DMA	=	1		; POST DMA Register Test
 POST_TEST_PIT_1	=	1		; POST Timer Channel 1 Test
 POST_TEST_PIC_REG	=	1		; POST PIC Register Test
@@ -213,10 +199,10 @@ FDC_HTL_WAIT	=	1		; Halt CPU during FD access
 ;
 VER_NAME		EQU	'GLaBIOS'
 	IFNDEF VER_NUM
-VER_NUM		EQU	'0.1.6'		; (max 6 chars)
+VER_NUM		EQU	'0.1.7'		; (max 6 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'09/13/22' 		; must be MM/DD/YY format
+VER_DATE		EQU	'10/17/22' 		; must be MM/DD/YY format
 	ENDIF
 	IFNDEF COPY_YEAR
 COPY_YEAR		EQU	'2022'		; can be set at build time
@@ -1380,8 +1366,6 @@ FD1_TRACK		DB	?			; 95H  Drive 1 current track
 KB_FLAGS3		DB	?			; 96H  Keyboard mode/type (Enhanced)
 KB_FLAGS4		DB	?			; 97H  Keyboard LED flags (Enhanced)
 		ORG	0ACH				; ACH-B3H "Reserved" (can be used?)
-;LOOP_PIT_COUNT	DW	?			; ACH  Counter for IO_DELAY_PIT
-;LOOP_PIT_TIMER	DB	?			; AEH  Counter for IO_DELAY_PIT
 		ORG	0E8H				; E8H-EFH "Reserved" (can be used?)
 CURSOR_DEFAULT	DW	?			; EAH  Power on cursor bottom:top scan line (for Turbo)
 VID_MEM_SEG		DW	?			; ECH	 Videm mem segment (MDA = B000, CGA = B800)
@@ -1516,6 +1500,7 @@ BIOS_TOP 	ENDP
 
 BYTES_HERE	POWER_ON			; 5 BYTES HERE
 
+			ASSUME CS:_BIOS, DS:NOTHING, ES:NOTHING, SS:NOTHING
 ;----------------------------------------------------------------------------;
 ; F000:E05B: Beginning of boot execution
 ;----------------------------------------------------------------------------;
@@ -1524,26 +1509,25 @@ BYTES_HERE	POWER_ON			; 5 BYTES HERE
 ; http://minuszerodegrees.net/5160/post/5160%20-%20POST%20-%20Detailed%20breakdown.htm
 ; http://minuszerodegrees.net/5150/post/5150%20-%20POST%20-%20Detailed%20breakdown.htm
 ; https://stanislavs.org/helppc/cold_boot.html
+; http://philipstorr.id.au/pcbook/book1/post.htm
 ;----------------------------------------------------------------------------;
 ; POST Error Beep patterns:
 ;
 ; Short  Long
-; 	2   	1	CPU register test failure
+;	2	1	CPU register test failure
 ;	3	1	CPU instruction test failed
 ;	4	1	Build is V20 but not detected
-;	2	2	System BIOS ROM Checksum Error
-;	3	2	PIT Counter 1 test failed
+;	2	2	System BIOS ROM checksum error
+;	3	2	PIT counter 1 test failed
 ;	4	2	DMA register test failed
 ;	5	2	PIC test register failed
 ;	5	3	PIC test interrupt failed
 ;	1	3	Base RAM (0-16KB) read/write error
-;	3	3 	Error loading video adapter ROM
+;	3	3	Error loading video adapter ROM
 ;	1	4	Base RAM (0-16KB) parity error
 ;----------------------------------------------------------------------------;
-			ASSUME CS:_BIOS, DS:NOTHING, ES:NOTHING, SS:NOTHING
-		ORG  0E05BH
-POWER_ON	PROC NEAR 			; start the boot / POST process
-
+		ORG 0E05BH
+POWER_ON 	PROC NEAR
 	CLI 					; disable CPU interrupts
 	CLD					; clear direction flag
 
@@ -2084,7 +2068,7 @@ CHECK_BASIC_ROM:
 	MOV	AL, 10H 				; ROM Size = 8K (10h * 512B)
 	ADD	BH, 2					; BX = next BASIC 8K ROM
 	CALL	ROM_CHECKSUM 			; checksum ROM at DS:0, size AL
-	LOOPZ CHECK_BASIC_ROM			; loop 4 ROMs or checksum fail
+	LOOPZ	CHECK_BASIC_ROM			; loop 4 ROMs or checksum fail
 	JNZ	INIT_ROM_BASIC_DONE		; if NZ, checksum failed
 
 ;----------------------------------------------------------------------------;
@@ -2525,6 +2509,18 @@ POST_DETECT_LPT ENDP
 ;----------------------------------------------------------------------------;
 ; Reset Keyboard Interface
 ;----------------------------------------------------------------------------;
+; http://minuszerodegrees.net/5160/keyboard/5160_keyboard_startup.jpg
+;
+; KB Status Port 61h high bits:
+; 01 - normal operation. wait for keypress, when one comes in,
+;		force data line low (forcing keyboard to buffer additional
+;		keypresses) and raise IRQ1 high
+; 11 - stop forcing data line low. lower IRQ1 and don't raise it again.
+;		drop all incoming keypresses on the floor.
+; 10 - lower IRQ1 and force clock line low, resetting keyboard
+; 00 - force clock line low, resetting keyboard, but on a 01->00 transition,
+;		IRQ1 would remain high
+;----------------------------------------------------------------------------;
 POST_KB_RESET PROC
 	MOV	DX, PPI_B 				; DX = PPI port B (61H)
 	IN	AL, DX
@@ -2545,7 +2541,7 @@ POST_KB_RESET PROC
 	STOSW
 
 ;----------------------------------------------------------------------------;
-; Hold clock low 20ms to signal keyboard to reset. Clear and re-enable.
+; Hold clock low 20+ ms to signal keyboard to reset. Clear and re-enable.
 ;
 	MOV	AL, 30				; I/O delay for at least 20ms
 	CALL	IO_DELAY_MS
@@ -2575,7 +2571,7 @@ KB_RESET_TEST:
 	NOP 						; give a little more time
 	NOP 						;  and a little more time still
 	POST_FLAG_TEST PKI			; KB test flag yet?
-	LOOPZ KB_RESET_TEST			; Loop until KB flag OR CX is 0 (timeout)
+	LOOPZ	KB_RESET_TEST			; Loop until KB flag OR CX is 0 (timeout)
 	CLI 						; disable interrupts again
 	POST_FLAG_FLIP PKI			; invert PKI flag: 1 = error, 0 = success
 
@@ -2776,7 +2772,7 @@ ENABLE_NMI:
 ;
 	CALL	KB_BUF_CLEAR			; clear any stray keys in buffer
 	IN	AL, PPI_B 				; AL = PB0 flags
-	AND	AL, 01111111b 			; keyboard clear LOW (enable KB)
+	AND	AL, NOT MASK PBKB			; keyboard clear LOW (enable KB)
 	IO_DELAY_SHORT
 	OUT	PPI_B, AL				; send to PPI port B
 
@@ -3924,16 +3920,6 @@ OUT_DECU_R ENDP
 ;----------------------------------------------------------------------------;
 ; INT 9 - Test keyboard during POST
 ;----------------------------------------------------------------------------;
-; KB Status Port 61h high bits:
-; 01 - normal operation. wait for keypress, when one comes in,
-;		force data line low (forcing keyboard to buffer additional
-;		keypresses) and raise IRQ1 high
-; 11 - stop forcing data line low. lower IRQ1 and don't raise it again.
-;		drop all incoming keypresses on the floor.
-; 10 - lower IRQ1 and force clock line low, resetting keyboard
-; 00 - force clock line low, resetting keyboard, but on a 01->00 transition,
-;		IRQ1 would remain high
-;----------------------------------------------------------------------------;
 INT_09_POST PROC
 	PUSH	AX
 	POST_FLAG_CLR PKI				; clear POST test int flag
@@ -4887,7 +4873,7 @@ INT_13_0_2:
 	XOR	CX, CX 				; clear CX, delay for FDC to settle	(3)
 	MOV	FD_CAL_ST, CL 			; flag all drives for recalibration	(19)
 	MOV	FD_LAST_OP, CL 			; clear last operation flags		(19)
-	IO_DELAY_SHORT 				; additional 15 clock cycle delay 	(15)
+	;IO_DELAY_SHORT 				; additional 15 clock cycle delay 	(15)
 
 ;----------------------------------------------------------------------------;
 ; Re-enable FDC by setting bit 2 to 1.
@@ -4897,8 +4883,10 @@ INT_13_0_2:
 	OUT	DX, AL				; send to FDC
 	STI 						; enable interrupts
 	CALL	FDC_WAIT_SENSE			; wait for FDC to signal interrupt
-	CMP	FDC_LAST_ST, 11000000B		; was successful reset?
+	JC	INT_13_0_RESET_BAD
+	CMP	AL, 11000000B			; was successful reset?
 	JZ	INT_13_0_RESET_DONE		; jump if success, AH = 0
+INT_13_0_RESET_BAD:
 	MOV	AH, FDC_ST_ERR_FDC		; otherwise, controller failure
 INT_13_0_RESET_DONE:
 	MOV	FD_LAST_OP, AH			; set last result
@@ -5143,14 +5131,19 @@ FDC_SEEK PROC
 	JC	FDC_SEEK_ERR
 	MOV	AL, DL 				; AL = drive number
 	CALL	FDC_SEND 				; send command, CF if error
-	JC	FDC_SEEK_ERR
-	MOV	AL, CH 				; AL = drive number
+	;JC	FDC_SEEK_ERR			; necessary? (not enough bytes)
+	MOV	AL, CH 				; AL = track number
 	CALL	FDC_SEND 				; send command, CF if error
+	JC	FDC_SEEK_ERR
+	CALL	FDC_WAIT_SENSE			; wait for WIF, sense and get status
+	JC	FDC_SEEK_ERR
+	XOR 	AL, 01100000b			; select interesting bits
+	TEST	AL, 01100000b			; ZF = abnormal term. AND seek complete
+	JZ	FDC_SEEK_ERR
 	MOV	AX, 9
 	CALL	INT_1E_PARAM			; AL = head settle time (ms)
 	CALL	IO_DELAY_MS				; delay AX ms
-	CALL	FDC_WAIT_SENSE			; wait for WIF, sense and get status
-	JC	FDC_SEEK_ERR
+	CLC
 FDC_SEEK_DONE:
 	POP	AX
 	RET
@@ -5332,7 +5325,7 @@ FDC_INIT_DMA ENDP
 ;----------------------------------------------------------------------------;
 ; FDC_RECV: Wait for FDC ready to send and read next FDC Status byte into AL
 ;----------------------------------------------------------------------------;
-; Timeout is 2 timer ticks = ~110ms.
+; Timeout is 5 timer ticks = ~275ms.
 ;
 ; Input: None
 ; Output:
@@ -5357,7 +5350,7 @@ FDC_SEND_PARAM PROC
 ;----------------------------------------------------------------------------;
 ; FDC_SEND: Wait for FDC ready to receive and send a single command
 ;----------------------------------------------------------------------------;
-; Timeout is 2 timer ticks = ~110ms.
+; Timeout is 5 timer ticks = ~275ms.
 ;
 ; Input:
 ;	AL = byte to send to FDC
@@ -5380,7 +5373,7 @@ FDC_SEND_RECV:
 ; Wait for FDC I/O direction = CPU to FDC and Data Reg Ready
 ;
 	MOV	DX, FDC_STAT 			; port 3F4H - FDC Main Status Register
-	MOV	CX, 2					; CX = # of ticks to wait
+	MOV	CX, 5					; CX = # of ticks to wait
 	MOV	AH, BYTE PTR TIMER_CT_L		; get starting tick counter low byte
 
 FDC_SEND_WAIT_POLL:
@@ -5456,64 +5449,30 @@ FDC_SEND_PARAM ENDP
 FDC_RECV ENDP
 
 ;-------------------------------------------------------------------------
-; FDC_WAIT_SENSE_ERR: Map FDC Command Status Register 1 to BDA error codes
-;-------------------------------------------------------------------------
-; Input:
-;	AL = Last result from FDC_LAST_ST
-; Output:
-;	CF if error
-;	AH/AL = BDA Floppy drive status
-;-------------------------------------------------------------------------
-FDC_WAIT_SENSE_ERR PROC
-	PUSH	SI
-	TEST	AL, 01000000B			; command terminated abnormally?
-	MOV	AH, FDC_ST_ERR_FDC		; if not, FDC error
-	JZ	FDC_WAIT_SENSE_ERR_DONE
-	MOV	SI, OFFSET FDC_ERR1_MAP
-	MOV	AH, FDC_LAST_ST[1]		; AH = last status byte 1
-FDC_ERR_MAP_LOOP:
-	LODS	BYTE PTR CS:[SI]			; fetch next error
-	SHL	AH, 1					; CF if this status flag
-	JC	FDC_WAIT_SENSE_ERR_DONE		; jump if flag set
-	JNZ	FDC_ERR_MAP_LOOP			; loop until AH = 0
-FDC_WAIT_SENSE_ERR_DONE:
-	MOV	AH, AL				; AH = last result
-	POP	SI
-FDC_WAIT_ERR_EXIT:
-	OR	FD_LAST_OP, AH			; BDA 40:41H
-	STC
-	JMP	SHORT FDC_RECV_ALL_DONE
-
-;-------------------------------------------------------------------------
-; Note: Must check from most sig bit to lowest since higher
-; bits are more meaningful.
-;
-FDC_ERR1_MAP LABEL BYTE
-	DB	FDC_ST_ERR_SEC			; 80 end of cylinder
-	DB	FDC_ST_ERR_FDC			; 40 unused (always zero)
-	DB	FDC_ST_ERR_CRC			; 20 data error CRC
-	DB	FDC_ST_DMA_OVR			; 10 DMA timeout/overrun
-	DB	FDC_ST_ERR_FDC			; 08 unused (always zero)
-	DB	FDC_ST_ERR_SEC			; 04 Sector Not Found
-	DB	FDC_ST_ERR_WP			; 02 Write Protect
-	DB	FDC_ST_ERR_MARK			; 01 Address mark not found or bad sector
-
-FDC_WAIT_SENSE_ERR ENDP
-
-;-------------------------------------------------------------------------
-; FDC_WAIT_SENSE - wait for WIF, Sense Status and check for error
+; FDC_WAIT_SENSE: wait for WIF, sense status and get status bytes
 ;-------------------------------------------------------------------------
 ; Output:
 ;	CF if error
 ;	AL = FDC_LAST_ST (BDA Floppy drive status)
-;	AH = FD_LAST_OP (0 if success)
+;	AH clobbered
 ;-------------------------------------------------------------------------
 FDC_WAIT_SENSE PROC
 	CALL	FDC_WAIT_INT 			; wait for WIF
 	JC	FDC_WAIT_SENSE_EXIT
 	MOV	AL, FDC_CMD_SENSE			; sense Interrupt status
 	CALL	FDC_SEND
-FDC_RECV_STATUS:
+
+;----------------------------------------------------------------------------;
+; FDC_RECV_STATUS:
+;----------------------------------------------------------------------------;
+; Output:
+;	CF if FDC read/timeout error
+;	NZ if result status error
+;
+;	AL = FDC_LAST_ST (BDA Floppy drive status), if success
+;	AH clobbered
+;----------------------------------------------------------------------------;
+FDC_RECV_STATUS PROC
 	JC	FDC_WAIT_SENSE_EXIT		; return if timeout error
 							; fall through to FDC_RECV_ALL
 
@@ -5525,7 +5484,6 @@ FDC_RECV_STATUS:
 FDC_RECV_ALL PROC
 	PUSH	ES
 	PUSH	CX
-	PUSH	AX
 	PUSH	DI
 	PUSH	DX
 	MOV	DX, FDC_STAT
@@ -5544,7 +5502,7 @@ FDC_RECV_ALL_LOOP:
 		IF ARCH_TYPE EQ ARCH_TURBO
 	MOV	AL, 20				; [4]
 		ELSE
-	MOV	AL, 8					; [4]
+	MOV	AL, 10				; [4]
 		ENDIF
 FDC_RECV_DELAY:
 	DEC	AX					; [3]
@@ -5557,23 +5515,79 @@ FDC_RECV_DELAY:
 	TEST	AL, 00010000B 			; is FDC R/W command in progress flag?
 	LOOPNZ FDC_RECV_ALL_LOOP		; loop until no flag or 7 bytes read
 	JCXZ	FDC_RECV_CHECK_ERR 		; if all done, check for error
-	XOR	AX, AX 				; otherwise, zero out rest of 
+	XOR	AL, AL 				; otherwise, zero out rest of
 	REP	STOSB					;  results in BDA
 FDC_RECV_CHECK_ERR:
 	MOV	AL, FDC_LAST_ST 			; AL = last FDC status byte 0
 	TEST	AL, 11000000B			; check Last Command Status
-	JNZ	FDC_WAIT_SENSE_ERR		; jump if errors
 FDC_RECV_ALL_DONE:
 	POP	DX
 	POP	DI
-	POP	AX
 	POP	CX
 	POP	ES
 FDC_WAIT_SENSE_EXIT:
 	RET
 FDC_RECV_ALL ENDP
-
+FDC_RECV_STATUS ENDP
 FDC_WAIT_SENSE ENDP
+
+;-------------------------------------------------------------------------
+; FDC_WAIT_STATUS: Wait for WIF, get status bytes and check for error
+;-------------------------------------------------------------------------
+FDC_WAIT_STATUS PROC
+	CALL	FDC_WAIT_INT 			; wait for WIF
+	CALL	FDC_RECV_STATUS			; read FDC status into BDA
+							; CF if FDC error, NZ if status error
+	JBE	FDC_WAIT_ERR_EXIT_OK		; exit if ZF or CF error
+
+;-------------------------------------------------------------------------
+; FDC_WAIT_STATUS_ERR: Map FDC Command Status Register 1 to BDA error codes
+;-------------------------------------------------------------------------
+; Input:
+;	AL = Last result from FDC_LAST_ST
+; Output:
+;	CF if error
+;	AH/AL = BDA Floppy drive status
+;-------------------------------------------------------------------------
+FDC_WAIT_STATUS_ERR PROC
+	PUSH	SI
+	TEST	AL, 01000000B			; command terminated abnormally?
+	MOV	AL, FDC_ST_ERR_FDC		; if not, FDC error
+	JZ	FDC_WAIT_STATUS_ERR_DONE
+	MOV	AH, FDC_LAST_ST[1]		; AH = last status byte 1
+	TEST	AH, AH
+	JZ	FDC_WAIT_STATUS_ERR_DONE	; skip if AH = 0
+	MOV	SI, OFFSET FDC_ERR1_MAP
+FDC_ERR_MAP_LOOP:
+	LODS	BYTE PTR CS:[SI]			; fetch next error
+	SHL	AH, 1					; CF if this status flag
+	JC	FDC_WAIT_STATUS_ERR_DONE	; jump if flag set
+	JNZ	FDC_ERR_MAP_LOOP			; loop until AH = 0
+FDC_WAIT_STATUS_ERR_DONE:
+	MOV	AH, AL				; AH = last result
+FDC_WAIT_ERR_EXIT:
+	POP	SI
+	OR	FD_LAST_OP, AH			; BDA 40:41H
+	STC
+FDC_WAIT_ERR_EXIT_OK:
+	RET
+
+;-------------------------------------------------------------------------
+; Note: Must check from most sig bit to lowest since higher
+; bits are more meaningful.
+;
+FDC_ERR1_MAP LABEL BYTE
+	DB	FDC_ST_ERR_SEC			; 80 end of cylinder
+	DB	FDC_ST_ERR_FDC			; 40 unused (always zero)
+	DB	FDC_ST_ERR_CRC			; 20 data error CRC
+	DB	FDC_ST_DMA_OVR			; 10 DMA timeout/overrun
+	DB	FDC_ST_ERR_FDC			; 08 unused (always zero)
+	DB	FDC_ST_ERR_SEC			; 04 Sector Not Found
+	DB	FDC_ST_ERR_WP			; 02 Write Protect
+	DB	FDC_ST_ERR_MARK			; 01 Address mark not found or bad sector
+
+FDC_WAIT_STATUS_ERR ENDP
+FDC_WAIT_STATUS ENDP
 
 ;----------------------------------------------------------------------------;
 ; Retrieve a parameter value from the DBT by index
@@ -5583,7 +5597,7 @@ FDC_WAIT_SENSE ENDP
 ; Output:
 ;	AL = byte
 ;
-; Size: 15 bytes
+; Size: 14 bytes
 ;----------------------------------------------------------------------------;
 INT_1E_PARAM PROC
 	PUSH	DS
@@ -5599,29 +5613,8 @@ INT_1E_PARAM_DONE:
 	RET
 INT_1E_PARAM ENDP
 
-;----------------------------------------------------------------------------;
-; Check if AL is alpha char [A-Za-z]
-;----------------------------------------------------------------------------;
-; Input:
-;	AL = char 'A'-'Z' or 'a'-'z'
-; Output:
-;	CF = 0 (NC) if alpha, CF = 1 (CY) if not alpha
-; Size: 12 bytes
-;----------------------------------------------------------------------------;
-IS_ALPHA PROC
-	PUSH	AX
-	OR	AL, 'a'-'A'			; lowercase it for comparison
-	CMP	AL, 'a'			; is less than 'a'?
-	JB	IS_ALPHA_DONE		; CF if not alpha
-	CMP	AL, 'z'+1			; is greater than 'z'?
-	CMC					; CF if not alpha
-IS_ALPHA_DONE:
-	POP	AX
-	RET
-IS_ALPHA ENDP
-
 ;
-; 0 BYTES HERE
+; 1 BYTE HERE
 ;
 BYTES_HERE	INT_0E
 
@@ -5634,6 +5627,7 @@ BYTES_HERE	INT_0E
 		ORG 0EF57H
 INT_0E PROC
 		ASSUME DS:_BDA
+	STI
 	PUSH	AX
 	PUSH	DS
 	MOV	AX, SEG _BDA 			; DS = BDA segment
@@ -5645,14 +5639,6 @@ INT_0E PROC
 	POP	AX
 	IRET
 INT_0E ENDP
-
-;-------------------------------------------------------------------------
-; FDC_WAIT_STATUS: Wait for WIF and check for error
-;-------------------------------------------------------------------------
-FDC_WAIT_STATUS PROC
-	CALL	FDC_WAIT_INT 			; wait for WIF
-	JMP	SHORT FDC_RECV_STATUS		; and read FDC status into BDA
-FDC_WAIT_STATUS ENDP
 
 ;----------------------------------------------------------------------------;
 ; FDC_WAIT_INT: Wait for BDA Working Interrupt Flag from FDC
@@ -5714,10 +5700,13 @@ FDC_RECAL PROC
 	JC	FDC_RECAL_ERR
 	MOV	AL, CL 				; AL = drive number
 	CALL	FDC_SEND 				; send command, CF if error
+	;JC	FDC_RECAL_ERR
+	CALL	FDC_WAIT_SENSE 			; wait for WIF, sense and get status in AL
 	JC	FDC_RECAL_ERR
-	CALL	FDC_WAIT_SENSE 			; wait for WIF, sense and get status
-	JC	FDC_RECAL_ERR
-	OR	FD_CAL_ST, CH 			; mark drive as calibrated
+	XOR 	AL, 01100000b			; select interesting bits
+	TEST	AL, 01100000b			; ZF = abnormal term. AND seek complete
+	JZ	FDC_RECAL_ERR
+	OR	FD_CAL_ST, CH 			; mark drive as calibrated (and CLC)
 FDC_RECAL_ERR:
 FDC_RECAL_DONE:
 	POP	CX
@@ -7897,8 +7886,29 @@ WB_TEST_DONE:
 	RET
 WB_TEST ENDP
 
+;----------------------------------------------------------------------------;
+; Check if AL is alpha char [A-Za-z]
+;----------------------------------------------------------------------------;
+; Input:
+;	AL = char 'A'-'Z' or 'a'-'z'
+; Output:
+;	CF = 0 (NC) if alpha, CF = 1 (CY) if not alpha
+; Size: 12 bytes
+;----------------------------------------------------------------------------;
+IS_ALPHA PROC
+	PUSH	AX
+	OR	AL, 'a'-'A'			; lowercase it for comparison
+	CMP	AL, 'a'			; is less than 'a'?
+	JB	IS_ALPHA_DONE		; CF if not alpha
+	CMP	AL, 'z'+1			; is greater than 'z'?
+	CMC					; CF if not alpha
+IS_ALPHA_DONE:
+	POP	AX
+	RET
+IS_ALPHA ENDP
+
 ;
-; 205 bytes here
+; 193 bytes here
 ;
 BYTES_HERE	INT_12
 
@@ -8652,19 +8662,20 @@ INT_1A_SET ENDP
 INT_1A ENDP
 
 ;
-; 1 BYTE HERE
+; 0 BYTES HERE
 ;
 BYTES_HERE	INT_08_PROC
 
-		ORG 0FE98H
+		ORG 0FE97H
 INT_08_PROC PROC
 ;----------------------------------------------------------------------------;
 ; INT 8 - Floppy Motor shutoff has elapsed - shut off motor
 ;----------------------------------------------------------------------------;
 INT_08_MOTOR_OFF:
 	MOV	AL, 11110000B 			; BDA motor off on all drives
-	AND	[DI][FD_MOTOR_ST-TIMER_CT_L], AL ; -1 byte vs AND FD_MOTOR_ST, AL
-	XOR	AL, 11111100B 			; FDC motor off on all drives
+	AND	FD_MOTOR_ST, AL			; clear BDA flags
+	;AND	[DI][FD_MOTOR_ST-TIMER_CT_L], AL ; -1 byte vs AND FD_MOTOR_ST, AL
+	XOR	AL, 11111100B 			; FDC motors off, DMA and FDC enable
 	MOV	DX, FDC_CTRL 			; FD control port
 	OUT	DX, AL 				; write to controller
 	JMP	SHORT INT_08_INT_1C
@@ -8680,15 +8691,14 @@ INT_08_MOTOR_OFF:
 ;  	  if reaches 0, turns off motor
 ; - only take jumps on special cases
 ;
-; IMPORTANT NOTE: *BM ROM BASIC's INT 1CH handler clobbers DX, so DX
-; MUST be call-preserved here. 
+; IMPORTANT NOTE: PC ROM BASIC's INT 1CH handler clobbers DX, so DX MUST
+;  be call-preserved here.
 ;
 ; Bug fixes/suggestions thx to @Raffzahn
 ;----------------------------------------------------------------------------;
 		ORG 0FEA5H
 INT_08 PROC
 		ASSUME DS:_BDA
-	;STI 						; interrupts enabled
 	PUSH	AX 					; save AX, DX, DS and DI
 	PUSH	DX					; workaround ROM BASIC INT 1Ch bug
 	PUSH	DS
@@ -8701,9 +8711,8 @@ INT_08 PROC
 ;
 INT_08_TICK_TIMER:				; Advance the time ticker
 	MOV	DI, OFFSET TIMER_CT_L 		; Low timer at BDA 0040:006C
-	;CLI 						; pause interrupts (already off)
-	ADD	WORD PTR [DI], 1			; [23+5] increment low word
-	ADC	WORD PTR [DI+2], 0		; [23+6] maybe increment high word
+	ADD	WORD PTR [DI], 1			; increment low word
+	ADC	WORD PTR [DI+2], 0		; maybe increment high word
 	CMP	WORD PTR [DI+2], 24 		; rolled over to next day?
 	JAE	INT_08_TICK_DAY			; if so, check for day rollover
 
@@ -8746,10 +8755,10 @@ INT_08_TICK_DAY:
 ;
 INT_08_RESET:
 	XOR	AX, AX 				; AX = 0
-	MOV	WORD PTR[DI], AX			; TIMER_CT_L = 0
-	MOV	WORD PTR[DI+2], AX		; TIMER_CT_H = 0
+	MOV	WORD PTR [DI], AX			; TIMER_CT_L = 0
+	MOV	WORD PTR [DI+2], AX		; TIMER_CT_H = 0
 	INC	AX 					; AL = 1
-	MOV	BYTE PTR[DI+4], AL		; TIMER_CT_OF = 1
+	MOV	BYTE PTR [DI+4], AL		; TIMER_CT_OF = 1
 	JMP	INT_08_FD_MOTOR			; continue and check motor
 
 INT_08 ENDP
@@ -8775,6 +8784,10 @@ VECTOR_TABLE PROC
 	DW  OFFSET INT_05 		; int 05	INT_05 - Print Screen
 	DW  OFFSET INT_IRQ 		; int 06	INT_IRQ
 	DW  OFFSET INT_IRQ 		; int 07	INT_IRQ
+
+;----------------------------------------------------------------------------;
+; Compatibility fixed ORG for INT 08 - 1Eh
+;
 			ORG 0FEF3H
 	DW  OFFSET INT_08 		; int 08	IRQ0 - System timer
 	DW  OFFSET INT_09_POST		; int 09	IRQ1 - Keyboard IRQ (during POST)
