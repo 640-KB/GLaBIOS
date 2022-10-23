@@ -1500,11 +1500,12 @@ BIOS_TOP 	ENDP
 
 BYTES_HERE	POWER_ON			; 5 BYTES HERE
 
+
 			ASSUME CS:_BIOS, DS:NOTHING, ES:NOTHING, SS:NOTHING
 ;----------------------------------------------------------------------------;
 ; F000:E05B: Beginning of boot execution
 ;----------------------------------------------------------------------------;
-; Loosely follow these publicly-available specs for BIOS POST operations:
+; Loosely follow these specs for BIOS POST operations:
 ;
 ; http://minuszerodegrees.net/5160/post/5160%20-%20POST%20-%20Detailed%20breakdown.htm
 ; http://minuszerodegrees.net/5150/post/5150%20-%20POST%20-%20Detailed%20breakdown.htm
@@ -1532,21 +1533,14 @@ POWER_ON 	PROC NEAR
 	CLD					; clear direction flag
 
 ;----------------------------------------------------------------------------;
-; Disable non-maskable interrupts (NMIs) from reaching the CPU.
-;----------------------------------------------------------------------------;
-DISABLE_NMI:
-	XOR	AX, AX
-	OUT	NMI_R0, AL			; write AL = 0 to NMI register port
-
-;----------------------------------------------------------------------------;
 ; POST Hardware/System Tests
 ;----------------------------------------------------------------------------;
 
 POST_CPU_TEST:
 ;----------------------------------------------------------------------------;
-; 1 - A "very thorough" test of the CPU Registers
+; [1] Test and clear all CPU Registers
 ;----------------------------------------------------------------------------;
-; Check and clear all registers
+; Check and set all registers to 0.
 ;
 ; On Failure: 1 long beep and 2 short beeps
 ;----------------------------------------------------------------------------;
@@ -1566,10 +1560,16 @@ CPU_REG_TEST:
 	MOV	BL, 21H 			; on Failure: 2 short and 1 long beep
 	JNZ	HALT_ERROR
 	XOR	AX, AX 			; otherwise repeat with AX = 0
-	JNZ	HALT_ERROR			; if ZF was not set, you're in trouble
+	JNZ	HALT_ERROR			; if ZF was not set, it's not good
 	TEST	DX, DX			; if zero it was second pass
 	JNZ	CPU_REG_TEST		; Loop again to zero all registers
 CPU_REG_PASS:
+
+;----------------------------------------------------------------------------;
+; Disable non-maskable interrupts (NMIs)
+;----------------------------------------------------------------------------;
+DISABLE_NMI:
+	OUT	NMI_R0, AL			; write AL = 0 to NMI register port
 
 ;----------------------------------------------------------------------------;
 ; [1B] A brief test of flags and CPU instructions
@@ -1666,6 +1666,7 @@ RESET_PPI:
 ;----------------------------------------------------------------------------;
 ; [8] Checksum (8 bit) the main ROM to ensure it is not corrupt
 ;----------------------------------------------------------------------------;
+; Input: AH = 0, DX = 0F000h
 ; On Failure: 2 long beep and 2 short beeps
 ;----------------------------------------------------------------------------;
 	JWB	CHECKSUM_OK			; skip on warm boot
@@ -1674,11 +1675,11 @@ CHECKSUM_ROM:
 	MOV	DS, DX			; DS to 0F000h BIOS segment
 	MOV	SI, OFFSET BIOS_TOP 	; offset to top of BIOS ROM
 	MOV	CH, 10H			; checksum 8KB (in 2 byte words)
-	XOR	BX, BX 			; BL = accumulator for sum
+	CWD					; DL = accumulator for sum, DH = 0
 CHECKSUM:
 	LODSW 				; next two bytes into AL and AH
-	ADD	BL, AL
-	ADD	BL, AH			; ZF if sum is 0
+	ADD	DL, AL
+	ADD	DL, AH			; ZF if sum is 0
 	LOOP	CHECKSUM 			; loop through entire ROM
 	MOV	BL, 22H 			; on failure, 2 short and 2 long beeps
 	JNZ	HALT_ERROR			; if sum not 0, fail
@@ -1692,17 +1693,6 @@ INIT_DMA1:
 	MOV	AL, 00000100B		; Set Controller Disable bit
 	OUT	DMA_CMD, AL 		; write to DMA Command Register
 
-;----------------------------------------------------------------------------;
-; [9B] 8253 PIT Programmable Interval Timer Initialization Channel 1
-;----------------------------------------------------------------------------;
-; Counter 1 - DRAM Refresh
-;----------------------------------------------------------------------------;
-INIT_PIT1:
-	MOV	AL, 01010100B		; Control Word: Counter 1
-						;   Format: R/W low byte
-						;   Mode: 2 Rate Gen, BCD: 0
-	OUT	PIT_CTRL, AL		; set Counter mode
-
 			IF POST_TEST_PIT_1 EQ 1
 ;----------------------------------------------------------------------------;
 ; [10] Test Channel #1 on 8253 timer chip.
@@ -1711,21 +1701,40 @@ INIT_PIT1:
 ; If the test fails, beep failure code
 ;
 ; Test that all data lines are working by reading counter and checking 
-; that all bits from counter go both high and low. The result should 
-; be the opposite of the starting value.
+; that all bits from counter go both high and low.
 ;----------------------------------------------------------------------------;
-	MOV	AL, 0
-	MOV	DX, 0FFH			; high byte is all 0's, low is all 1's
-	OUT	PIT_CH1, AL
+; Use 16-bit mode to test low three address lines using high byte of counter.
+; This avoids a situation where the read counter code is a binary multiple
+; of the counter causing a bit to not be observed as changing.
+;
+; Control Word Counter 1 (port 43H) - System Timer:
+;  01 		- SC: Select Counter 1
+;    11		- RW: Read/Write 2xR/2xW
+;      010		- M:  Mode 2, Rate Gen
+;         0		- BCD: 0
+;
+	MOV	AL, 01110100B		; Control Word: Counter 1
+						;   Format: R/W low/high byte
+						;   Mode: 2 Rate Gen, BCD: 0
+	OUT	PIT_CTRL, AL		; set Counter mode
+	MOV	DX, LOW PIT_CH1		; DX = PIT channel 1
+	OUT	DX, AL			; set low byte (any value)
+	MOV	SI, 0FFH SHL 3		; look at bits 10-3 for 1 check
+	MOV	DI, NOT 0FFH SHL 3	; look at bits 10-3 for 0 check
+	OUT	DX, AL			; set high byte (any value)
 INIT_PIT1_TEST:
+	CMP	SI, 0FFFFH			; have all bits flipped to 1?
+	JNZ	INIT_PIT1_TEST_READ
+	TEST	DI, DI			; have all bits flipped to 0?
+	JZ	INIT_PIT1_TEST_DONE
+INIT_PIT1_TEST_READ:
 	MOV	AL, 01000000b		; latch Counter 1 command
 	OUT	PIT_CTRL, AL		; write command to CTC
-	CMP	DX, NOT 0FFH		; have all bits flipped?
-	JZ	INIT_PIT1_TEST_DONE
-	IO_DELAY_SHORT			; I/O delay
-	IN	AL, PIT_CH1			; read timer counter
-	AND	DL, AL			; clear all lines received on low byte
-	OR	DH, AL			; set all lines received on high byte
+	IN	AL, DX			; read timer LSB
+	XCHG	AH, AL			; save LSB
+	IN	AL, DX			; read timer MSB
+	AND	DI, AX			; clear all lines received as 0
+	OR	SI, AX			; set all lines received as 1
 	LOOP	INIT_PIT1_TEST		; loop until timeout
 	MOV	BL, 32H 			; beep pattern (3 short, 2 long)
 HALT_ERROR:
@@ -1740,6 +1749,17 @@ HALT_ERROR:
 INIT_PIT1_TEST_DONE:
 
 ;----------------------------------------------------------------------------;
+; [9B] 8253 PIT Programmable Interval Timer Initialization Channel 1
+;----------------------------------------------------------------------------;
+; Counter 1 - DRAM Refresh
+;----------------------------------------------------------------------------;
+INIT_PIT1:
+	MOV	AL, 01010100B		; Control Word: Counter 1
+						;   Format: R/W low byte
+						;   Mode: 2 Rate Gen, BCD: 0
+	OUT	PIT_CTRL, AL		; set Counter mode
+
+;----------------------------------------------------------------------------;
 ; [12] Reset, Clear and test DMA Offset and Block Size Registers
 ;----------------------------------------------------------------------------;
 ; - Master Reset of DMA controller
@@ -1750,7 +1770,7 @@ INIT_PIT1_TEST_DONE:
 			IF POST_TEST_DMA EQ 1
 	MOV	BH, 8				; test 8 ports
 	XOR	DX, DX			; starting at port 00H
-	CALL_NS WB_TEST			; ZF if pass, NZ if failed
+	CALL_NS WB_TEST			; ZF and CX = 0 if pass, NZ if failed
 	MOV	BL, 42H 			; beep pattern (4 short, 2 long)
 	JNZ	HALT_ERROR
 DMA_PASS:
@@ -1765,9 +1785,8 @@ DMA_PASS:
 ;----------------------------------------------------------------------------;
 	MOV	AL, 0FFH			; Memory refresh counter (16-bit) is 0FFFFH
 	OUT	DMA_0_C, AL			; write low order bits
-	IO_DELAY_SHORT
+	NOP					; very short I/O delay
 	OUT	DMA_0_C, AL			; write high order bits
-	;IO_DELAY_SHORT			; necessary?
 
 ;----------------------------------------------------------------------------;
 ; [13] Set Mode DMA Channel 0
@@ -1780,14 +1799,12 @@ DMA_PASS:
 ;----------------------------------------------------------------------------;
 	MOV	AL, 01011000B		; see above
 	OUT	DMA_MODE, AL		; write to DMA Mode Register
-	IO_DELAY_SHORT
 
 ;----------------------------------------------------------------------------;
 ; [13B] 8253 Timer set channel #1 for DMA/DRAM refresh
 ;----------------------------------------------------------------------------;
 	MOV	AL, 18 			; divisor: 1.19318 MHz / 18 = 66,287.7 Hz
 	OUT	PIT_CH1, AL			; refresh DRAM every 2ms
-	;IO_DELAY_SHORT
 			ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -1795,10 +1812,8 @@ DMA_PASS:
 ;----------------------------------------------------------------------------;
 	MOV	AL, 0 			; Set Controller Enable bit
 	OUT	DMA_CMD, AL 		; write to DMA Command Register
-	IO_DELAY_SHORT			; necessary?
-
+	MOV	CL, 3				; Set mode on Channels 1-3 for [13D]
 	OUT	DMA_MASK, AL		; clear mask (enable) on all channels
-	;IO_DELAY_SHORT
 
 ;----------------------------------------------------------------------------;
 ; [13D] Set default Mode for DMA Channels 1-3
@@ -1808,9 +1823,10 @@ DMA_PASS:
 ;    0 		; No Auto-initialization
 ;     00 		; type: Verify
 ;       xx 		; Channels 1-3
+;
+; Input: CL = 3 from [13C], CH = 0 from CALL_NS in [12]
 ;----------------------------------------------------------------------------;
 	MOV	AL, 01000001B		; AL = 01000001
-	MOV	CL, 3				; Set mode on Channels 1-3
 DMA_SETUP_CH:
 	OUT	DMA_MODE, AL		; write to DMA Mode Register
 	INC	AX				; next channel
@@ -1848,14 +1864,16 @@ DMA_SETUP_CH:
 ; On failure: 
 ; - Read/Write Error: 1 short, 3 long beeps
 ; - Parity Error: 1 short, 4 long beeps
+;
+; Input: CX = 0 from [13D]
 ;----------------------------------------------------------------------------;
 			ASSUME DS:_BDA_ABS, ES:_IVT
 BASE_RAM_TEST:
 	IN	AL, PPI_B 				; AL = PB0 flags
 	OR	AL, MASK PBIO OR MASK PBPC	; disable RAM parity and I/O ch. flags
 	OUT	PPI_B, AL
-	XOR	AX, AX 				; DS and ES = IVT segment 0000
-	MOV	DS, AX
+	XCHG	AX, CX				; AX = 0 = MEM_CHECK pattern and
+	MOV	DS, AX				; DS and ES = IVT segment 0000
 	MOV	ES, AX
 	MOV	SI, OFFSET WARM_FLAG_ABS	; preserve warm boot flag
 	MOV	DX, WORD PTR[SI]			; save warm boot flag
@@ -1875,8 +1893,7 @@ HALT_BEEP_1:
 BASE_RAM_ZERO:
 	MOV	AX, RAM_TEST			; test pattern
 	CALL_NS MEM_CHECK				; write and verify test pattern
-	JNZ	BASE_RAM_ERROR
-	XOR	AX, AX 				; zero
+	JNZ	BASE_RAM_ERROR			; ZF and AX = 0 if okay
 	CALL_NS MEM_CHECK				; write and verify zeros
 	JNZ	BASE_RAM_ERROR
 	MOV	WORD PTR[SI], DX			; restore warm boot flag
@@ -1904,8 +1921,7 @@ BASE_RAM_TEST_DONE:
 			ASSUME SS:_BOOT_STACK
 	MOV	AX, SEG STACK_TOP 		; SP to temp boot stack 0030:0100
 	MOV	SS, AX
-	MOV	AX, OFFSET STACK_TOP
-	MOV	SP, AX
+	MOV	SP, OFFSET STACK_TOP
 
 ;----------------------------------------------------------------------------;
 ; [19] 8259A PIC Interrupt controller Initialization
@@ -1938,7 +1954,7 @@ BASE_RAM_TEST_DONE:
 	INC	DX				; DX = PIC Port 1
 	MOV	AL, 00001000B		; ICW2 - Port 1
 	OUT	DX, AL
-	NOP					; short delay
+	MOV	BH, 1				; short delay and test 1 port for [22]
 	MOV	AL, 00001001B		; ICW4 - Port 1
 	OUT	DX, AL
 
@@ -1948,14 +1964,13 @@ BASE_RAM_TEST_DONE:
 ;----------------------------------------------------------------------------;
 ; - Read and write registers (IMR) and verify result
 ;----------------------------------------------------------------------------;
-	MOV	BH, 1				; test 1 port
 	CALL	WB_TEST			; walking bit test of PIC IMR register
 	MOV	BL, 52H			; beep error 5 short, 2 long
 	JZ	PIC_REG_PASS
 PIC_INT_FAIL:
 	JMP	SHORT HALT_BEEP_1
 PIC_REG_PASS:
-	DEC	DX				; DX = Port 1 (21h)
+	DEC	DX				; DX = Port 1 (0021h)
 			ELSE
 	NOP
 			ENDIF			; IF POST_TEST_PIC_REG EQ 1
@@ -1981,7 +1996,7 @@ PIC_VECT_TMP_LOOP:
 ; - Mask all interrupts and ensure none are received
 ;
 	MOV	DI, OFFSET INT_LAST_ABS
-	MOV	[DI], DH			; clear last interrupt flag
+	MOV	[DI], DH			; clear last interrupt flag (DH = 0)
 	STI					; enable interrupts
 	IO_DELAY				; wait for it...
 	CLI
@@ -1994,8 +2009,10 @@ PIC_VECT_TMP_LOOP:
 	JZ	PIC_INT_PASS
 	JMP	SHORT HALT_BEEP_1
 			ENDIF			; IF POST_TEST_PIC_REG EQ 1
-
 			ENDIF			; IF POST_TEST_PIC_INT EQ 1
+
+	MOV	AL, 11111110B		; OCW1 - unmask timer
+	OUT	DX, AL			; write IMR to PIC
 
 PIC_INT_PASS:
 
@@ -2263,12 +2280,12 @@ VID_MODE_OK:
 ; Clear screen and reset the video display.
 ;
 RESET_VIDEO:
-	XOR	AH, AH				; AH = 0 - Set Video Mode in AL
+	CBW						; AH = 0 - Set Video Mode in AL
 	INT	10H
 RESET_VIDEO_DONE:
 
 ;----------------------------------------------------------------------------;
-; Hello Computer (just use the keyboard)
+; Hello Computer ("just use the keyboard")
 ;----------------------------------------------------------------------------;
 HELLO_WORLD:
 	PRINTLN_SZ	VER_BANNER			; display banner
@@ -2292,7 +2309,7 @@ HELLO_WORLD:
 	PRINT_SZ VER				; display version
 	PRINT_SZ REL_DATE				; display build date
 	POP	DX					; restore previous cursor
-	MOV	AH, 2 				; reset cursor position 
+	MOV	AH, 2 				; reset cursor position
 	INT	10H 					; row = DH, column = DL
 			ELSE
 	PRINT_SZ VER				; display version
@@ -3799,7 +3816,7 @@ MEM_ADDR_TEST ENDP
 ;
 ; Clobbers AX, CX, DI
 ;
-; ZF if okay, NZ if fail
+; ZF and AX = 0 if okay, NZ if fail
 ;----------------------------------------------------------------------------;
 MEM_TEST PROC
 	MOV	AX, RAM_TEST			; test pattern
@@ -3813,7 +3830,7 @@ MEM_TEST PROC
 ;	AX = pattern to write
 ; 	ES = segment for test
 ;
-; ZF if okay, NZ if fail
+; ZF and AX = 0 if okay, NZ if fail
 ;----------------------------------------------------------------------------;	
 MEM_CHECK:
 	MOV	CX, 02000H 				; loop 2000H WORDs
@@ -3823,6 +3840,7 @@ MEM_TEST_VERIFY:
 	MOV	CH, 20H 				; restart loop 2000H
 	XOR	DI, DI 				; start at offset 0
 	REPZ	SCASW 				; loop until CX = 0 OR WORD is not AX
+	XCHG	AX, CX				; AX = 0 if success
 	RET
 MEM_TEST ENDP
 
@@ -6015,6 +6033,7 @@ INT_10_IS_CGA80 PROC
 INT_10_IS_CGA80_DONE:
 	POP	DS
 	POP	AX
+INT_10_0_RET:
 	RET
 INT_10_IS_CGA80 ENDP
 
@@ -6083,7 +6102,7 @@ INT_1D ENDP
 ;----------------------------------------------------------------------------;
 INT_10_0 PROC
 	CMP	AL, 7					; is new video page > 7?
-	JA	INT_10_DONE				; if so, not valid, return
+	JA	INT_10_0_RET			; if so, not valid, return
 	PUSH	AX
 	PUSH	BX
 	PUSH	DX
@@ -7835,6 +7854,7 @@ OUT_SZ ENDP
 ;	BH = number of sequential ports to test
 ; Output:
 ;	NZ if failed
+;	CX = 0 if success
 ;
 ; Adapted from:
 ; https://barrgroup.com/embedded-systems/how-to/memory-test-suite-c
