@@ -4,9 +4,13 @@ A modern, scratch-built, open-source alternative BIOS for vintage PC, XT, 8088 C
 
 Copyright &copy; 2022, [640KB](mailto:640kb@glabios.org) and contributors.
 
+## Version 0.2.0 beta
+
+[Download Ver 0.2.0-beta ROMs](https://github.com/640-KB/GLaBIOS/releases)
+
 ## Version 0.1.7 release
 
-[Download Ver 0.1.7 ROMs](https://github.com/640-KB/GLaBIOS/releases)
+[Download Ver 0.1.7 ROMs](https://github.com/640-KB/GLaBIOS/releases/tag/v0.1.7)
 
 [Source Code](https://github.com/640-KB/GLaBIOS/tree/main/src)
 
@@ -24,10 +28,10 @@ Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org or
 - Support for 5150, 5160, Turbo and compatible clone hardware.
 - FAST! [Performance-optmized](doc/about/perf.md) CGA/MDA text and graphics routines.
 - Multiple levels of "[CGA snow](https://en.wikipedia.org/wiki/Color_Graphics_Adapter#Limitations,_bugs_and_errata)" removal (configurable at build-time).
+- 5150 Cassette tape support.
 - Accurate PIT-based I/O timing. Better stability at faster clock speeds and increased speed on slower PCs.
 - NEC V20 enhanced instruction set support (enabled at build-time).
 - POST test screen colors support easily customized themes (build-time).
-- **Coming Soon:** 5150 Cassette tape support.
 
 ## FAQ
 
