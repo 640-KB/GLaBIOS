@@ -76,9 +76,9 @@ Bad RAM detected! Use standard [address and bit indicator](http://minuszerodegre
 
 ![Screenshot CGA 09-08-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.1.5_cga_memtst_1.png)
 
-MDA with example POST error:
+5150 with cassette:
 
-![Screenshot MDA 07-29-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.11_mda_2.png)
+![Screenshot 5150 Cas1](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.2.0_pc_cas_1.png)
 
 #### Compatibility
 
