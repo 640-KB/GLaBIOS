@@ -4,6 +4,10 @@ A modern, scratch-built, open-source alternative BIOS for vintage PC, XT, 8088 C
 
 Copyright &copy; 2022, [640KB](mailto:640kb@glabios.org) and contributors.
 
+## Announcements
+
+#### [Vote now](https://github.com/640-KB/GLaBIOS/discussions/14) for the new tagline for the next major version!
+
 ## Version 0.2.0 beta
 
 [Download Ver 0.2.0-beta ROMs](https://github.com/640-KB/GLaBIOS/releases)
