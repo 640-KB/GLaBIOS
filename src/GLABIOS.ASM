@@ -92,6 +92,7 @@ ARCH_5150		EQU	'P'			; 5150
 ARCH_5160		EQU	'X'			; 5160 v1
 ARCH_5160v2		EQU	'Y'			; 5160 v2/3
 ARCH_TURBO		EQU	'T'			; Turbo or clone
+ARCH_HOMEBREW	EQU	'H'			; EMM Computers/Homebrew8088
 
 ;
 ; CPU Instruction Set Target
@@ -124,6 +125,7 @@ TURBO_90H		EQU	3			; ST-xx/UNIQUE Port 90h
 ;ARCH_TYPE		EQU	ARCH_5160		; PC 5160 (recommended)
 ;ARCH_TYPE		EQU	ARCH_5160v2		; PC 5160v2 (not recommended)
 ARCH_TYPE		EQU	ARCH_TURBO		; Turbo (clock >= 4.77MHz)
+;ARCH_TYPE		EQU	ARCH_HOMEBREW	; Homebrew8088 specific options
 	ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -173,7 +175,11 @@ POST_VIDEO_TYPE	=	1		; show the video adapter type on POST
 ; Enable/Disable POST tests - Not all tests can be enabled due to 8K ROM space
 ;
 POST_TEST_INST	=	0		; POST CPU Instruction/Flag Test
-POST_TEST_DMA	=	1		; POST DMA Register Test
+IF ARCH_TYPE EQ ARCH_HOMEBREW
+	POST_TEST_DMA	=	0	; Homebrew8088 designs have DMA optional
+ELSE
+	POST_TEST_DMA	=	1	; POST DMA Register Test
+ENDIF
 POST_TEST_PIT_1	=	1		; POST Timer Channel 1 Test
 POST_TEST_PIC_REG	=	1		; POST PIC Register Test
 POST_TEST_PIC_INT	=	1		; POST PIC Interrupt Test
@@ -187,6 +193,12 @@ DRAM_REFRESH	=	1		; 1: Use standard DMA DRAM refresh
 						; 0: Disable refresh (use only with SRAM!)
 OPT_ROM_END		=	0FE00H	; Option ROM scan ending address
 FDC_HTL_WAIT	=	1		; Halt CPU during FD access
+
+						; Wait states for V40 CPU Homebrew8088:
+V40_WS = 0FFh				; Super conservative: 3WS everywhere
+;V40_WS = 025h				; Bolder: Zero wait-state I/O, 
+						; 2 WS above 640k, 1WS below
+;V40_WS = 00h				; Full Zero wait state, best performance
 
 
 ;----------------------------------------------------------------------------;
@@ -1531,7 +1543,10 @@ BYTES_HERE	POWER_ON			; 5 BYTES HERE
 POWER_ON 	PROC NEAR
 	CLI 					; disable CPU interrupts
 	CLD					; clear direction flag
-
+	IF ARCH_TYPE EQ ARCH_HOMEBREW
+		JMP INIT_HOMEBREW
+		AFTER_HOMEBREW:
+	ENDIF
 ;----------------------------------------------------------------------------;
 ; POST Hardware/System Tests
 ;----------------------------------------------------------------------------;
@@ -2610,6 +2625,16 @@ KB_RESET_TEST:
 	POST_FLAG_SET PKEY			; otherwise set flag for keyboard error
 KB_HAPPY:
 
+IF ARCH_TYPE EQ ARCH_HOMEBREW
+	;----------------------------------------------------------------------;
+	; The controller on the homebrew board seems to need to be poked in the
+	; tests to work reliably at end-of-boot but does not return expected 
+	; behaviour and often returns PKEY or PKI errors, so we should run the 
+	; tests but ignore them
+	POST_FLAG_CLR PKEY
+	POST_FLAG_CLR PKI
+ENDIF
+
 ;----------------------------------------------------------------------------;
 ; Disable keyboard for rest of POST
 ;
@@ -2665,12 +2690,15 @@ HELLO_BOOT_TYPE ENDP
 ;----------------------------------------------------------------------------;
 ; [27B] Verify that the 8237 DMA Channel 0 Terminal Count (TC 0) status bit 
 ; is on. This test is only done on a cold boot.
+; This test cannot be performed on Homebrew8088 since it has no DMA 0
 ;----------------------------------------------------------------------------;
+IF ARCH_TYPE NE ARCH_HOMEBREW
 	JWB	DMA_STATUS_OK			; skip on warm boot
 	IN	AL, DMA_CMD				; verify DMA status register
 	TEST	AL, 00000001B			; Channel 0 TC
 	JNZ	DMA_STATUS_OK
 	POST_FLAG_SET PDMA			; mark in POST error flags
+ENDIF
 DMA_STATUS_OK:
 
 ;----------------------------------------------------------------------------;
@@ -7931,6 +7959,77 @@ IS_ALPHA ENDP
 ; 193 bytes here
 ;
 BYTES_HERE	INT_12
+
+IF ARCH_TYPE EQ ARCH_HOMEBREW
+	INIT_HOMEBREW:
+		;-----------------------------------------------------------------;
+		; Initialization specific to the Homebrew8088 design
+		; V40 "Internal Hardware" config
+		;
+		MOV DX, 0FFFEh	; Port FFFE = OPCN.  Controls cerain pin mapping.
+		XOR AL, AL		; Value 00: Enables DMARQ3, /DMAAK3, /INTAK,
+		OUT DX, AL		; INTP1 and INTP2
+
+		DEC DX		; Port FFFD = OPSEL (internal peripheral enables)
+		MOV AL, 06		; Enable Timers (4) + Interrupts (2), disable 
+		OUT DX, AL		; serial (8) and DMA (1)
+
+		DEC DX		; Port FFFC = OPHA, top half of the port numbers 
+		MOV AL, 00		; used by peripherals.  Set to 00.
+		OUT DX, AL
+
+		DEC DX		; Port FFFB = DULA (low half of DMA port numbers)
+					; Can be skipped as not used to save space
+				
+		DEC DX		; Port FFFA = IULA (low half of IRQ port numbers)
+		MOV AL, 020h	; Set to 0x20
+		OUT DX, AL
+
+		DEC DX		; Port FFF9 = TULA (low half of timer ports)
+		MOV AL, 040h	; Set to 0x40
+		OUT DX, AL
+
+		DEC DX		; Port FFF8 = SULA (low half of serial ports)
+					; Can be skipped as unused
+
+		DEC DX		; Port FFF7, skipped as reserved
+
+		DEC DX		; Port FFF6 = WCY2, wait state control
+		MOV AL, 00		; Bits 2-3: DMA WS, 0-1: refresh WS
+		OUT DX, AL		; 00 seems safe for SRAM since no refresh happens
+
+		DEC DX		; Port FFF5 = WCY1, more wait state control
+		MOV AL, V40_WS	; BITS 7-6 = IO WS, 5-4, 3-2, 1-0 are 
+		OUT DX, AL		; "high", "middle", "low" memory sector WS.
+
+		DEC DX		; Port FFF4 = WMB, Waitstate Memory Block mapping
+		MOV AL, 6		; Bits 6-4 are size of "high" memory, 2-0 "low"
+		OUT DX, AL		; in 32k units.  Default puts bottom 32k "low"
+					; and above 640k in "high" for stuff like slow 
+					; video cards and option BIOSes
+
+		DEC DX		; Port FFF3 = Reserved, skipped.
+
+		DEC DX		; Port FFF2 = RFC, Refresh control
+		XOR AL, AL		; Set to 00 (disabled refresh) for SRAM
+		OUT DX, AL
+
+		DEC DX		; Port FFF1 = Reserved, skipped
+
+		DEC DX		; Port FFF0 = TCKS, timer control
+		MOV AL, 01Ch	; Bits 4-2 set sources for timers (1 for TCLK)
+		OUT DX, AL		; Bits 1-0 scale internal clock (00 = div by 2)
+
+		;-----------------------------------------------------------------;
+		; Keyboard controller pre-init for Homebrew8088 mainboard
+		;
+		MOV AL, 060h	;WRITE COMMAND BYTE TO KEYBOARD CONTROLLER
+		OUT 064h, AL	;OUT COMMAND PORT
+		MOV AL, 061h	;PC MODE, ENABLE INTERRUPT
+		OUT 060h, AL	;OUT DATA PORT
+	JMP AFTER_HOMEBREW
+ENDIF
+
 
 ;----------------------------------------------------------------------------;
 ; INT 12H - Memory Size Determination
