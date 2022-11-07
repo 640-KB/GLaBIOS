@@ -8,13 +8,13 @@ Copyright &copy; 2022, [640KB](mailto:640kb@glabios.org) and contributors.
 
 #### [Vote now](https://github.com/640-KB/GLaBIOS/discussions/14) for the new tagline for the next major version!
 
-## Version 0.2.0 beta
+## Version 0.2.0 beta2
 
-[Download Ver 0.2.0-beta ROMs](https://github.com/640-KB/GLaBIOS/releases)
+[Download 0.2.0-beta2 ROMs](https://github.com/640-KB/GLaBIOS/releases/tag/v0.2.0-beta2)
 
-## Version 0.1.7 release
+## Version 0.1.8 release
 
-[Download Ver 0.1.7 ROMs](https://github.com/640-KB/GLaBIOS/releases/tag/v0.1.7)
+[Download 0.1.8 ROMs](https://github.com/640-KB/GLaBIOS/releases/tag/v0.1.8)
 
 [Source Code](https://github.com/640-KB/GLaBIOS/tree/main/src)
 
@@ -29,7 +29,7 @@ Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org or
 ## Features
 
 - A complete [100% PC Compatible](#compatibility) BIOS for retro/vintage PC, XT, 8088 Clone or Turbo PCs.
-- Support for 5150, 5160, Turbo and compatible clone hardware.
+- Support for 5150, 5160, FE2010A, Turbo and compatible clone hardware.
 - FAST! [Performance-optmized](doc/about/perf.md) CGA/MDA text and graphics routines.
 - Multiple levels of "[CGA snow](https://en.wikipedia.org/wiki/Color_Graphics_Adapter#Limitations,_bugs_and_errata)" removal (configurable at build-time).
 - 5150 Cassette tape support.
