@@ -4,6 +4,10 @@ A modern, scratch-built, open-source alternative BIOS for vintage PC, XT, 8088 C
 
 Copyright &copy; 2022, [640KB](mailto:640kb@glabios.org) and contributors.
 
+## Announcements
+
+#### [Vote now](https://github.com/640-KB/GLaBIOS/discussions/14) for the new tagline for the next major version!
+
 ## Version 0.2.0 beta
 
 [Download Ver 0.2.0-beta ROMs](https://github.com/640-KB/GLaBIOS/releases)
@@ -31,7 +35,7 @@ Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org or
 - 5150 Cassette tape support.
 - Accurate PIT-based I/O timing. Better stability at faster clock speeds and increased speed on slower PCs.
 - NEC V20 enhanced instruction set support (enabled at build-time).
-- POST test screen colors support easily customized themes (build-time).
+- Customizable POST test screen colors themes.
 
 ## FAQ
 
@@ -113,8 +117,8 @@ PC BIOS clones were written.
 
 OR
 
-3. Convert EXE manually by removing the EXE header (the first 512 bytes of the EXE file) and extracting the last 8 KiB
-4. Calculate 8-bit checksum byte and insert into relative file offset `1FFF` in GLABIOS.ROM.
+1. Convert EXE manually by removing the EXE header (the first 512 bytes of the EXE file) and extracting the last 8 KiB
+2. Calculate 8-bit checksum byte and insert into relative file offset `1FFF` in GLABIOS.ROM.
 
 ### Testing
 
@@ -140,8 +144,7 @@ Hampa Hug's excellent [PCE/ibmpc emulator](http://hampa.ch/pce/pce-ibmpc.html) w
 - Hampa Hug for the excellent [PCE software](http://www.hampa.ch/pce/pce-ibmpc.html) that helped make development and debugging much easier.
 - @Raffzahn, Contributor, Advisor and Meckerhut.
 - Dave Nault, my partner in crime for 2 semesters of college assembly language programming classes back in the day. Wherever you are buddy, hope you're doing well!
-
-#### Huge thanks to @MadMaxx12345, @Makefile and @punishedbunny for testing, bug finding and feature suggestions.
+- @MadMaxx12345, @Makefile and @punishedbunny for testing, bug finding and feature suggestions.
 
 ### Disclaimer
 
