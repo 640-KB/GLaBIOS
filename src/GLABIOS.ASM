@@ -6778,8 +6778,8 @@ INT_10_8_FAST:
 
 INT_10_8_CHK_CGA:
 	SHR	AL, 1				; Video modes: 0=40,1=80,2=low-gfx,3=hi-gfx
-			IF CGA_SNOW_REMOVE GT 0
 	CMP	AL, 1				; is CGA modes 2,3?
+			IF CGA_SNOW_REMOVE GT 0
 	JNE	INT_10_8_NOT_CGA		; jump if not
 
 ;----------------------------------------------------------------------------;
@@ -6796,7 +6796,7 @@ INT_10_8_CHK_CGA:
 INT_10_8_NOT_CGA:
 			ENDIF
 
-	JB	INT_10_8_FAST		; if not GFX modes 4,5,6 jump to fast text
+	JBE	INT_10_8_FAST		; if not GFX modes 4,5,6 jump to fast text
 						; fall through to graphics
 
 ;----------------------------------------------------------------------------;
@@ -6986,8 +6986,8 @@ INT_10_9_FAST:
 
 INT_10_CHK_CGA:
 	SHR	AL, 1				; group remaining video modes
-			IF CGA_SNOW_REMOVE GT 0
 	CMP	AL, 1				; is CGA modes 2,3?
+			IF CGA_SNOW_REMOVE GT 0
 	JNE	INT_10_A_NOT_CGA		; jump if not
 
 ;----------------------------------------------------------------------------;
@@ -7035,7 +7035,7 @@ INT_10_9_CGA_LOOP:
 INT_10_A_NOT_CGA:
 			ENDIF
 
-	JB	INT_10_9A_FAST		; is not GFX modes 4,5,6 jump to fast text
+	JBE	INT_10_9A_FAST		; is not GFX modes 4,5,6 jump to fast text
 	POP	AX				; restore AX and fall through to graphics
 
 ;----------------------------------------------------------------------------;
