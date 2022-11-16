@@ -138,7 +138,7 @@ VER_NAME		EQU	'GLaBIOS'
 VER_NUM		EQU	'0.2.0'		; (max 6 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'11/15/22' 		; must be MM/DD/YY format
+VER_DATE		EQU	'11/16/22' 		; must be MM/DD/YY format
 	ENDIF
 	IFNDEF COPY_YEAR
 COPY_YEAR		EQU	'2022'		; can be set at build time
@@ -198,13 +198,14 @@ CGA_SNOW_REMOVE	=	3		; 0: Snow, Normal Flashing, Fastest
 ;----------------------------------------------------------------------------;
 ; Personality Traits
 ;
-POST_GLADOS		=	0		; say "Starting GLaDOS..." on boot
 POST_CLS		=	0		; clear screen after POST
-POST_SHOW_VER	=	3		; POST screen verbosity (0-3)
-POST_VIDEO_TYPE	=	1		; show the video adapter type on POST
+POST_GLADOS		=	0		; say "Starting GLaDOS..." on boot
 POST_HD_PARMS	=	1		; show hard drive parameters on POST
-POST_WARM_COLD	=	1		; show boot WARM or COLD
+POST_SHOW_VER	=	3		; POST screen verbosity (0-3)
 POST_THEME		=	1		; color theme for POST screen (see below)
+POST_VIDEO_TYPE	=	1		; show the video adapter type on POST
+POST_WARM_COLD	=	1		; show boot WARM or COLD
+RANDOM_TAGLINE	=	1		; randomize pithy tagline
 UNITS_IEC		=	0		; 0=period-correct "KB" or 1=modern IEC "KiB"
 
 ;----------------------------------------------------------------------------;
@@ -301,10 +302,10 @@ TURBO_TYPE		=	TURBO_STD		; always use Standard
 ; Configuration for FE2010A
 ;
 BASIC_ROM		= 	0			; disable to free code space
-SW1_FLP		=	01b			; SW1 5/6 Max # of floppy drives (0-1)
 FD_AUTO_DETECT	=	1			; auto-detect number of floppy drives
 FE_CPU_WS		=	100b			; boot to 9.54 MHz, 4 RAM WS
 POST_TEST_PIT_1	=	0			; this fails on FE2010A chipset
+SW1_FLP		=	01b			; SW1 5/6 Max # of floppy drives (0-1)
 TURBO_TYPE		=	TURBO_REV		; always use reverse
 MICRO_8088		=	0			; build for micro_8088 / NuXT
 
@@ -380,6 +381,7 @@ BOOT_SPEED		EQU	BOOT_NORMAL
 POST_HD_PARMS	=	0			; disable HD size display
 POST_TEST_SEEK	=	0			; disable floppy seek
 POST_WARM_COLD	=	0			; disable WARM/COLD boot
+RANDOM_TAGLINE	=	0			; disable random tagline
 	ENDIF
 
 	IF POST_HD_CHECK EQ 0
@@ -773,10 +775,10 @@ EQFLAGS RECORD	LPT:2,X1:1,GAM:1,COM:3,DMA:1,FLP:2,VIDM:2,MBRAM:2=11b,FPU:1,IPL:1
 ;         |					; 4 = RP5C15
 ;     x   |			- TURBO	: Turbo supported
 ;      x  |			- V20		: 1 if V20, 0 if 8088
-;       xx|			- TBD2
+;       xx|			- GRND	; random number for tagline
 ; 84218421
 ;----------------------------------------------------------------------------;
-GFLAGS RECORD	GTBD1:1,RTCTY:3,TURBO:1,V20:1,GTBD2:2
+GFLAGS RECORD	GTBD1:1,RTCTY:3,TURBO:1,V20:1,GRND:2
 
 ;----------------------------------------------------------------------------;
 ; POST status flags are stored in BP
@@ -1989,22 +1991,19 @@ POWER_ON	ENDP
 		ORG	0E000H
 BIOS_TOP	PROC	NEAR
 
-VER_BANNER	DB	LF
+TOP_BANNER	DB	LF
 		DB	VER_NAME, ' [', HEART, '] '
-				IF POST_SHOW_VER GT 2
-		DB	"The hero we need but don't deserve"
-		DB	CR, LF
+				IF RANDOM_TAGLINE EQ 1
+		DB	0				; null terminate BANNER string
 				ENDIF
-
-COPYRIGHT	DB	'(C)'
-				IF POST_SHOW_VER GT 2
-		DB	' '
+TAG0		DB	"The hero we need but don't deserve"
+				IF RANDOM_TAGLINE EQ 1
+		DB	0				; null terminate TAG0 string
 				ENDIF
-		DB	COPY_YEAR, ' '
+COPYRIGHT	DB	CR, LF
+		DB	'(C) ', COPY_YEAR, ' '
 		DB	'640KB Released under GPLv3'
-				IF POST_SHOW_VER GT 1
 		DB	LF
-				ENDIF
 		DB	0
 
 BIOS_TOP 	ENDP
@@ -2067,7 +2066,6 @@ CPU_REG_TEST:
 	MOV	BL, BEEP_SL <2,1>		; on Failure: 2 short and 1 long beep
 	JNZ	HALT_ERROR
 	XOR	AX, AX 			; otherwise repeat with AX = 0
-	JNZ	HALT_ERROR			; if ZF was not set, it's not good
 	TEST	DX, DX			; if zero it was second pass
 	JNZ	CPU_REG_TEST		; Loop again to zero all registers
 CPU_REG_PASS:
@@ -2125,6 +2123,18 @@ INIT_VIDEO:
 	JNZ	POST_FLAG_DONE
 	MOV	BP, MASK WARM		; clear and set POST warm boot flag
 POST_FLAG_DONE:
+
+			IF RANDOM_TAGLINE EQ 1
+;----------------------------------------------------------------------------;
+; Read PIT for seed of random pithy tagline
+;----------------------------------------------------------------------------;
+	MOV	AL, PIT_CW <0, 0>		; Counter 0, Latch (00b)
+	OUT	PIT_CTRL, AL		; write command to CTC
+	IN	AL, PIT_CH0			; read low byte of Counter 0 latch
+	SHR	AL, 1				; low bit is always 0
+	AND	AL, MASK GRND		; use only last two bits
+	OR	BP, AX			; save to low bits of BP
+			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Setup SS = CS
@@ -2217,6 +2227,8 @@ INIT_DMA1:
 ;      010		- M:  Mode 2, Rate Gen
 ;         0		- BCD: 0
 ;
+; Output: Success SI and DI = 0, Failure 3 short, 2 long beeps
+;----------------------------------------------------------------------------;
 	MOV	AL, PIT_CW <1, 11B, 2>	; Control Word: Counter 1
 						;   Format: R/W low/high byte: 11b
 						;   Mode: 2 Rate Gen, BCD: 0
@@ -2227,18 +2239,19 @@ INIT_DMA1:
 	MOV	DI, NOT 0FFH SHL 3	; look at bits 10-3 for 0 check
 	OUT	DX, AL			; set high byte (any value)
 INIT_PIT1_TEST:
-	CMP	SI, 0FFFFH			; have all bits flipped to 1?
-	JNZ	INIT_PIT1_TEST_READ
 	TEST	DI, DI			; have all bits flipped to 0?
-	JZ	INIT_PIT1_TEST_DONE
+	JNZ	INIT_PIT1_TEST_READ	; if not, keep reading PIT
+	INC	SI				; have all bits flipped to 1?
+	JZ	INIT_PIT1_TEST_DONE	; if so, success
+	DEC	SI				; if not, undo INC and keep reading PIT
 INIT_PIT1_TEST_READ:
 	MOV	AL, PIT_CW <1,0>		; latch Counter 1 command
 	OUT	PIT_CTRL, AL		; write command to CTC
 	IN	AL, DX			; read timer LSB
-	XCHG	AH, AL			; save LSB
+	MOV	AH, AL			; save LSB
 	IN	AL, DX			; read timer MSB
-	AND	DI, AX			; clear all lines received as 0
-	OR	SI, AX			; set all lines received as 1
+	AND	DI, AX			; clear all lines read as 0
+	OR	SI, AX			; set all lines read as 1
 	LOOP	INIT_PIT1_TEST		; loop until timeout
 	MOV	BL, BEEP_SL <3,2>		; beep pattern (3 short, 2 long)
 HALT_ERROR:
@@ -2570,7 +2583,7 @@ BIOS_INT_VECTORS_LOOP:
 ; Check for valid BASIC ROMs and set INT 18H vector if detected
 ;----------------------------------------------------------------------------;
 ; - Scan 4 x 8K ROMs starting at seg 0F600h.
-; - BASIC dectected if for alls ROMs, all of the folowing are true:
+; - BASIC dectected if for all ROMs, all of the folowing are true:
 ; 	- first two bytes not option ROM (0AAFFh)
 ;	- first two bytes not the same as the previous ROM (this checks to
 ;		 make sure are not all 0000 or FFFF)
@@ -2849,7 +2862,11 @@ RESET_VIDEO_DONE:
 ; Hello Computer ("just use the keyboard")
 ;----------------------------------------------------------------------------;
 HELLO_WORLD:
-	PRINTLN_SZ	VER_BANNER			; display banner
+			IF RANDOM_TAGLINE EQ 1
+	CALL	HELLO_RAND_TAGLINE		; display banner and random tagline
+			ELSE
+	PRINTLN_SZ	TOP_BANNER			; display banner and fixed tagline
+			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Save the initial cursor mode to BDA for hot key and POST display
@@ -3329,7 +3346,6 @@ POST_KB_RESET ENDP
 ;----------------------------------------------------------------------------;
 ; Begin Hardware POST Test Results
 ;----------------------------------------------------------------------------;
-
 	CALL	HIDE_CURSOR				; cursor movement is distracting
 
 			IF POST_WARM_COLD EQ 1
@@ -9946,6 +9962,41 @@ WB_LOW_CHECK_OK:
 PORT_TEST_DONE:
 	RET
 PORT_TEST ENDP
+
+		IF RANDOM_TAGLINE EQ 1
+;----------------------------------------------------------------------------;
+; Display BIOS name and random tagline
+;----------------------------------------------------------------------------;
+; String is chosen from low two bits of BP
+; Clobbers: AX
+;----------------------------------------------------------------------------;
+HELLO_RAND_TAGLINE PROC
+	PRINT_SZ  TOP_BANNER		; display main banner
+	MOV	AX, BP			; get random bits from BP
+	POST_FLAG_CLR GRND		; clear random bits from BP
+	AND	AX, MASK GRND		; mask only low 2 bits
+	XCHG	AX, SI			; SI = string offset table
+	SHL	SI, 1				; word align
+	MOV	SI, CS:TAGS[SI]		; SI = chosen tagline offset
+	PRINT_SZ  SI			; display tagline
+	PRINTLN_SZ COPYRIGHT		; display copyright message
+	RET
+
+;----------------------------------------------------------------------------;
+; Three additional random taglines
+;
+TAG1		DB	'An Energy Star Foe', 0
+TAG2		DB	'Now 97% asbestos-free', 0
+TAG3		DB	'Ought to be enough for anybody', 0
+;		DB	'When life gives you lemonade', 0	; runner up
+
+;----------------------------------------------------------------------------;
+; Offset table for taglines
+;
+TAGS		DW	OFFSET TAG0, OFFSET TAG1, OFFSET TAG2, OFFSET TAG3
+
+HELLO_RAND_TAGLINE ENDP
+		ENDIF
 
 ;
 ; 4 BYTES HERE
