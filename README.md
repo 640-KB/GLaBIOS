@@ -19,7 +19,9 @@ Version 0.2 is a significant update to version 0.1 adding numerous performance a
 
 [Source Code](https://github.com/640-KB/GLaBIOS/tree/main/src)
 
-#### [Vote now](https://github.com/640-KB/GLaBIOS/discussions/14) for the new tagline for the next major version!
+### You spoke, we listened!
+
+The results of the poll for [tagline for the next major version](https://github.com/640-KB/GLaBIOS/discussions/14) are in, and the winner is... everybody!  GLaBIOS will now choose a different tagline on every reboot, based on mood.
 
 ## License
 
