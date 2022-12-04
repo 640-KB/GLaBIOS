@@ -138,7 +138,7 @@ VER_NAME		EQU	'GLaBIOS'
 VER_NUM		EQU	'0.2.0'		; (max 6 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'11/24/22' 		; must be MM/DD/YY format
+VER_DATE		EQU	'12/02/22' 		; must be MM/DD/YY format
 	ENDIF
 	IFNDEF COPY_YEAR
 COPY_YEAR		EQU	'2022'		; can be set at build time
@@ -159,7 +159,7 @@ VER_BLD		EQU	'0000'
 ;ARCH_TYPE		EQU	ARCH_5150		; PC 5150
 ;ARCH_TYPE		EQU	ARCH_5160		; PC 5160 (recommended for non-Turbo)
 ;ARCH_TYPE		EQU	ARCH_5160v2		; PC 5160v2 (not recommended)
-ARCH_TYPE		EQU	ARCH_TURBO		; Standard/Turbo (>= 4.77MHz)
+ARCH_TYPE		EQU	ARCH_TURBO		; Standard Turbo
 ;ARCH_TYPE		EQU	ARCH_ST12		; ST-xx/UNIQUE Port 90h
 ;ARCH_TYPE		EQU	ARCH_FE2010		; Faraday FE2010A
 ;ARCH_TYPE		EQU	ARCH_EHB		; EMM Computers/Homebrew 8088
@@ -323,9 +323,7 @@ DRAM_REFRESH	=	0			; disable DRAM refresh (for SRAM)
 RAM_PARITY		=	0			; disable memory parity check
 CGA_SNOW_REMOVE	=	0			; disable snow removal
 FE_CPU_CFG		=	110b			; boot to 9.54 MHz, 2 RAM WS
-KB_HLT_WAIT		=	0			; no halt CPU during KB wait
-							;  causes issues with
-							;  Multi-Floppy BIOS
+
 	ENDIF
 	ENDIF
 
@@ -335,7 +333,6 @@ KB_HLT_WAIT		=	0			; no halt CPU during KB wait
 ;
 CGA_SNOW_REMOVE	=	0			; disable snow removal
 DRAM_REFRESH	=	0			; disable refresh (no DRAM)
-KB_HLT_WAIT		=	0			; no halt CPU during KB wait
 DMA_INSTALLED	=	0			; no DMA 8237A installed
 POST_TEST_DMA	=	0			; disable DMA Register Test (no DMA)
 POST_TEST_KB	=	0			; disable PKEY and PKI errors
@@ -487,13 +484,13 @@ POST_HD_CHS_L	EQU	'('			; chars to enclose CHS display
 POST_HD_CHS_R	EQU	')'
 
 ; prefer period-correct "KB" or IEC "KiB"
-			IF UNITS_IEC EQ 1
-POST_K_UNIT	EQU	<'KiB'>		; KiB size unit abbrev.
-POST_M_UNIT	EQU	<'MiB'>		; MiB size
-			ELSE
-POST_K_UNIT	EQU	<'KB'>		; KB size unit abbrev.
-POST_M_UNIT	EQU	<'MB'>		; MB size
-			ENDIF
+				IF UNITS_IEC EQ 1
+POST_K_UNIT		EQU	<'KiB'>		; KiB size unit abbrev.
+POST_M_UNIT		EQU	<'MiB'>		; MiB size
+				ELSE
+POST_K_UNIT		EQU	<'KB'>		; KB size unit abbrev.
+POST_M_UNIT		EQU	<'MB'>		; MB size
+				ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Useful CP-437/Control Chars
@@ -584,8 +581,9 @@ ATKB_CMD		EQU	64H			; 8042 Keyboard command/status register
 ; POST TEST card I/O
 POST_CARD_PORT	EQU	80H			; can be 60H, 80H, 300H, 313H
 
-; 90H ST/UNIQUE Turbo Control
-TURBO_CTRL_90H	EQU	90H			; Write 2 for Turbo, 3 for Normal
+; TD3300A/ST-xx/UNIQUE Control Registers
+TD_WS			EQU	70H			; RAM, I/O wait state control
+TD_TURBO		EQU	90H			; Write 2 for Turbo, 3 for Normal
 
 ; NMI flip/flop
 NMI_R0		EQU	0A0H			; CPU NMI Register
@@ -787,22 +785,6 @@ DBW	RECORD	HDB:8,LDB:8
 EQFLAGS RECORD	LPT:2,X1:1,GAM:1,COM:3,DMA:1,FLP:2,VIDM:2,MBRAM:2=11b,FPU:1,IPL:1=1
 
 ;----------------------------------------------------------------------------;
-; GLaBIOS Equipment Flags (40:12H) OLD
-;----------------------------------------------------------------------------;
-; 76543210
-; x 	    |			- TBD		: Reserved
-;  x 	    |			- TURBO	: Turbo supported
-;   x	    |			- V20		: 1 if V20, 0 if 8088
-;    x    |			- RTCMS	: RTC MS5832 detected
-;     x   |			- RTCMM	: RTC MM58167AN detected
-;      x  |			- RTCRP	: RTC Ricoh RP5C15 detected
-;       x |			- RTCAT	: Dallas DS1285
-;        x|			- TBD		:
-; 84218421
-;----------------------------------------------------------------------------;
-;GFLAGS RECORD	GTBD1:1,TURBO:1,V20:1,RTCMS:1,RTCMM:1,RTCRP:1,RTCAT:1,GTBD2:1
-
-;----------------------------------------------------------------------------;
 ; GLaBIOS Equipment Flags (40:12H)
 ;----------------------------------------------------------------------------;
 ; 76543210
@@ -832,15 +814,17 @@ GFLAGS RECORD	GTBD1:1,RTCTY:3,TURBO:1,V20:1,GRND:2
 ;     x   |			- PFSK  : FDC seek test failure
 ;      x  |			- PDMA  : DMA error
 ;       x |			- PMEM  : Memory Error
-;        x| xxxxxxxx	- TBD
+;        x|			- PFXX  : Reserved (do not use)
+;         |xxxxxxxx	- TBD
 ; 84218421
 ;----------------------------------------------------------------------------;
-PFLAGS RECORD WARM:1,PKI:1,PKEY:1,PFDC:1,PFSK:1,PDMA:1,PMEM:1,PTBD2:9
+PFLAGS RECORD WARM:1,PKI:1,PKEY:1,PFDC:1,PFSK:1,PDMA:1,PMEM:1,PFXX:1,PTBD:8
 
 ;----------------------------------------------------------------------------;
 ; BDA Keyboard Flags
 ;----------------------------------------------------------------------------;
 ; 40:17	Keyboard Flags Byte 1 (Low)
+;----------------------------------------------------------------------------;
 ;          84218421
 ; 	    |7 	    	- K1IN	insert is active
 ; 	    | 6 	    	- K1CL	caps-lock is active
@@ -852,8 +836,10 @@ PFLAGS RECORD WARM:1,PKI:1,PKEY:1,PFDC:1,PFSK:1,PDMA:1,PMEM:1,PTBD2:9
 ; 	    |       0	- K1RS	right shift key depressed
 ;----------------------------------------------------------------------------;
 KBFLAGS1 RECORD	K1IN:1,K1CL:1,K1NL:1,K1SL:1,K1AL:1,K1CT:1,K1LS:1,K1RS:1
+
 ;----------------------------------------------------------------------------;
 ; 40:18	Keyboard Flags Byte 2 (High)
+;----------------------------------------------------------------------------;
 ; 84218421
 ; 7 	    |			- K2IN	insert key is depressed
 ;  6 	    |			- K2CL	caps-lock key is depressed
@@ -870,6 +856,7 @@ KBFLAGS2 RECORD	K2IN:1,K2CL:1,K2NL:1,K2SL:1,K2PA:1,K2SY:1,K2LA:1,K2LC:1
 ; FDC BDA Status Flags
 ;----------------------------------------------------------------------------;
 ; 40:3E	FD_CAL_ST	Drive recalibration status flags
+;----------------------------------------------------------------------------;
 ; 84218421
 ; 7 	    |			- FWIF	1=working interrupt flag
 ;  654    |			- FSTBD	unused
@@ -882,20 +869,16 @@ FDC_SF RECORD	FWIF:1,FSTBD:3,FCAL3:1,FCAL2:1,FCAL1:1,FCAL0:1
 
 ;----------------------------------------------------------------------------;
 ; 40:3F	FD_MOTOR_ST	Diskette motor status flags
+;----------------------------------------------------------------------------;
 ; 84218421
 ; 7 	    |			- FWRT	1=write operation
 ;  654    |			- FMTBD	unused
 ;     3210|			- FMOT	1=drive 3 motor on
-;     3   |			- FMOT3	1=drive 3 motor on
-;      2  |			- FMOT2	1=drive 2 motor on
-;       1 |			- FMOT1	1=drive 1 motor on
-;        0|			- FMOT0	1=drive 0 motor on
 ;----------------------------------------------------------------------------;
-;FDC_MF RECORD	FWRT:1,FMTBD:3,FMOT3:1,FMOT2:1,FMOT1:1,FMOT0:1
 FDC_MF RECORD	FWRT:1,FMTBD:3,FMOT:4
 
 ;----------------------------------------------------------------------------;
-; 40:8FH	Floppy drive mode
+; 40:8F	FD_MODE	Floppy drive mode
 ;----------------------------------------------------------------------------;
 ; 84218421
 ; 7 	    |			- FM1X	unused
@@ -941,14 +924,14 @@ FDC_STATE RECORD	FSR:2,FDDS:1,FSE:1,FDX:1,FSD:3
 ;    4    |			- FDMA	1 = turn floppy drive A motor on
 ;     3   |			- FDDMA	1 = DMA & I/O interface enabled
 ;      2  |			- FDCEN	1 = FDC enable, 0 = hold FDC at reset
-;       10|			- FDDRV	floppy drive select (0=A, 1=B, 2=floppy C)
+;       10|			- FDDRV	floppy drive select (0=A, 1=B, 2=C, 3=D)
 ;----------------------------------------------------------------------------;
 FDC_DOR RECORD	FDMD:1,FDMC:1,FDMB:1,FDMA:1,FDDMA:1,FDCEN:1,FDSEL:2
 
 ;----------------------------------------------------------------------------;
 ; FDC 765 Status Flags
 ;----------------------------------------------------------------------------;
-; FDC Main Status Register at 3F4H (read only)
+; FDC Main Status Register at 3F4h (read only)
 ; 84218421
 ; 7 	    |			- FDRR	data reg ready for I/O to/from CPU
 ;  6      |			- FIOD	I/O direction; 1=FDC to CPU; 0=CPU to FDC
@@ -1157,7 +1140,7 @@ DMA_SMR RECORD	SMCLR:6,SMCH:2
 ;        1 		- SNGL: 1 = Single mode (no cascading PICs or ICW3)
 ;         1		- IC4:  1 = ICW4 Needed
 ;----------------------------------------------------------------------------;
-ICW1	RECORD	ICW1X:3=0, D4:4=1, LTIM:1, ADI:1, SNGL:1=1, IC4:1=1
+ICW1	RECORD	D4:4=1, LTIM:1, ADI:1, SNGL:1=1, IC4:1=1
 
 ; ICW2:
 ;  00001 		- T7-T3: Interrupt Vector Address:
@@ -1173,7 +1156,7 @@ ICW2	RECORD	ICW2IVA:5, ICW2X:3=0
 ;        0		- AEOI: 0 = normal EOI
 ;         1		- uPM:  1 = 8086 system
 ;----------------------------------------------------------------------------;
-ICW4	RECORD	ICW4X:3=0, SFNM:1=0, ICWBUF:2, AEOI:1, uPM:1
+ICW4	RECORD	SFNM:4=0, ICWBUF:2, AEOI:1, uPM:1
 
 ;----------------------------------------------------------------------------;
 ; IMR / OCW1 Interrupt Mask
@@ -1251,6 +1234,18 @@ VID_CSGFX	RECORD	CGPH:2,CGPL:1=1B,CGX:1=1B,CGIN:1=1B,CGBG:3=111B
 ;        1|			- PPCL	Port C (Lower): 0=output, 1=input (default)
 ;----------------------------------------------------------------------------;
 PPI_CR RECORD	PPEN:1=1,PPAM:2=00b,PPAD:1=1,PPCU:1=1,PPBM:1,PPBD:1,PPCL:1=1
+
+;----------------------------------------------------------------------------;
+; TD3300A/ST-xx Wait State Config Register (70H)
+;----------------------------------------------------------------------------;
+; 84218421
+; 76 	    |			- TDWSI	Slot I/O  (# of wait states 0-3)
+;   54    |			- TDWSR	Slot RAM
+;     32  |			- TDWIO	Board I/O
+;       1 |			- TDWRA	Board RAM (# of wait states 0-1)
+;        0| 		- TDWRO	Board ROM
+;----------------------------------------------------------------------------;
+TD_WS_CR	RECORD	TDWSI:2,TDWSR:2,TDWIO:2,TDWRA:1,TDWRO:1
 
 			IF ARCH_TYPE EQ ARCH_FE2010
 ;----------------------------------------------------------------------------;
@@ -2017,7 +2012,7 @@ ROM_INIT_SP 	DW	? 			; 69H	  or Option ROM init
 CAS_PREV		LABEL	BYTE			; 6BH  5150 Cassette: Previous byte
 ;FE2010_CONF_REG	LABEL BYTE			; 6BH  FE2010A Config Reg (63H)
 INT_LAST		DB	? 			; 6BH  Reserved for POST / Interrupt happened?
-TIMER_CT		TIMER_C <>			; 6CH-70H Timer Counter
+TIMER			TIMER_C <>			; 6CH-70H Timer Counter
 BIOS_BREAK		DB	?			; 71H  BIOS break flag (high bit means ctrl-break)
 WARM_FLAG		DW	?			; 72H  Warm Boot Flag (1234H to bypass RAM test)
 HD_LAST_ST		DB 	? 			; 74H  Status of last hard disk operation (see INT 13,1)
@@ -2190,9 +2185,12 @@ COPYRIGHT	DB	CR, LF
 		DB	LF
 		DB	0
 
+NMI_ERR_IO	DB	'IO', 0			; NMI I/O Error string
+
 BIOS_TOP 	ENDP
 
-BYTES_HERE	BOOT			; 5 BYTES HERE
+; 0 BYTES HERE
+BYTES_HERE	BOOT
 
 			ASSUME CS:BIOS, DS:NOTHING, ES:NOTHING, SS:NOTHING
 ;----------------------------------------------------------------------------;
@@ -2347,13 +2345,13 @@ RESET_PPI:
 ;----------------------------------------------------------------------------;
 ; Set up Turbo mode for ST-xx
 ;
-	IN	AL, TURBO_CTRL_90H	; read current register
+	IN	AL, TD_TURBO		; read current register
 			IF BOOT_SPEED EQ BOOT_TURBO
 	MOV	AL, 0010B
 			ELSE
 	MOV	AL, 0011B
 			ENDIF
-	OUT	TURBO_CTRL_90H, AL	; write new register
+	OUT	TD_TURBO, AL		; write new register
 			ENDIF			; ENDIF ARCH_ST12
 
 			IF POST_TEST_CHK_ROM EQ 1
@@ -2368,7 +2366,7 @@ CHECKSUM_ROM:
 			ASSUME DS:BIOS
 	MOV	DS, DX			; DS to 0F000h BIOS segment
 	MOV	SI, OFFSET BIOS_TOP 	; offset to top of BIOS ROM
-	MOV	CH, 10H			; checksum 8KB (in 2 byte words)
+	MOV	CH, HIGH (8 * 1024 / 2)	; checksum 8KB (in 2 byte words)
 	CWD					; DL = accumulator for sum, DH = 0
 CHECKSUM:
 	LODSW 				; next two bytes into AL and AH
@@ -2573,8 +2571,8 @@ BASE_RAM_TEST:
 	XCHG	AX, CX				; AX = 0 = MEM_CHECK pattern and
 	MOV	DS, AX				; DS and ES = IVT segment 0000
 	MOV	ES, AX
-	MOV	SI, OFFSET WARM_FLAG_ABS	; preserve warm boot flag
-	MOV	DX, WORD PTR [SI]			; save warm boot flag
+	MOV	SI, OFFSET WARM_FLAG_ABS	; SI = warm boot flag offset
+	MOV	DX, [SI]				; save warm boot flag
 	CALL_NS MEM_CHECK				; clear memory and parity bits
 	JNZ	BASE_RAM_ERROR
 	IN	AL, PPI_B				; read PPI channel B
@@ -2594,7 +2592,7 @@ BASE_RAM_ZERO:
 	JNZ	BASE_RAM_ERROR			; ZF and AX = 0 if okay
 	CALL_NS MEM_CHECK				; write and verify zeros
 	JNZ	BASE_RAM_ERROR
-	XCHG	WORD PTR [SI], DX			; restore warm boot flag, DX = 0
+	XCHG	[SI], DX				; restore warm boot flag, DX = 0
 	INC	AX					; AL = 1
 	MOV	FD_MOTOR_CT_ABS, AL 		; set motor to turn off on next tick
 	IN	AL, PPI_C				; read PPI channel C
@@ -2627,7 +2625,6 @@ BASE_RAM_TEST_DONE:
 ; PIC chip Initialization as follows:
 ;
 ; ICW1:
-;  000 		- A7-A5: unused on 8086 mode
 ;     1 		- D4:   1 = ICW1 (and Port 0)
 ;      0 		- LTIM: 0 = Edge Triggered Mode (low to high TTL transition)
 ;       0 		- ADI:  0 = Call Address Interval of 8
@@ -2640,20 +2637,19 @@ BASE_RAM_TEST_DONE:
 ;       000 	- D2-D0: unused on 8086 mode
 ;----------------------------------------------------------------------------;
 ; ICW4:
-;  000 		- D7-D5: unused
 ;     0		- SFNM: 0 = Not Special Fully Nested Mode
 ;      10		- BUF:  2 = Buffered Mode/Slave
 ;        0		- AEOI: 0 = normal EOI
 ;         1		- uPM:  1 = 8086 system
 ;----------------------------------------------------------------------------;
 	MOV	DL, LOW INT_P0		; DX = PIC Port 0
-	MOV	AL, ICW1 <,1,0,0,1,1>	; ICW1 - Port 0
+	MOV	AL, ICW1 <1,0,0,1,1>	; ICW1 - Port 0
 	OUT	DX, AL
 	INC	DX				; DX = PIC Port 1
 	MOV	AL, ICW2 <1>		; ICW2 - Port 1
 	OUT	DX, AL
 	MOV	BH, 1				; short delay and test 1 port for [22]
-	MOV	AL, ICW4 <,0,2,0,1>	; ICW4 - Port 1
+	MOV	AL, ICW4 <0,2,0,1>	; ICW4 - Port 1
 	OUT	DX, AL
 
 			IF POST_TEST_PIC_REG EQ 1
@@ -2793,7 +2789,7 @@ CHECK_BASIC_ROM:
 ; BASIC ROM detected - set as INT 18h in IVT
 ;
 	MOV	DI, OFFSET _INT_18H		; DI = BASIC offset in IVT
-	XOR	AX, AX				; vector offset is :0000
+	XCHG	AX, CX				; AX = vector offset 0000
 	STOSW 					; write to IVT
 	XCHG	AX, DX 				; AX = BASIC SEG
 	STOSW						; write to IVT
@@ -2859,7 +2855,7 @@ CPU_TYPE_DONE:
 ;----------------------------------------------------------------------------;
 GET_SW_SETTINGS:
 	IN	AL, PPI_B 				; read Port B register
-	PUSH	AX					; save original switches
+	PUSH	AX					; save original switches, AH = 0
 
 		IF ARCH_TYPE EQ ARCH_5150
 ;----------------------------------------------------------------------------;
@@ -2916,7 +2912,7 @@ SETTINGS_FE2010:
 	OUT	PPI_B, AL				; port 61H Control Register
 	AND	AL, MASK PBTB			; Turbo bit set?
 	JZ	SETTINGS_FE2010_1			; jump if not turbo (AH already 0)
-	MOV	AX, DBW <FE_CR <,,,,1,>, 0>	; set default with FPU bit, clear AL
+	MOV	AX, DBW <FE_CR <,,,,1,>>	; set default with FPU bit, clear AL
 SETTINGS_FE2010_1:
 	OUT	PPI_C, AL				; write 0 to port 62H Switch Register
 	IN	AL, PPI_C				; port 62H Switch Register
@@ -2992,7 +2988,7 @@ SETTINGS_SAVE:
 			ENDIF
 
 	XCHG	AX, DX				; save EQUIP_FLAGS to DL for later
-	POP	AX
+	POP	AX					; AL = original settings, AH = 0
 	OUT	PPI_B, AL				; restore original settings
 
 ;----------------------------------------------------------------------------;
@@ -3108,12 +3104,12 @@ TOGGLE_TURBO PROC
 ; If port 90 == 1, send 2 (0010b) Normal -> Turbo
 ; If port 90 == 0, send 3 (0011b) Turbo -> Normal
 ;
-	IN	AL, TURBO_CTRL_90H		; read current state
+	IN	AL, TD_TURBO			; read current state
 	CMP	AL, 0001b				; is 1 or 0?
 	JA	TOGGLE_TURBO_DONE			; exit if register not valid
 	OR	AL, 0010b				; add "set" bit
 	XOR	AL, 0001b				; flip 2 <=> 3
-	OUT	TURBO_CTRL_90H, AL		; write to board
+	OUT	TD_TURBO, AL			; write to board
 
 			ELSE
 ;----------------------------------------------------------------------------;
@@ -3307,14 +3303,6 @@ INT_02 ENDP
 INT_02_AFTER:
 
 ;----------------------------------------------------------------------------;
-; [18] Setup DS and ES to BDA segment
-;----------------------------------------------------------------------------;
-			ASSUME DS:_BDA, ES:_BDA
-	MOV	BX, SEG _BDA 			; BH = 0
-	MOV	DS, BX				; DS and ES to BDA
-	MOV	ES, BX
-
-;----------------------------------------------------------------------------;
 ; [37] Setup LPT/COM default timeouts
 ;----------------------------------------------------------------------------;
 	MOV	DI, OFFSET LPT_TIME
@@ -3326,7 +3314,7 @@ INT_02_AFTER:
 	STOSW
 
 POST_DETECT_PORTS:
-	MOV	BL, LOW OFFSET EQUIP_FLAGS[1]	; BX = high byte of EQUIP_FLAGS
+	MOV	BX, OFFSET EQUIP_FLAGS[1]	; BX = high byte of EQUIP_FLAGS
 
 ;----------------------------------------------------------------------------;
 ; [38] Detect and enable Game ports
@@ -3727,7 +3715,7 @@ POST_ERROR:
 	MOV	AX, BP				; AX = POST error flags
 	CALL	WORD_HEX				; display POST error value
 	CALL	CRLF
-	CALL	POST_ERROR_MSG			; display POST error messages
+	CALL	POST_ERROR_MSG			; display POST error messages, BP=0
 
 			IF POST_ERR_WAIT GT 0
 ;----------------------------------------------------------------------------;
@@ -3735,7 +3723,7 @@ POST_ERROR:
 ;
 	CALL	MEEPMEEP				; alert that there was an error
 	PRINT_SZ NL_ANY_KEY			; "Any key" string
-	XOR	AX, AX				; wait for key press
+	XCHG	AX, BP				; wait for key press (AH=0)
 	INT	16H
 	CALL	CRLF					; move to next line
 			ENDIF
@@ -3787,9 +3775,28 @@ BOOT_RETRY:
 	POP	CX					; restore retry counter
 	LOOP	BOOT_RETRY
 TRY_INT_18:
-	INT	18H					; ROM BASIC or boot failure
-	CLI						; INT 18h should never return...
-	HLT						;  but halt just in case
+	INT	18H					; Try vectored ROM BASIC or boot failure
+							; INT 18h should never return...
+							;  fall through just in case
+
+;----------------------------------------------------------------------------;
+; INT 18 - Unbootable IPL
+;----------------------------------------------------------------------------;
+; Display a disk boot failure message and wait for a key to cold reboot.
+;
+; This may be re-vectored to ROM BASIC, if present.
+;
+; Size: 18 bytes
+;----------------------------------------------------------------------------;
+INT_18 PROC
+		ASSUME DS:_BDA_ABS
+	PRINT_SZ BOOT_FAIL		; print boot failure string
+	XOR	AX, AX			; AH = 0 (wait for key)
+	MOV	DS, AX			; DS = 0000
+	MOV	WARM_FLAG_ABS, AX		; do a cold boot
+	INT	16H				; wait for key press
+	JMP	BOOT				; reboot
+INT_18 ENDP
 
 BOOT ENDP
 
@@ -3799,8 +3806,8 @@ BOOT ENDP
 ;
 ;----------------------------------------------------------------------------;
 
+		ASSUME DS:_BDA
 STRINGS PROC
-
 ;----------------------------------------------------------------------------;
 ; Banner Strings
 ;
@@ -3840,6 +3847,7 @@ POST_FPU		DB	'FPU',  0
 POST_8087		DB	'8087', 0
 POST_LPT		DB	'LPT',  0
 POST_COM		DB	'COM',  0
+POST_ERR_PFSK	LABEL BYTE				; Seek test failure
 POST_FDD		DB	'FDD',  0
 POST_HDD		DB	'HDD',  0
 POST_HD		DB	':',    0
@@ -3863,8 +3871,8 @@ POST_ERR_ERR	DB	'Error ', 0			; Error
 POST_ERR_PKI	DB	'KB', 0			; Reset returned non-success "301"
 POST_ERR_PKEY	DB	'Key', 0			; Reset did not clear KBC
 POST_ERR_PFDC	DB	'FDC', 0			; General FD init failure
-POST_ERR_PFSK	DB	'Disk', 0			; Seek test failure
 POST_ERR_PDMA	DB	'DMA', 0			; DMA TC0 error
+NMI_ERR_PAR		DB	'PAR', 0			; NMI Parity Error
 
 ;----------------------------------------------------------------------------;
 ; POST String Vectors - indexed by PFLAGS
@@ -3879,11 +3887,6 @@ POST_ERRORS LABEL WORD
 L_POST_ERRORS	EQU	($-POST_ERRORS)/SIZE POST_ERRORS
 
 POST_STRINGS ENDP
-
-NMI_STRINGS PROC
-NMI_ERR_PAR		DB	'PAR', 0			; NMI Parity Error
-NMI_ERR_IO		DB	'IO', 0			; NMI I/O Error
-NMI_STRINGS ENDP
 
 STRINGS ENDP
 
@@ -3903,13 +3906,14 @@ STRINGS ENDP
 ; Note: ROM init's can clobber any or all registers so important to save
 ; any that are used here between calls.
 ;
-; Clobbers: AX, BX, SI, ES (anything else the ROM might, except for DS and BP)
-; Size: 65 bytes
+; Clobbers: AX, BX, SI (anything else the ROM might, except for DS, ES and BP)
+; Size: 73 bytes
 ;----------------------------------------------------------------------------;
 BIOS_ROM_SCAN PROC
 		ASSUME ES:_BDA
 	PUSH	BP					; some option ROMs may clobber BP
 	PUSH	DS					; call-preserve DS
+	PUSH	ES
 	MOV	DS, AX 				; DS = starting segment
 CHECK_ROM:
 	MOV	BX, SEG _BDA 			; ES = 0040H (BIOS BDA segment)
@@ -3957,6 +3961,7 @@ NEXT_ROM:
 	OUT	INT_IMR, AL				; reset IMR
 	JB	CHECK_ROM 				; if not, check next
 ROM_SCAN_DONE:
+	POP	ES
 	POP	DS 					; restore regs
 	POP	BP
 	RET
@@ -4025,7 +4030,7 @@ DETECT_MEMORY PROC
 	MOV	CX, (MAX_RAM SHR 4) - 1		; Max number of 16KB RAM blocks
 							; (ex: 640K / 16K = 40)
 			ENDIF
-	MOV	DX, 0400H				; Start at second 16KB block
+	MOV	DX, 16 * 1024 SHR 4		; Start at second 16KB block
 	MOV	ES, DX				; ES = seg 0400H
 BLOCK_LOOP:
 	CALL	MEM_ADDR_TEST			; address test on 16KB RAM block at ES
@@ -4060,7 +4065,7 @@ ZERO_ALL_RAM:
 	ADD	BX, 16				; increment Memory count value
 	CALL	SHOW_MEM_TEST			; show "Memory:  xxxKB OK", BX = size in KB
 	MOV	AX, ES				; AX = last segment tested
-	ADD	AX, 0400H				; move to next segment/block
+	ADD	AX, 16 * 1024 SHR 4		; move to next 16K segment/block
 	CMP	AX, DX				; is last segment of RAM?
 	JNB	DONE_ZERO_ALL_RAM			; exit if end
 	MOV	ES, AX				; ES = last segment tested
@@ -4087,7 +4092,7 @@ TEST_MEM_LONG:
 ;
 ZERO_ALL_START:
 	XOR	AX, AX 				; write zeros
-	MOV	CX, 2000H				; count 8K WORDs
+	MOV	CX, 16 * 1024 / 2			; loop 16KB in WORDs
 	XOR	DI, DI				; DI = beginning of segment
 	REP	STOSW 				; write zero to next 16KB
 	JMP	SHORT ZERO_ALL_RAM
@@ -4206,11 +4211,11 @@ MEM_TEST PROC
 ; ZF and AX = 0 if pass, NZ if fail
 ;----------------------------------------------------------------------------;	
 MEM_CHECK:
-	MOV	CX, 2000H 				; loop 2000H WORDs
+	MOV	CX, 16 * 1024 / 2			; loop 16KB in WORDs
 	XOR	DI, DI 				; start at offset 0
 	REP	STOSW 				; write test pattern
 MEM_TEST_VERIFY:
-	MOV	CH, 20H 				; restart loop 2000H
+	MOV	CH, HIGH (16 * 1024 / 2)	; restart loop 16KB in WORDs
 	XOR	DI, DI 				; start at offset 0
 	REPZ	SCASW 				; loop until CX = 0 OR WORD is not AX
 	XCHG	AX, CX				; AX = 0 if success
@@ -4316,7 +4321,7 @@ POST_SYS_VIDEO ENDP
 				ENDIF
 
 ;
-; 5 BYTES HERE
+; 0 BYTES HERE
 ;
 BYTES_HERE	INT_19
 
@@ -4445,7 +4450,7 @@ INT_14 PROC
 	CMP	AH, CL			; check function number (CL = 3)
 	JA	INT_14_DONE			; > 3? Not valid
 	JZ 	INT_14_3	 		; = 3 then status
-	DEC	AH 				; AH--
+	CMP	AH, 1				; check remaining functions
 	JA	INT_14_2 			; = 2 then read
 	JZ	INT_14_1 			; = 1 then write
 						; = 0 fall through to init
@@ -4470,7 +4475,7 @@ INT_14 PROC
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	DX = base port address
-;	AL = port params
+;	AL = port params, AH = 0
 ;	CX = 3 (from earlier)
 ;----------------------------------------------------------------------------;
 
@@ -4483,37 +4488,33 @@ INT_14_0 PROC
 	XCHG	AX, BX			; save port params to BL
 	MOV	AL, MASK DLAB 		; set baud rate divisor (DLAB); 0 = RBR, THR or IER
 	OUT	DX, AL 			; write to 3FB/2FB (LCR)
-	XCHG	AX, BX 			; restore port params to AL
-	XOR	AH, AH 			; clear AH for shift
-	SHL	AX, CL 			; AH = baud rate, CL = 3
-	SHR	AL, CL 			; AL = flags
-	MOV	BX, 417H 			; divisor for 110 baud
-	MOV	CL, AH 			; CL = shift counter or 0 for 110 baud (CH = 0)
+	SHL	BX, CL 			; BH = baud rate, CL = 3
+	SHR	BL, CL 			; BL = flags
+	MOV	AX, 417H 			; divisor for 110 baud
+	MOV	CL, BH 			; CL = shift counter or 0 for 110 baud (CH = 0)
 	JCXZ	INT_14_0_SET_BAUD		; Jump if 110 baud
-	MOV	BX, 600H 			; BX = divisor base (see above formula)
-	SHR	BX, CL			; divisor = 600H >> CL
+	MOV	AX, 600H 			; AX = divisor base (see above formula)
+	SHR	AX, CL			; divisor = 600H >> CL
 INT_14_0_SET_BAUD:
 	XCHG	DX, DI 			; DX = 3F8/2F8, DI = 3FB/2FB (4)
-	XCHG	AX, BX 			; AL = Divisor LSB, AH = Divisor MSB (4)
-	OUT	DX, AL 			; 3F8 - Baud Rate Divisor LSB if bit 7 of LCR
-	MOV	AL, AH 			; AL = Divisor MSB (2)
-	INC	DX	 			; DX = 3F9/2F9 (3)
-	NOP 					; wait a few more clocks just in case (3)
-	OUT	DX, AL			; DX = 3F9 - Baud Rate Divisor MSB (if bit 7 of LCR)
+						; AL = Divisor LSB, AH = Divisor MSB (4)
+	OUT	DX, AX			; write LSB, then MSB to ports 3F8/3F9
 ;----------------------------------------------------------------------------;
 ; Set parity, stop and word bits
 ; 
 INT_14_0_SET_PSW:
 	XCHG	AX, BX 			; AL = parity, stop and word bits (4)
-	XCHG	DX, DI 			; DX = 3FB/2FB, DI = 3F9/2F9 (4)
-	OUT	DX, AL			; set parity, stop and word bits
-	XCHG	DX, DI 			; DX = 3F9/2F9, DI = 3FB/2FB (4)
+	XCHG	DX, DI 			; DX = 3FB/2FB, DI = 3F8/2F8 (4)
+	OUT	DX, AL			; set LCR parity, stop and word bits
+	XCHG	DX, DI 			; DX = 3F8/2F8, DI = 3FB/2FB (4)
 ;----------------------------------------------------------------------------;
 ; Disable IER
 ;
 	XOR	AX, AX 			; AL = 0 (3)
+	INC	DX 				; DX = 3F9/2F9 (3)
 	OUT	DX, AL			; DX = 3F9 - Interrupt Enable Register (IER) disabled
 	DEC	DX 				; DX = 3F8 (3)
+						; fall through to get status
 
 ;----------------------------------------------------------------------------;
 ; INT 14,3  Get Serial port status
@@ -4564,7 +4565,7 @@ INT_14_1 PROC
 	INC	DX 					; DX = 3FE - Modem Status Register
 	MOV	BX, DBW <MASK THRE OR MASK LBI, MASK MDSR> ; BH = line (THRE)
 	PUSH	SI					;  BL = modem (DSR/CTS)
-	CALL	INT_14_POLL
+	CALL	INT_14_POLL 			; poll both registers, AH = status
 	POP	SI
 	POP	BX
 	MOV	AL, BL 				; AL = output char
@@ -4599,7 +4600,7 @@ INT_14_2 PROC
 	INC	DX 					; DX = 3FE/2FE - Modem Status Register
 	MOV	BX, DBW <MASK MDSR, MASK LDR>	; BH = modem (DSR), BL = line (data ready)
 	PUSH	SI 					; call-preserve SI 
-	CALL	INT_14_POLL 			; poll both registers in sequence
+	CALL	INT_14_POLL 			; poll both registers, AH = status
 	POP	SI
 	POP	DX 					; restore base port
 	AND	AH, MASK LBI OR MASK LFE OR MASK LPE OR MASK LOE ; include only 
@@ -4649,71 +4650,74 @@ INT_14_POLL ENDP
 INT_14 ENDP
 
 ;----------------------------------------------------------------------------;
-; Locate cursor to column on current line
+; Delay using PIT counter increments of 125 ms
 ;----------------------------------------------------------------------------;
 ; Input:
-; - AL = new col
+;	AL = wait in 125 ms increments
 ;
-; Size: 23 bytes
+; AX clobbered
+; Size: 53 bytes
 ;----------------------------------------------------------------------------;
-MOVE_COL PROC
-	PUSH	AX				; must preserve all of these
+IO_WAIT_MS_125 PROC
+	MOV	AH, 125
+	MUL	AH				; AX = wait in 1 ms
+
+;----------------------------------------------------------------------------;
+; Delay using PIT counter increments of 1 ms
+;----------------------------------------------------------------------------;
+; - Calculate the total number of PIT ticks necessary (where 1,193,000 = 1s)
+; - Latch the PIT and draw down the countdown total on each read.
+; - Exit when countdown underflows.
+;
+; Note: Mode 3 (Square Wave) decements the readable counter by 2, so the
+; effective frequency of the counter is actually 2,386,360 Hz.
+;
+; Input:
+;	AX = wait in number of ms (clobbered)
+;
+; Based on contribution by @Raffzahn (under CC BY-SA 4.0):
+; https://retrocomputing.stackexchange.com/a/24874/21323
+;
+; https://stanislavs.org/helppc/8253.html
+;----------------------------------------------------------------------------;
+IO_DELAY_MS PROC
 	PUSH	BX
 	PUSH	CX
 	PUSH	DX
-	PUSH	AX				; preserve AL on INT 10H call
-	XOR	BH, BH 			; video page 0
-	MOV	AH, 3 			; get cursor position
-	INT	10H 				; DH = row, DL = column
-	POP	AX
-MOVE_COL_SET:
-	MOV	DL, AL			; set new column
-	MOV	AH, 2 			; set cursor position
-	INT	10H 				; row = DH, column = DL
+	XCHG	AX, BX			; BX = wait ms
+	MOV	AX, 1193 * 2		; 1,193,180 / 1000 ms * 2 = 2,386 ticks/ms
+	MUL	BX				; DX:AX = countdown of PIT ticks to wait
+	XCHG	AX, BX			; DX:BX = countdown ticks
+	CALL	IO_WAIT_LATCH		; AX = start read
+	MOV	CX, AX			; CX = last read
+IO_WAIT_MS_LOOP:
+	CALL	IO_WAIT_LATCH		; AX = current counter reading
+	SUB	CX, AX			; CX = # of ticks elapsed since last reading
+	SUB	BX, CX			; subtract change in ticks from countdown
+	MOV	CX, AX			; CX = save the last read
+	SBB	DX, 0				; borrow out of high word (if necessary)
+	JNC	IO_WAIT_MS_LOOP		; loop while countdown >= 0
 	POP	DX
 	POP	CX
 	POP	BX
-	POP	AX
+IO_WAIT_MS_DONE:
 	RET
-MOVE_COL ENDP
-
-		IF POST_HD_CHECK EQ 1
-;----------------------------------------------------------------------------;
-;  Get Hard Drive Parameters
-;----------------------------------------------------------------------------;
-;  Input:
-;	DL = drive number
-;  Return:
-; 	CF if Error
-;	AL = number of heads (AX if no error)
-; 	AH = return code
-;	BX = last cylinder
-; 	CX = logical last index of sectors/track
-;	DX = number of hard disk drives (all)
-;----------------------------------------------------------------------------;
-GET_DISK_PARAMS PROC
-	MOV	AH, 8 			; Get Drive in DL Parameters: 
-	INT	13H				;  CH = Last cyl, CL = # cylinders
-						;  DH = heads, DL = # drives
-						;  ES:DI = drive table
-	JC	GET_DISK_PARAMS_ERR 	; if error, exit
-	MOV	BX, CX 			; BX = last cylinder
-	XCHG	BH, BL 			; swap bytes
-	ROL	BH, 1 			; rotate high two bits into low bits
-	ROL	BH, 1
-	AND	BH, 11B			; BX = cylinder (10 bits)
-	AND	CX, 00111111B		; CX = logical last index of sectors/track
-	MOV	AL, DH
-	INC	AX				; convert heads to 1 index (count)
-	INC	BX				; convert cylinders to 1 index
-	XOR	DH, DH			; clear high byte of DX, CF = 0
-GET_DISK_PARAMS_ERR:
+IO_WAIT_LATCH:
+	MOV	AL, PIT_CW <0, 0>		; Counter 0, Latch (00b)
+	PUSHF					; save current IF
+	CLI					; disable interrupts
+	OUT	PIT_CTRL, AL		; Write command to CTC
+	IN	AL, PIT_CH0			; Read low byte of Counter 0 latch
+	MOV	AH, AL			; Save it
+	IN	AL, PIT_CH0			; Read high byte of Counter 0 latch
+	POPF					; restore IF state
+	XCHG	AL, AH			; convert endian
 	RET
-GET_DISK_PARAMS ENDP
-		ENDIF
+IO_DELAY_MS ENDP
+IO_WAIT_MS_125 ENDP
 
 ;
-; 1 BYTE HERE
+; 5 BYTES HERE
 ;
 BYTES_HERE	INT_16
 
@@ -4728,6 +4732,7 @@ BYTES_HERE	INT_16
 INT_16 PROC
 		ASSUME DS:_BDA
 	STI
+	CLD
 	PUSH	DS
 	PUSH	SI
 	MOV	SI, SEG _BDA
@@ -4944,26 +4949,25 @@ BEEP_OFF_P ENDP
 ; Display all POST messages
 ;----------------------------------------------------------------------------;
 ; See PFLAGS
-; Output: BP = 0
+; Output: BP (high byte) = 0
 ; Clobbers: AX, CX, SI
-; Size: 28 bytes
+; Size: 22 bytes
 ;----------------------------------------------------------------------------;
 POST_ERROR_MSG PROC
-	SHL	BP, 1
-	JZ	POST_ERROR_MSG_EXIT		; no errors?
-	MOV	CX, L_POST_ERRORS			; # of available POST error messages
-	MOV	SI, OFFSET POST_ERRORS
+	MOV	CX, L_POST_ERRORS+1		; # of available POST error messages
+	MOV	SI, OFFSET POST_ERRORS-2	; SI = string table pointer
+							;  add one LOOP for WARM BOOT flag
 POST_ERROR_MSG_LOOP:
 	LODS	WORD PTR CS:[SI]			; AX = next message offset
-	RCL	BP, 1
-	JNC	POST_ERROR_MSG_NEXT		; no flag
-	TEST	AX, AX
-	JZ	POST_ERROR_MSG_NEXT		; no string (bounds check)
-	XCHG	AX, SI
+	SHL	BP, 1					; CF = POST error flag
+	JNC	POST_ERROR_MSG_NEXT		; no flag?
+	PUSHF						; save BP ZF
+	XCHG	AX, SI				; SI = error string
 	PRINTLN_SZ SI				; write string with CRLF
-	XCHG	AX, SI
+	XCHG	AX, SI				; SI = string table pointer
+	POPF
 POST_ERROR_MSG_NEXT:
-	LOOP	POST_ERROR_MSG_LOOP
+	LOOPNZ  POST_ERROR_MSG_LOOP		; loop until end of strings or flags
 POST_ERROR_MSG_EXIT:
 	RET
 POST_ERROR_MSG ENDP
@@ -4988,7 +4992,6 @@ IS_ALPHA_DONE:
 	POP	AX
 	RET
 IS_ALPHA ENDP
-
 
 ;----------------------------------------------------------------------------;
 ; Additional INT 9h - Keyboard Code
@@ -5098,7 +5101,7 @@ KB_BUF_CLEAR PROC
 KB_BUF_CLEAR ENDP
 
 ;
-; 2 BYTES HERE
+; 8 BYTES HERE
 ;
 BYTES_HERE	INT_09
 
@@ -5404,9 +5407,9 @@ CHECK_TOP_ROW_NUM:
 ;
 CHECK_ALT_ON:
 	SUB	BL, '0'					; ASCII convert and test
-	JB	INT_KB_NOT_ALT_000			; is 
+	JB	INT_KB_NOT_ALT_000			; jump if less than 0
 	CMP	BL, 9
-	JA	INT_KB_NOT_ALT_000
+	JA	INT_KB_NOT_ALT_000			; jump if above 9
 
 INT_KB_IS_ALT_000:
 	MOV	AL, KB_ALT					; get partial working byte
@@ -5430,7 +5433,7 @@ INT_KB_NOT_ALT_000:
 	MOV	DI, OFFSET INT_KB_ALT_SKIP
 	MOV	CX, 11					; L_INT_KB_ALT_SKIP
 	XCHG	AH, AL
-	REPNZ SCASB						; is in table?
+	REPNE SCASB						; is in table?
 	XCHG	AH, AL
 	JNZ	KB_INT_IS_ALT_DONE			; if not found, continue
 	JMP	SHORT INT_KB_DONE				; if found, skip
@@ -5454,12 +5457,12 @@ INT_KB_CTRL_NO_ALT PROC
 INT_KB_CTRL_ASC_TBL_LOOP:
 	LODS	WORD PTR CS:[SI]				; AH = scan code, AL = new ASCII
 	CMP	AH, BH					; scan code match?
-	LOOPNZ INT_KB_CTRL_ASC_TBL_LOOP		; if not keep looping until end
+	LOOPNE INT_KB_CTRL_ASC_TBL_LOOP		; if not keep looping until end
 	JNZ	INT_KB_CTRL_ASC_TBL_DONE		; no matches, restore AX and continue
 	CMP	CL, 6						; was first list segment? (L_INT_KB_CTRL_SCAN_TBL)
 	JG	INT_KB_CTRL_NO_DONE			; if so, match found and AX is set, exit
-	MOV	AH, AL					; replace scan code
-	MOV	AL, 0						; ASCII code 0
+	CBW							; ASCII code = 0
+	XCHG	AL, AH					; replace scan code in AH, AL = 0
 INT_KB_CTRL_NO_DONE:
 	JMP	KB_INT_IS_CTRL_DONE			; AX set, exit
 INT_KB_CTRL_ASC_TBL_DONE:
@@ -5797,7 +5800,7 @@ SHOW_CURSOR ENDP
 HIDE_CURSOR ENDP
 
 ;
-; 0 BYTES HERE
+; 1 BYTE HERE
 ;
 BYTES_HERE	INT_13
 
@@ -6061,7 +6064,7 @@ INT_13_2_5_SETUP_DMA:
 	MOV	AL, FDC_CB <1,1,1,FDC_CMD_RD>	; FDC Read Data - MT, MFM, Skip deleted
 
 ;-------------------------------------------------------------------------
-; FDC_RWVF: read, write, format or verify sectors
+; FDC_RWVF: read, write, verify or format sectors
 ;-------------------------------------------------------------------------
 FDC_RWVF:
 	PUSH	AX					; preserve AH function number
@@ -6454,7 +6457,7 @@ FDC_SEND_RECV:
 ;
 	MOV	DX, FDC_STAT 			; port 3F4H - FDC Main Status Register
 	MOV	CX, 5					; CX = # of ticks to wait
-	MOV	AH, BYTE PTR TIMER_CT.LW	; get starting tick counter low byte
+	MOV	AH, BYTE PTR TIMER.LW		; get starting tick counter low byte
 
 FDC_SEND_WAIT_POLL:
 	IN	AL, DX				; AL = FDC status register
@@ -6512,7 +6515,7 @@ FDC_WAIT_EXIT:
 ; Check if timeout has expired
 ;
 FDC_SEND_WAIT_TIMER:
-	MOV	AL, BYTE PTR TIMER_CT.LW	; get current tick counter
+	MOV	AL, BYTE PTR TIMER.LW		; get current tick counter
 	CMP	AL, AH				; still the same?
 	JZ	FDC_SEND_WAIT_POLL		; loop if the same
 	MOV	AH, AL				; otherwise, save new tick value to AH
@@ -6694,7 +6697,7 @@ INT_1E_PARAM_DONE:
 INT_1E_PARAM ENDP
 
 ;
-; 1 BYTE HERE
+; 0 BYTES HERE
 ;
 BYTES_HERE	INT_0E
 
@@ -6732,7 +6735,7 @@ FDC_WAIT_INT PROC
 	PUSH	CX
 	MOV	CX, 2 * (1000/55) + 1		; timeout ~2 sec (37 ticks)
 FDC_WAIT_INT_LOOP1:
-	MOV	AX, TIMER_CT.LW			; AX = time ticks
+	MOV	AX, TIMER.LW			; AX = time ticks
 FDC_WAIT_INT_LOOP2:
 	TEST	FD_CAL_ST, MASK FWIF 		; check for WIF in FD_CAL_ST (3EH)
 	JNZ	FDC_WAIT_INT_OK			; if so, exit
@@ -6741,7 +6744,7 @@ FDC_WAIT_INT_LOOP2:
 			ELSE
 	NOP						; allow extra time for INTs
 			ENDIF
-	CMP	AX, TIMER_CT.LW			; has timer tick changed?
+	CMP	AX, TIMER.LW			; has timer tick changed?
 	JZ	FDC_WAIT_INT_LOOP2		; if not, wait for next INT
 	LOOP	FDC_WAIT_INT_LOOP1		; decrement tick counter and resume loop
 	OR	FD_LAST_OP, FDC_ST_TIMEOUT 	; FDC result set time out, drive not ready
@@ -6873,7 +6876,7 @@ INT_17 PROC
 	DEC	AH
 	JZ	INT_17_1				; AH = 1 then init
 	JG	INT_17_2	 			; AH = 2 then status
-							; otherwise fall through to print
+							; AH = 0 fall through to print
 
 ;----------------------------------------------------------------------------;
 ; AH = 0 - Print Character
@@ -6882,7 +6885,7 @@ INT_17 PROC
 ;
 ;	AH = -1 (not 0)
 ;	AL = character to print
-;	CX = timeout "value" (aparently this is approx the number of 64k loops)
+;	CX = timeout "value" (the number of 64k loops)
 ;	DX = LPT data port (278, 378, 3BC)
 ;
 ;	on return:
@@ -6936,7 +6939,7 @@ INT_17_1:
 	INC	DX
 	INC	DX				; DX = control port
 	OUT	DX, AL			; send to control port
-	MOV	CH, 8				; delay 800H-ish loops
+	MOV	CH, HIGH 800H		; delay 800H-ish loops
 	IO_DELAY 				; wait, then CX = 0
 	OR	AL, MASK LCINI		; initialize printer = 1
 	OUT	DX, AL			; send to control port
@@ -7851,7 +7854,7 @@ INT_10_8 PROC
 ; Standard, fast routine
 ;
 INT_10_8_FAST:
-	MOV	AX, ES:[DI]			; just write to memory and return
+	MOV	AX, ES:[DI]			; just read from memory and return
 	RET
 
 INT_10_8_CHK_CGA:
@@ -7861,7 +7864,7 @@ INT_10_8_CHK_CGA:
 	JNE	INT_10_8_NOT_CGA		; jump if not
 
 ;----------------------------------------------------------------------------;
-; CGA snow-removal routine. Wait for a blanking interval before write.
+; CGA snow-removal routine. Wait for a blanking interval before read.
 ;
 	PUSH	DX
 	MOV	DX, CGA_STAT
@@ -7954,7 +7957,7 @@ INT_10_8_GFX_SEARCH:
 	MOV	SI, OFFSET GFX_CHARSET	; SI = BIOS ROM table
 	MOV	BX, CS			; DS = CS
 	MOV	DS, BX
-	XOR	AX, AX			; start codepage counter at 0
+	XOR	AX, AX			; start codepoint counter at 0
 INT_10_8_GFX_SEARCH_TBL:
 	MOV	BX, 128			; loop counter for each charset table
 INT_10_8_GFX_SEARCH_CHR:
@@ -7966,7 +7969,7 @@ INT_10_8_GFX_SEARCH_CHR:
 	POP	SI				; ROM table always advanced by 8 
 	JE	INT_10_8_GFX_DONE		; end search if match found
 	ADD	SI, 8				; next char in table
-	INC	AL				; next codepage to try
+	INC	AL				; next codepoint to try
 	JZ	INT_10_8_GFX_DONE		; if AL > 255, char not found
 	DEC	BX				; dec charset loop counter
 	JNZ	INT_10_8_GFX_SEARCH_CHR	; loop until end of table set
@@ -7977,7 +7980,7 @@ INT_10_8_GFX_SEARCH_CHR:
 	CWD					; DX = 0000h
 	MOV	DS, DX			; DS = IVT
 			ASSUME DS:_IVT
-	LDS	SI, _INT_1FH		; ES:SI = user charset
+	LDS	SI, _INT_1FH		; DS:SI = user charset
 			ASSUME DS:_BDA
 	MOV	DX, DS			; see if custom table has been vectored
 	OR	DX, SI			;  and not the default of 0000:0000
@@ -8826,20 +8829,6 @@ PORT_COUNT_NONE:
 	JMP	SHORT POST_END_COL		; display end sep and RET
 SHOW_PORT_COUNT ENDP
 
-;----------------------------------------------------------------------------;
-; POST Video Adapter Type Strings
-; 22 bytes
-;----------------------------------------------------------------------------;
-POST_VIDEO_STRINGS PROC
-				IF POST_VIDEO_TYPE EQ 1
-POST_VIDEO		DB	'Video', 0
-POST_VGA		DB	'VGA', 0
-POST_EGA		DB	'EGA', 0
-POST_CGA		DB	'CGA', 0
-POST_MDA		DB	'MDA', 0
-				ENDIF
-POST_VIDEO_STRINGS ENDP
-
 POST_SYS_CONFIG ENDP
 
 ;----------------------------------------------------------------------------;
@@ -8958,6 +8947,34 @@ OUT_SZ_DONE:
 OUT_SZ ENDP
 OUT_SZ_ATTR ENDP
 
+;----------------------------------------------------------------------------;
+; Locate cursor to column on current line
+;----------------------------------------------------------------------------;
+; Input:
+; - AL = new col
+;
+; Size: 23 bytes
+;----------------------------------------------------------------------------;
+MOVE_COL PROC
+	PUSH	AX				; must preserve all of these
+	PUSH	BX
+	PUSH	CX
+	PUSH	DX
+	PUSH	AX				; preserve AL on INT 10H call
+	XOR	BH, BH 			; video page 0
+	MOV	AH, 3 			; get cursor position
+	INT	10H 				; DH = row, DL = column
+	POP	AX
+MOVE_COL_SET:
+	MOV	DL, AL			; set new column
+	MOV	AH, 2 			; set cursor position
+	INT	10H 				; row = DH, column = DL
+	POP	DX
+	POP	CX
+	POP	BX
+	POP	AX
+	RET
+MOVE_COL ENDP
 POST_COL ENDP
 
 ;----------------------------------------------------------------------------;
@@ -8984,7 +9001,7 @@ OUTLN_SZ ENDP
 ; Write Unsigned word as decimal to console
 ;----------------------------------------------------------------------------;
 ; Input: AX value
-; Size: 35 bytes
+; Size: 34 bytes
 ;----------------------------------------------------------------------------;
 OUT_DECU PROC
 	PUSH	AX
@@ -8995,10 +9012,8 @@ OUT_DECU PROC
 OUT_DECU_DIV:
 	XOR	DX, DX 			; clear high word of dividend
 	DIV	BX 				; AX = AX / 10, DX = AX % 10
-	XCHG	AX, DX 			; AX = remainder
-	OR	AL, '0' 			; ASCII convert
-	PUSH	AX 				; save to stack
-	XCHG	AX, DX 			; AX = next dividend
+	OR	DL, '0' 			; ASCII convert remainder
+	PUSH	DX				; save to stack
 	TEST	AX, AX 			; is zero?
 	JNZ	OUT_DECU_DIV		; loop while AX > 0
 OUT_DECU_LOOP:
@@ -9091,94 +9106,57 @@ BYTE_HEX ENDP
 WORD_HEX ENDP
 DWORD_HEX ENDP
 
+		IF POST_HD_CHECK EQ 1
 ;----------------------------------------------------------------------------;
-; Delay using PIT counter increments of 125 ms
+;  Get Hard Drive Parameters
 ;----------------------------------------------------------------------------;
-; Input:
-;	AL = wait in 125 ms increments
-;
-; AX clobbered
-; Size: 53 bytes
+;  Input:
+;	DL = drive number
+;  Return:
+; 	CF if Error
+;	AL = number of heads (AX if no error)
+; 	AH = return code
+;	BX = last cylinder
+; 	CX = logical last index of sectors/track
+;	DX = number of hard disk drives (all)
 ;----------------------------------------------------------------------------;
-IO_WAIT_MS_125 PROC
-	MOV	AH, 125
-	MUL	AH				; AX = wait in 1 ms
-
-;----------------------------------------------------------------------------;
-; Delay using PIT counter increments of 1 ms
-;----------------------------------------------------------------------------;
-; - Calculate the total number of PIT ticks necessary (where 1,193,000 = 1s)
-; - Latch the PIT and draw down the countdown total on each read.
-; - Exit when countdown underflows.
-;
-; Note: Mode 3 (Square Wave) decements the readable counter by 2, so the
-; effective frequency of the counter is actually 2,386,360 Hz.
-;
-; Input:
-;	AX = wait in number of ms (clobbered)
-;
-; Based on contribution by @Raffzahn (under CC BY-SA 4.0):
-; https://retrocomputing.stackexchange.com/a/24874/21323
-;
-; https://stanislavs.org/helppc/8253.html
-;----------------------------------------------------------------------------;
-IO_DELAY_MS PROC
-	PUSH	BX
-	PUSH	CX
-	PUSH	DX
-	XCHG	AX, BX			; BX = wait ms
-	MOV	AX, 1193 * 2		; 1,193,180 / 1000 ms * 2 = 2,386 ticks/ms
-	MUL	BX				; DX:AX = countdown of PIT ticks to wait
-	XCHG	AX, BX			; DX:BX = countdown ticks
-	CALL	IO_WAIT_LATCH		; AX = start read
-	MOV	CX, AX			; CX = last read
-IO_WAIT_MS_LOOP:
-	CALL	IO_WAIT_LATCH		; AX = current counter reading
-	SUB	CX, AX			; CX = # of ticks elapsed since last reading
-	SUB	BX, CX			; subtract change in ticks from countdown
-	MOV	CX, AX			; CX = save the last read
-	SBB	DX, 0				; borrow out of high word (if necessary)
-	JNC	IO_WAIT_MS_LOOP		; loop while countdown >= 0
-	POP	DX
-	POP	CX
-	POP	BX
-IO_WAIT_MS_DONE:
+GET_DISK_PARAMS PROC
+	MOV	AH, 8 			; Get Drive in DL Parameters: 
+	INT	13H				;  CH = Last cyl, CL = # cylinders
+						;  DH = heads, DL = # drives
+						;  ES:DI = drive table
+	JC	GET_DISK_PARAMS_ERR 	; if error, exit
+	MOV	BX, CX 			; BX = last cylinder
+	XCHG	BH, BL 			; swap bytes
+	ROL	BH, 1 			; rotate high two bits into low bits
+	ROL	BH, 1
+	AND	BH, 11B			; BX = cylinder (10 bits)
+	AND	CX, 00111111B		; CX = logical last index of sectors/track
+	MOV	AL, DH
+	INC	AX				; convert heads to 1 index (count)
+	INC	BX				; convert cylinders to 1 index
+	XOR	DH, DH			; clear high byte of DX, CF = 0
+GET_DISK_PARAMS_ERR:
 	RET
-IO_WAIT_LATCH:
-	MOV	AL, PIT_CW <0, 0>		; Counter 0, Latch (00b)
-	PUSHF					; save current IF
-	CLI					; disable interrupts
-	OUT	PIT_CTRL, AL		; Write command to CTC
-	IN	AL, PIT_CH0			; Read low byte of Counter 0 latch
-	MOV	AH, AL			; Save it
-	IN	AL, PIT_CH0			; Read high byte of Counter 0 latch
-	POPF					; restore IF state
-	XCHG	AL, AH			; convert endian
-	RET
-IO_DELAY_MS ENDP
-IO_WAIT_MS_125 ENDP
+GET_DISK_PARAMS ENDP
+		ENDIF
 
 ;----------------------------------------------------------------------------;
-; INT 18 - Unbootable IPL
+; POST Video Adapter Type Strings
+; 22 bytes
 ;----------------------------------------------------------------------------;
-; Display a disk boot failure message and wait for a key to cold reboot.
-;
-; This may be re-vectored to ROM BASIC, if present.
-;
-; Size: 18 bytes
-;----------------------------------------------------------------------------;
-INT_18 PROC
-		ASSUME DS:_BDA_ABS
-	PRINT_SZ BOOT_FAIL		; print boot failure string
-	XOR	AX, AX			; AH = 0 (wait for key)
-	MOV	DS, AX			; DS = 0000
-	MOV	WARM_FLAG_ABS, AX		; do a cold boot
-	INT	16H				; wait for key press
-	JMP	BOOT				; reboot
-INT_18 ENDP
+POST_VIDEO_STRINGS PROC
+				IF POST_VIDEO_TYPE EQ 1
+POST_VIDEO		DB	'Video', 0
+POST_VGA		DB	'VGA', 0
+POST_EGA		DB	'EGA', 0
+POST_CGA		DB	'CGA', 0
+POST_MDA		DB	'MDA', 0
+				ENDIF
+POST_VIDEO_STRINGS ENDP
 
 ;
-; 1 BYTE HERE
+; 20 BYTES HERE
 ;
 BYTES_HERE	INT_12
 
@@ -9298,10 +9276,8 @@ CAS_MOTOR_ON:
 ;
 	IN	AL, PPI_B			; read current PPI B
 	AND	AL, NOT MASK PBSP	AND NOT MASK PBCM	; Disable Speaker and
-
 						; turn on (clear) motor bit
 	OUT	PPI_B, AL			; send to PPI B
-
 	SAHF					; restore 'CMP AH, 3' flags
 	JPE	CAS_MOTOR_WAIT		; jump if read/write
 						; otherwise fall through to exit
@@ -10365,9 +10341,10 @@ INT_1A PROC
 	PUSH	SI
 	MOV	SI, SEG _BDA 			; get BDA segment
 	MOV	DS, SI 				; DS = BDA
-	MOV	SI, OFFSET TIMER_CT		; SI = BIOS Timer
+	MOV	SI, OFFSET TIMER		; SI = BIOS Timer
 	CLI 						; disable interrupts
-	JZ	INT_1A_SET 				; if AH = 1, jump to Set clock
+	JZ	INT_1A_SET 				; AH = 1, jump to Set clock
+							; AH = 0, fall through to Read
 
 ;----------------------------------------------------------------------------;
 ; INT 1A,0   Read system clock counter
@@ -10456,7 +10433,7 @@ INT_08 PROC
 ; Increment Timer
 ;
 INT_08_TICK_TIMER:				; Advance the time ticker
-	MOV	DI, OFFSET TIMER_CT 		; Low timer at BDA 0040:006C
+	MOV	DI, OFFSET TIMER 		; Low timer at BDA 0040:006C
 	ADD	[DI].LW, 1				; increment low word
 	ADC	[DI].HW, 0				; maybe increment high word
 	CMP	[DI].HW, 24 			; rolled over to next day?
