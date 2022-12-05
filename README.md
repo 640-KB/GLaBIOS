@@ -8,7 +8,7 @@ Copyright &copy; 2022, [640KB](mailto:640kb@glabios.org) and contributors.
 
 Version 0.2 is a significant update to version 0.1 adding numerous performance and stability improvements as well as new features and support for more hardware platforms.
 
-[Download 0.2.0 ROMs](https://github.com/640-KB/GLaBIOS/releases)
+[Download 0.2 ROMs](https://github.com/640-KB/GLaBIOS/releases)
 
 [Source Code](https://github.com/640-KB/GLaBIOS/tree/main/src)
 
