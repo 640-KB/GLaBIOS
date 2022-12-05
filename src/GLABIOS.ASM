@@ -106,7 +106,7 @@ ARCH_5150		EQU	'P'			; 5150
 ARCH_5160		EQU	'X'			; 5160 v1
 ARCH_5160v2		EQU	'Y'			; 5160 v2/3
 ARCH_TURBO		EQU	'T'			; Standard Turbo or clone
-ARCH_ST12		EQU	'S'			; ST-xx/UNIQUE (TD3300A)
+ARCH_TD3300		EQU	'S'			; TD3300A (ST-xx/UNIQUE/Auva)
 ARCH_FE2010		EQU	'F'			; Faraday FE2010A
 ARCH_EHB		EQU	'H'			; EMM Computers/Homebrew8088
 ARCH_EMU		EQU	'E'			; 86Box/Emulator
@@ -135,10 +135,10 @@ TURBO_REV		EQU	2			; reversed PPI B (bit 3)
 ;
 VER_NAME		EQU	'GLaBIOS'
 	IFNDEF VER_NUM
-VER_NUM		EQU	'0.2.0'		; (max 6 chars)
+VER_NUM		EQU	'0.2.1'		; (max 6 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'12/02/22' 		; must be MM/DD/YY format
+VER_DATE		EQU	'12/05/22' 		; must be MM/DD/YY format
 	ENDIF
 	IFNDEF COPY_YEAR
 COPY_YEAR		EQU	'2022'		; can be set at build time
@@ -160,7 +160,7 @@ VER_BLD		EQU	'0000'
 ;ARCH_TYPE		EQU	ARCH_5160		; PC 5160 (recommended for non-Turbo)
 ;ARCH_TYPE		EQU	ARCH_5160v2		; PC 5160v2 (not recommended)
 ARCH_TYPE		EQU	ARCH_TURBO		; Standard Turbo
-;ARCH_TYPE		EQU	ARCH_ST12		; ST-xx/UNIQUE Port 90h
+;ARCH_TYPE		EQU	ARCH_TD3300		; TD3300A (ST-xx/UNIQUE/Auva)
 ;ARCH_TYPE		EQU	ARCH_FE2010		; Faraday FE2010A
 ;ARCH_TYPE		EQU	ARCH_EHB		; EMM Computers/Homebrew 8088
 ;ARCH_TYPE		EQU	ARCH_EMU		; 86Box/Emulator (will not work
@@ -252,6 +252,7 @@ FD_AUTO_DETECT	=	0		; Auto-detect number of floppy drives
 						;   use only for DIP switch-less PCs!
 POST_ERR_WAIT	=	1		; Wait for Any Key press to continue if
 						;   there is a POST error
+INT_19_BOOT_HD	=	0		; Try IPL to floppy then hard drive (80h)
 
 ;----------------------------------------------------------------------------;
 ; END Configurable Build Options
@@ -290,9 +291,9 @@ TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
 TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
 	ENDIF
 
-	IF ARCH_TYPE EQ ARCH_ST12
+	IF ARCH_TYPE EQ ARCH_TD3300
 ;----------------------------------------------------------------------------;
-; Configuration for ST-xx/90h board
+; Configuration for TD3300A (90h register)
 ;
 BASIC_ROM		= 	0			; disable to free code space
 FDC_HLT_WAIT	=	0			; seems to cause issues on ST-xx
@@ -346,6 +347,7 @@ FD_AUTO_DETECT	=	1			; auto-detect number of floppy drives
 TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
 POST_ERR_WAIT	=	0			; only warn POST errors (since DMA
 							;   and FDC are optional)
+INT_19_BOOT_HD	=	1			; Try IPL to floppy then HD
 	ENDIF
 
 	IF ARCH_TYPE EQ ARCH_EMU
@@ -581,7 +583,7 @@ ATKB_CMD		EQU	64H			; 8042 Keyboard command/status register
 ; POST TEST card I/O
 POST_CARD_PORT	EQU	80H			; can be 60H, 80H, 300H, 313H
 
-; TD3300A/ST-xx/UNIQUE Control Registers
+; TD3300A (ST-xx/UNIQUE/Auva) Control Registers (90h)
 TD_WS			EQU	70H			; RAM, I/O wait state control
 TD_TURBO		EQU	90H			; Write 2 for Turbo, 3 for Normal
 
@@ -2341,7 +2343,7 @@ RESET_PPI:
 	MOV	AL, PPI_B_BOOT		; KB hold low+disable, NMI on, spkr off
 	OUT	PPI_B, AL			; send to 8255 Port B
 
-			IF ARCH_TYPE EQ ARCH_ST12
+			IF ARCH_TYPE EQ ARCH_TD3300
 ;----------------------------------------------------------------------------;
 ; Set up Turbo mode for ST-xx
 ;
@@ -2352,7 +2354,7 @@ RESET_PPI:
 	MOV	AL, 0011B
 			ENDIF
 	OUT	TD_TURBO, AL		; write new register
-			ENDIF			; ENDIF ARCH_ST12
+			ENDIF			; ENDIF ARCH_TD3300
 
 			IF POST_TEST_CHK_ROM EQ 1
 ;----------------------------------------------------------------------------;
@@ -2912,7 +2914,7 @@ SETTINGS_FE2010:
 	OUT	PPI_B, AL				; port 61H Control Register
 	AND	AL, MASK PBTB			; Turbo bit set?
 	JZ	SETTINGS_FE2010_1			; jump if not turbo (AH already 0)
-	MOV	AX, DBW <FE_CR <,,,,1,>>	; set default with FPU bit, clear AL
+	MOV	AX, DBW <FE_CR <,,,,1,>>	; set AH default with FPU bit, clear AL
 SETTINGS_FE2010_1:
 	OUT	PPI_C, AL				; write 0 to port 62H Switch Register
 	IN	AL, PPI_C				; port 62H Switch Register
@@ -3098,7 +3100,7 @@ TOGGLE_TURBO PROC
 			ASSUME DS:_BDA
 	CLI						; interrupts off
 
-			IF ARCH_TYPE EQ ARCH_ST12
+			IF ARCH_TYPE EQ ARCH_TD3300
 ;----------------------------------------------------------------------------;
 ; ST-xx Port 90h Turbo switch
 ; If port 90 == 1, send 2 (0010b) Normal -> Turbo
@@ -3129,10 +3131,10 @@ TOGGLE_TURBO PROC
 	CALL	FE2010_SETUP_SAVE			; write to memory and register
 	XCHG	AX, CX				; restore AX
 			ENDIF				; ARCH_FE2010
-			ENDIF				; ARCH_ST12
+			ENDIF				; ARCH_TD3300
 
 	MOV	CX, CURSOR_DEFAULT		; original power-on cursor
-			IF ARCH_TYPE EQ ARCH_ST12
+			IF ARCH_TYPE EQ ARCH_TD3300
 	CMP	AL, 0011B				; turbo on?
 			ELSE
 	TEST	AL, MASK PBTB			; turbo bit set?
@@ -3208,6 +3210,7 @@ V40_REG_LOOP:
 	MOV	AL, 0AAH		; Test Controller
 	OUT	ATKB_CMD, AL	; OUT Command Port (64h)
 	IO_DELAY
+	IN	AL, ATKB_IO		; Read Data Port and discard (60h)
 
 	MOV	AL, 01100000B	; Write Command Byte to Keyboard Controller
 	OUT	ATKB_CMD, AL	; OUT Command Port (64h)
@@ -3764,16 +3767,29 @@ CLEAR_POST_SCREEN:
 ;----------------------------------------------------------------------------;
 
 ;----------------------------------------------------------------------------;
-; Attempt to IPL three times from drive 0h. If failure, call INT 18h / ROM BASIC.
+; Attempt to IPL three times. If failure, call INT 18h / ROM BASIC.
+; If INT_19_BOOT_HD is 1, BIOS will also attempt to IPL from 80h (C:)
 ;
-	CWD						; IPL from drive 0 A: (DL = 0h)
-	MOV	CX, 3 				; retry IPL 3 times
+	CWD						; start IPL from drive 0 (A:)
+BOOT_DEVICE:
+	MOV	CX, 3 				; retry three times
 BOOT_RETRY:
 	PUSH	CX					; save retry counter
+			IF INT_19_BOOT_HD EQ 1
+	PUSH	DX					; save drive number
+			ENDIF
 	INT	19H
-	IO_DELAY_LONG
+	IO_DELAY_LONG				; delay between attempts
+			IF INT_19_BOOT_HD EQ 1
+	POP	DX					; restore drive number
+			ENDIF
 	POP	CX					; restore retry counter
 	LOOP	BOOT_RETRY
+			IF INT_19_BOOT_HD EQ 1
+	XOR	DL, 80H				; flip to HD
+	JNZ	BOOT_DEVICE				; retry if HD, otherwise INT 18
+			ENDIF
+
 TRY_INT_18:
 	INT	18H					; Try vectored ROM BASIC or boot failure
 							; INT 18h should never return...
