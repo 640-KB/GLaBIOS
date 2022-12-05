@@ -42,7 +42,7 @@ The results of the poll for [tagline for the next major version](https://github.
 
 ### Why another 8088 PC BIOS in 2022?
 
-There are several other excellent BIOS projects out there each with it's own design goals and use cases. These are the goals for this one:
+There are other excellent BIOS projects out there each with it's own design goals and use cases. The goals for GLaBIOS are:
 
 1. A collborative learning effort among the Retro Community
 2. A fully open-source PC BIOS, built and improved by the community, free of outside proprietary or copyrighted code
