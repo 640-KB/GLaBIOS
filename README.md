@@ -4,16 +4,9 @@ A modern, scratch-built, open-source alternative BIOS for vintage PC, XT, 8088 C
 
 Copyright &copy; 2022, [640KB](mailto:640kb@glabios.org) and contributors.
 
-## Version 0.2.0 released!
+## Version 0.2 released!
 
 Version 0.2 is a significant update to version 0.1 adding numerous performance and stability improvements as well as new features and support for more hardware platforms.
-
-- [Cassette tape support](https://en.wikipedia.org/wiki/IBM_cassette_tape) on [5150 PC](https://en.wikipedia.org/wiki/IBM_Personal_Computer).
-- Support for [Faraday FE2010A](https://github.com/skiselev/micro_8088/blob/master/Documentation/Faraday-XT_Controller-FE2010A.md)-based PCs ([Headstart Plus](http://oldcomputer.info/pc/hs_plus/index.htm)/[TURBO 888-XT](https://forum.vcfed.org/index.php?threads/vendex-head-start-turbo-888-xt.67609/)/VTI Vendex 33-XT/PC-10 and others) including hotkey speed switching, floppy, FPU and memory auto-detection.
-- Support for [EMM Homebrew 8088](https://www.homebrew8088.com/) with 8088, V20 or V40.
-- Emulator-optimized build: significant performance increase on virtual hardware.
-- Experimental support for micro_8088 / NuXT.
-- Greatly expanded feature customization and personalization at build time (see source for details!).
 
 [Download 0.2.0 ROMs](https://github.com/640-KB/GLaBIOS/releases)
 
@@ -23,45 +16,41 @@ Version 0.2 is a significant update to version 0.1 adding numerous performance a
 
 The results of the poll for [tagline for the next major version](https://github.com/640-KB/GLaBIOS/discussions/14) are in, and the winner is... everybody!  GLaBIOS will now choose a different tagline on every reboot, based on mood.
 
-## License
-
-- GNU General Public License v3.0. See [LICENSE](LICENSE).
-
-## Contact
-
-Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org or submit an [Issue](../../issues).
-
 ## Features
 
 - A complete [100% PC Compatible](#compatibility) BIOS for retro/vintage PC, XT, 8088 Clone, Turbo and Homebrew PCs.
-- Support for 5150, 5160, FE2010A, Turbo and compatible clone hardware.
 - FAST! [Performance-optmized](doc/about/perf.md) CGA/MDA text and graphics routines.
-- Accurate PIT-based I/O timing for floppy disk, 10-15% faster seek and read times.
 - 5150 Cassette tape support.
-- Multiple levels of "[CGA snow](https://en.wikipedia.org/wiki/Color_Graphics_Adapter#Limitations,_bugs_and_errata)" removal (configurable at build-time).
 - NEC V20 enhanced instruction set support (enabled at build-time).
+- Multiple levels of "[CGA snow](https://en.wikipedia.org/wiki/Color_Graphics_Adapter#Limitations,_bugs_and_errata)" removal (configurable at build-time).
+- Accurate PIT-based I/O timing for floppy disk, 10-15% faster seek and read times.
 - Customizable POST test screen colors themes.
+- Fits in an 8K ROM to drop in to any original PC or clone.
+
+### Platforms Supported
+
+- PC/XT 5160 and clones
+- PC 5150 with cassette
+- Turbo XTs (DTK, clones)
+- [Faraday FE2010A](https://github.com/skiselev/micro_8088/blob/master/Documentation/Faraday-XT_Controller-FE2010A.md)-based PCs ([Headstart Plus](http://oldcomputer.info/pc/hs_plus/index.htm)/[TURBO 888-XT](https://forum.vcfed.org/index.php?threads/vendex-head-start-turbo-888-xt.67609/)/VTI Vendex 33-XT/PC-10 and others)
+- TD3900A-based PCs (Juko ST-12, UNIQUE, Auva, etc)
+- Support for [EMM Homebrew 8088](https://www.homebrew8088.com/) with 8088, V20 or V40
+- Emulator-optmized ([86Box](https://86box.net/) and others) for improved performance and stability
+- Experimental support for [micro_8088](https://github.com/skiselev/micro_8088) / [NuXT](https://monotech.fwscart.com/) (looking for testers!)
 
 ## FAQ
 
 ### Why another 8088 PC BIOS in 2022?
 
-Because learning.  I've always wanted to know what actually happens inside the big gray box
-and how everything actually works on a PC. Like an old car, radio or TV it's actually possible
-for a hobbyist to learn all of the inner workings and be able to repair or build.
+There are other excellent BIOS projects out there each with it's own design goals and use cases. The goals for GLaBIOS are:
+
+1. A collborative learning effort among the Retro Community
+2. A fully open-source PC BIOS, built and improved by the community, free of outside proprietary or copyrighted code
+3. Feature-complete with full support for original vintage hardware as well as new projects
 
 ### Where did the name originate?
 
 If you aren't familiar with the reference, ask a gamer.
-
-### Project Goals
-
-There are several other excellent BIOS projects out there each with it's own design goals and use cases. These are the goals for this one:
-
-1. Learning
-2. A fully open-source PC BIOS, built and improved by the community, free of outside proprietary or copyrighted code
-3. Feature-complete with full support for original vintage hardware
-4. Fit in an 8K ROM to drop in to any original PC or clone
 
 ### Where is the source code?
 
@@ -133,23 +122,29 @@ Hampa Hug's excellent [PCE/ibmpc emulator](http://hampa.ch/pce/pce-ibmpc.html) w
 
 [Minuszerodegrees (-0°)](http://www.minuszerodegrees.net/) has a lot of information about [original ROM types](http://minuszerodegrees.net/rom/rom.htm) and "modern" equivalents. I found using [Winbond W27E257](http://www.minuszerodegrees.net/rom/misc/Winbond%20W27E257%20as%2027C256%20replacement.htm) EEPROMs worked very well since it could be electrically erased and re-written quickly.  Since these are 32K EEPROMS, the image will need to be written 4 times sequentially.  I use a TL866 II Plus to write the EEPROMs.
 
+### Contact
+
+Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org or submit an [Issue](../../issues).
+
 ## References and Credits:
 
 - https://stanislavs.org/helppc/
-- [https://sites.google.com/site/pcdosretro/](https://web.archive.org/web/20220223124950/https://sites.google.com/site/pcdosretro/) (now offline)
+- [https://sites.google.com/site/pcdosretro/](https://web.archive.org/web/20220223124950/https://sites.google.com/site/pcdosretro/)
 - http://www.minuszerodegrees.net/
 - https://www.felixcloutier.com/x86/
-
 - Font bitmaps by "VileR", ([CC BY-SA 4.0](https://int10h.org/oldschool-pc-fonts/readme/#legal_stuff))
-	
 
 ### Further Credits to:
 
 - The [Code Golf (CGCC)](https://codegolf.stackexchange.com/) community on Stack Exchange for helping me become a better ASM programmer.
 - Hampa Hug for the excellent [PCE software](http://www.hampa.ch/pce/pce-ibmpc.html) that helped make development and debugging much easier.
 - @Raffzahn, Contributor, Advisor and Meckerhut.
+- @MadMaxx12345, @Makefile, @punishedbunny, @PickledDog and many others for testing, bug finding and feature suggestions.
 - Dave Nault, my partner in crime for 2 semesters of college assembly language programming classes back in the day. Wherever you are buddy, hope you're doing well!
-- @MadMaxx12345, @Makefile and @punishedbunny for testing, bug finding and feature suggestions.
+
+## License
+
+- GNU General Public License v3.0. See [LICENSE](LICENSE).
 
 ### Disclaimer
 
