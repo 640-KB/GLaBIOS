@@ -238,7 +238,7 @@ FDC_HLT_WAIT	=	1		; Halt CPU during FD access
 						;   hang during floppy access if this is
 						;   enabled
 KB_HLT_WAIT		=	1		; Halt CPU during KB wait
-MBR_CHECK		=	1		; Verify magic number of DOS MBR at boot
+MBR_CHECK		=	0		; Verify magic number of DOS MBR at boot
 						;   note: DOS 1.0 does not use MBR, so
 						;   will not boot if this is enabled
 POST_HD_CHECK	=	1		; Enable POST HD drive count and size
@@ -2472,7 +2472,7 @@ INIT_PIT1:
 			IF POST_TEST_DMA EQ 1
 	MOV	BH, 8				; test 8 ports
 	XOR	DX, DX			; starting at port 00H
-	CALL_NS PORT_TEST			; ZF and CX = 0 if pass, NZ if failed
+	CALL_NS  PORT_TEST		; ZF and CX = 0 if pass, NZ if failed
 	MOV	BL, BEEP_SL <4,2>		; beep pattern (4 short, 2 long)
 	JNZ	HALT_ERROR
 DMA_PASS:
@@ -2580,14 +2580,14 @@ BASE_RAM_TEST:
 	MOV	ES, AX
 	MOV	SI, OFFSET WARM_FLAG_ABS	; SI = warm boot flag offset
 	MOV	DX, [SI]				; save warm boot flag
-	CALL_NS MEM_CHECK				; clear memory and parity bits
+	CALL_NS  MEM_CHECK			; clear memory and parity bits
 	JNZ	BASE_RAM_ERROR
 	IN	AL, PPI_B				; read PPI channel B
 	OR	AL, MASK PBPC 			; clear MB RAM parity flag only
 	OUT	PPI_B, AL
 	AND	AL, NOT MASK PBPC 		; enable MB RAM parity for test
 	OUT	PPI_B, AL
-	CALL_NS MEM_ADDR_TEST			; test address lines
+	CALL_NS  MEM_ADDR_TEST			; test address lines
 	JZ	BASE_RAM_ZERO			; continue if no errors
 BASE_RAM_ERROR:
 	MOV	BL, BEEP_SL <1,3>			; on failure, 1 short and 3 long beeps
@@ -2595,9 +2595,9 @@ HALT_BEEP_1:
 	JMP	HALT_BEEP				; NEAR jump to HALT BEEP PROC
 BASE_RAM_ZERO:
 	MOV	AX, RAM_TEST			; test pattern
-	CALL_NS MEM_CHECK				; write and verify test pattern
+	CALL_NS  MEM_CHECK			; write and verify test pattern
 	JNZ	BASE_RAM_ERROR			; ZF and AX = 0 if okay
-	CALL_NS MEM_CHECK				; write and verify zeros
+	CALL_NS  MEM_CHECK			; write and verify zeros
 	JNZ	BASE_RAM_ERROR
 	XCHG	[SI], DX				; restore warm boot flag, DX = 0
 	INC	AX					; AL = 1
@@ -3020,7 +3020,7 @@ SETTINGS_SAVE:
 ;  - If MB video switch is 0 (option ROM), skip reset
 ;  - If not 0, determine correct 6845 video mode and do INT 10H reset
 ;----------------------------------------------------------------------------;
-	GET_EFLAG VIDM				; AX = 00=error(ZF), 01=CGA 40, 10=CGA 80, 11=MDA
+	GET_EFLAG  VIDM				; AX = 00=error(ZF), 01=CGA 40, 10=CGA 80, 11=MDA
 	XCHG	AX, DX				; AL = EQUIP_FLAGS, DX = BDA initial video mode
 	JNZ	VID_MODE_OK				; jump if mode valid or video option ROM loaded
 	MOV	BL, BEEP_SL <3,3>			; Beep 3 long, 3 short
@@ -3263,7 +3263,7 @@ SET_EFLAG_FLP PROC
 	JZ	SHORT SET_EFLAG_FLP_RET		; don't change BDA (no option for 0)
 	PUSH	AX
 	DEC	AX					; adjust 0-based count
-	SET_EFLAG	FLP				; set floppy count
+	SET_EFLAG  FLP				; set floppy count
 	POP	AX
 SET_EFLAG_FLP_RET:
 	RET
@@ -3469,10 +3469,10 @@ POST_KB_RESET PROC
 KB_RESET_TEST:
 	NOP 						; give a little more time
 	;NOP 						;  and a little more time still
-	POST_FLAG_TEST PKI			; KB test flag yet?
+	POST_FLAG_TEST  PKI			; KB test flag yet?
 	LOOPZ	KB_RESET_TEST			; Loop until KB flag OR CX is 0 (timeout)
 	CLI 						; disable interrupts again
-	POST_FLAG_FLIP PKI			; invert PKI flag: 1 = error, 0 = success
+	POST_FLAG_FLIP  PKI			; invert PKI flag: 1 = error, 0 = success
 		ENDIF
 
 	IO_DELAY_LONG 				; additional delay, CX = 0
@@ -3493,10 +3493,10 @@ KB_RESET_TEST:
 			IF POST_TEST_KB NE 0
 	TEST	AL, AL				; AL should be 0
 	JZ	KB_HAPPY				; if so, KB is ready
-	POST_FLAG_SET PKEY			; otherwise set flag for keyboard error
+	POST_FLAG_SET  PKEY			; otherwise set flag for keyboard error
 
 			ELSE
-	POST_FLAG_CLR PKI				; clear any KB error
+	POST_FLAG_CLR  PKI			; clear any KB error
 			ENDIF
 
 KB_HAPPY:
@@ -3547,7 +3547,7 @@ POST_KB_RESET ENDP
 	IN	AL, DMA_CMD				; verify DMA status register
 	TEST	AL, MASK TC0			; Channel 0 TC
 	JNZ	DMA_STATUS_OK			; jump if zero reached
-	POST_FLAG_SET PDMA			; else mark in POST error flags
+	POST_FLAG_SET  PDMA			; else mark in POST error flags
 DMA_STATUS_OK:
 		ENDIF
 
@@ -3585,7 +3585,7 @@ FDC_POST PROC
 	CWD						; DL = start at drive 0
 	INT	13H					; Reset the controller
 	JC	FDC_POST_CT_ERR			; jump if controller reset failed
-	GET_EFLAG FLP				; AX = # of floppy drives (0 based)
+	GET_EFLAG  FLP				; AX = # of floppy drives (0 based)
 	INC	AX					; fixup for 1 based drive count
 
 			IF POST_TEST_FD EQ 1
@@ -3604,7 +3604,7 @@ FDC_POST_TESTS_DRV:
 	LOOP	FDC_POST_TESTS_DRV
 	JMP	SHORT FDC_POST_TESTS_DONE	; tests successful
 FDC_POST_DRV_ERR:					; POST: drive seek error
-	POST_FLAG_SET PFSK			; mark in POST error flags
+	POST_FLAG_SET  PFSK			; mark in POST error flags
 	JMP	SHORT FDC_POST_TESTS_DONE	; end POST test at failed drive
 	;LOOP	FDC_POST_TESTS_DRV		;  or continue to next drive
 
@@ -3613,7 +3613,7 @@ FDC_POST_DRV_ERR:					; POST: drive seek error
 			ENDIF				; /POST_TEST_FD EQ 1
 
 FDC_POST_CT_ERR:					; POST: controller error
-	POST_FLAG_SET PFDC			; mark in POST error flags
+	POST_FLAG_SET  PFDC			; mark in POST error flags
 
 			IF POST_TEST_FD EQ 1
 	CWD						; DX = 0 drives detected
@@ -3633,7 +3633,7 @@ FDC_POST_TESTS_COL:
 ;----------------------------------------------------------------------------;
 ; Display FDC POST drive count column in AX
 ;
-	POST_COL_1 POST_FDD, POST_CLR_VAL2	; display FDC column label
+	POST_COL_1  POST_FDD, POST_CLR_VAL2	; display FDC column label
 	CALL	NIB_HEX				; display decimal value in AL
 	POST_COL_END				;  NIB_HEX returns AL <= 46h
 
@@ -3728,7 +3728,7 @@ POST_ERROR:
 ; Wait for Any Key if there was an error
 ;
 	CALL	MEEPMEEP				; alert that there was an error, CX=0
-	PRINT_SZ NL_ANY_KEY			; "Any key" string
+	PRINT_SZ  NL_ANY_KEY			; "Any key" string
 	XCHG	AX, CX				; wait for key press (AH=0)
 	INT	16H
 	CALL	CRLF					; move to next line
@@ -3760,7 +3760,7 @@ CLEAR_POST_SCREEN:
 
 	CALL	BEEP 					; beep to signify POST test is done
 			IF POST_GLADOS EQ 1
-	PRINT_SZ BOOT_BEGIN			; Starting DOS...
+	PRINT_SZ  BOOT_BEGIN			; Starting DOS...
 			ELSE
 	CALL	CRLF
 			ENDIF
@@ -3809,7 +3809,7 @@ TRY_INT_18:
 ;----------------------------------------------------------------------------;
 INT_18 PROC
 		ASSUME DS:_BDA_ABS
-	PRINT_SZ BOOT_FAIL		; print boot failure string
+	PRINT_SZ  BOOT_FAIL		; print boot failure string
 	XOR	AX, AX			; AH = 0 (wait for key)
 	MOV	DS, AX			; DS = 0000
 	MOV	WARM_FLAG_ABS, AX		; do a cold boot
@@ -4141,7 +4141,7 @@ DONE_ZERO_ALL_RAM:
 ;   read. This should reveal which IC in that bank failed.
 ;
 DETECT_MEMORY_ERR:
-	POST_FLAG_SET PMEM			; set POST Memory error flag
+	POST_FLAG_SET  PMEM			; set POST Memory error flag
 	CALL	CRLF					; start on new line
 	POST_COL_1	POST_ERR_ERR, RED
 	DEC	DI					; move back to last address
@@ -4153,7 +4153,7 @@ DETECT_MEMORY_ERR:
 	CALL	SPACE
 	TEST	DL, DL				; was there a parity error?
 	JZ	DETECT_MEMORY_ERR_2		; jump if not
-	PRINT_SZ NMI_ERR_PAR			; print 'PARITY'
+	PRINT_SZ  NMI_ERR_PAR			; print 'PARITY'
 	JMP	SHORT DETECT_MEMORY_ERR_DONE
 DETECT_MEMORY_ERR_2:
 	XCHG	AX, DI				; restore failed bit pattern
@@ -4849,10 +4849,10 @@ HALT_BEEP_START_ODD:
 	MOV	DI, CX				; save counter length
 HALT_BEEP_REP:
 	MOV	AX, SI				; restore beep tone
-	CALL_NS BEEP_ON_P, 1			; turn on speaker / beep
+	CALL_NS  BEEP_ON_P, 1			; turn on speaker / beep
 	MOV	CX, DI				; restore counter
 	IO_DELAY					; delay for beep
-	CALL_NS BEEP_OFF_P, 1			; turn off speaker
+	CALL_NS  BEEP_OFF_P, 1			; turn off speaker
 	SUB	CX, DI				; set for remainder of counter
 	IO_DELAY					; delay for silence
 	DEC	DL					; dec beep repeat count
@@ -4961,7 +4961,7 @@ POST_ERROR_MSG_LOOP:
 	JNC	POST_ERROR_MSG_NEXT		; no flag?
 	PUSHF						; save BP ZF
 	XCHG	AX, SI				; SI = error string
-	PRINTLN_SZ SI				; write string with CRLF
+	PRINTLN_SZ  SI				; write string with CRLF
 	XCHG	AX, SI				; SI = string table pointer
 	POPF
 POST_ERROR_MSG_NEXT:
@@ -8771,7 +8771,7 @@ POST_SYS_CONFIG PROC
 	POST_COL_1	POST_CPU, POST_CLR_VAL1	; display 'CPU' left column
 							;  SI default to 8088
 CPU_CHECK_TYPE_2:
-	TEST_GFLAG	V20				; ZF = 0 if V20, ZF = 1 if 8088
+	TEST_GFLAG  V20				; ZF = 0 if V20, ZF = 1 if 8088
 	JZ	CPU_CHECK_TYPE_2_DONE		; jump if 8088
 	MOV	SI, OFFSET POST_V20		; if not, is V20
 CPU_CHECK_TYPE_2_DONE:
@@ -8782,8 +8782,8 @@ CPU_CHECK_TYPE_2_DONE:
 ; Display FPU/math co-processor
 ;
 FPU_CHECK:
-	POST_COL_2	POST_FPU, POST_CLR_VAL1	; SI default to '8087'
-	TEST_EFLAG	FPU				; was FPU detected?
+	POST_COL_2  POST_FPU, POST_CLR_VAL1	; SI default to '8087'
+	TEST_EFLAG  FPU				; was FPU detected?
 	JNZ	FPU_DISP_DONE			; jump to output if FPU
 	MOV	SI, OFFSET POST_NONE		; otherwise 'None'
 FPU_DISP_DONE:
@@ -8794,7 +8794,7 @@ FPU_DISP_DONE:
 ; Display LPT ports
 ;
 	POST_COL_1	POST_LPT, POST_CLR_VAL2
-	GET_EFLAG	LPT				; AX = number of LPT ports
+	GET_EFLAG  LPT				; AX = number of LPT ports
 	XCHG	AX, CX				; CX = number of ports
 	MOV	SI, OFFSET LPT_ADDR
 	CALL	SHOW_PORT_COUNT
@@ -8803,7 +8803,7 @@ FPU_DISP_DONE:
 ; Display COM ports
 ;
 	POST_COL_2	POST_COM, POST_CLR_VAL2
-	GET_EFLAG	COM				; AX = number of COM ports
+	GET_EFLAG  COM				; AX = number of COM ports
 	XCHG	AX, CX				; CX = number of ports
 	XOR	SI, SI				; OFFSET COM_ADDR = 0000H
 
@@ -8824,7 +8824,7 @@ PORT_COUNT_LOOP:
 	MOV	SI, OFFSET POST_RSEP[1]		; skip leading space in right sep.
 	JMP	SHORT POST_END_COL_STR		; display end with sep. in SI and RET
 PORT_COUNT_NONE:
-	PRINT_SZ	POST_NONE			; display 'None'
+	PRINT_SZ  POST_NONE			; display 'None'
 	JMP	SHORT POST_END_COL		; display end sep and RET
 SHOW_PORT_COUNT ENDP
 
@@ -9002,7 +9002,7 @@ OUTLN_SZ PROC
 ; Write a CRLF string to console
 ;----------------------------------------------------------------------------;
 CRLF PROC
-	PRINT_SZ NL_Z, 1
+	PRINT_SZ  NL_Z, 1
 	RET
 CRLF ENDP
 
@@ -10036,7 +10036,7 @@ SHOW_DISK_PARAMS PROC
 	PUSH	AX					; save return status in AH
 	JC	SHOW_DISK_PARAMS_DONE		; exit if error getting drive
 
-	SET_SZ_ATTR	POST_CLR_TXT, 1, 1	; set next char to be text color
+	SET_SZ_ATTR	 POST_CLR_TXT, 1, 1	; set next char to be text color
 	XCHG	AX, DX				; AL = drive ID, DX = # of heads
 
 ;----------------------------------------------------------------------------;
@@ -10160,13 +10160,13 @@ INT_KB_TOGGLE_TURBO ENDP
 HELLO_RAND_TAGLINE PROC
 	PRINT_SZ  TOP_BANNER		; display main banner
 	MOV	AX, BP			; get random bits from BP
-	POST_FLAG_CLR GRND		; clear random bits from BP
+	POST_FLAG_CLR  GRND		; clear random bits from BP
 	AND	AX, MASK GRND		; mask only low 2 bits
 	XCHG	AX, SI			; SI = string offset table
 	SHL	SI, 1				; word align
 	MOV	SI, CS:TAGS[SI]		; SI = chosen tagline offset
 	PRINT_SZ  SI			; display tagline
-	PRINTLN_SZ COPYRIGHT		; display copyright message
+	PRINTLN_SZ  COPYRIGHT		; display copyright message
 	RET
 
 ;----------------------------------------------------------------------------;
