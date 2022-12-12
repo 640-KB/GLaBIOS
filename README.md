@@ -32,7 +32,7 @@ The results of the poll for [tagline for the next major version](https://github.
 - PC/XT 5160 and clones
 - PC 5150 with cassette
 - Turbo XTs (DTK, clones)
-- [Faraday FE2010A](https://github.com/skiselev/micro_8088/blob/master/Documentation/Faraday-XT_Controller-FE2010A.md)-based PCs ([Headstart Plus](http://oldcomputer.info/pc/hs_plus/index.htm)/[TURBO 888-XT](https://forum.vcfed.org/index.php?threads/vendex-head-start-turbo-888-xt.67609/)/VTI Vendex 33-XT/PC-10 and others)
+- [Faraday FE2010A](https://github.com/skiselev/micro_8088/blob/master/Documentation/Faraday-XT_Controller-FE2010A.md)-based PCs ([Headstart Plus](http://oldcomputer.info/pc/hs_plus/index.htm)/VTI Vendex 33-XT/PC-10 and others)
 - TD3900A-based PCs (Juko ST-12, UNIQUE, Auva, etc)
 - Support for [EMM Homebrew 8088](https://www.homebrew8088.com/) with 8088, V20 or V40
 - Emulator-optmized ([86Box](https://86box.net/) and others) for improved performance and stability
