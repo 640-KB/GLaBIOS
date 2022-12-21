@@ -135,10 +135,10 @@ TURBO_REV		EQU	2			; reversed PPI B (bit 3)
 ;
 VER_NAME		EQU	'GLaBIOS'
 	IFNDEF VER_NUM
-VER_NUM		EQU	'0.2.2'		; (max 6 chars)
+VER_NUM		EQU	'0.2.3'		; (max 6 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'12/09/22' 		; must be MM/DD/YY format
+VER_DATE		EQU	'12/21/22' 		; must be MM/DD/YY format
 	ENDIF
 	IFNDEF COPY_YEAR
 COPY_YEAR		EQU	'2022'		; can be set at build time
@@ -10522,6 +10522,7 @@ INT_08_TICK_DAY:
 ;----------------------------------------------------------------------------;
 ; Timer has rolled over 24 hours - reset counters and increment midnight
 ; http://www.ctyme.com/intr/rb-2271.htm
+; http://www.phatcode.net/res/246/files/pctim003.txt
 ;
 INT_08_RESET:
 	MOV	[DI].LW, DX				; TIMER low word = 0
