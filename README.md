@@ -2,7 +2,7 @@
 ## (General Libraries and Basic Input Output System)
 A modern, scratch-built, open-source alternative BIOS for vintage PC, XT, 8088 Clone or Turbo PCs.
 
-Copyright &copy; 2022, [640KB](mailto:640kb@glabios.org) and contributors.
+Copyright &copy; 2022-2023, [640KB](mailto:640kb@glabios.org) and contributors.
 
 ## Version 0.2 released!
 
@@ -21,7 +21,7 @@ The results of the poll for [tagline for the next major version](https://github.
 - A complete [100% PC Compatible](#compatibility) BIOS for retro/vintage PC, XT, 8088 Clone, Turbo and Homebrew PCs.
 - FAST! [Performance-optmized](doc/about/perf.md) CGA/MDA text and graphics routines.
 - 5150 Cassette tape support.
-- NEC V20 enhanced instruction set support (enabled at build-time).
+- NEC V20 enhanced instruction set support.
 - Multiple levels of "[CGA snow](https://en.wikipedia.org/wiki/Color_Graphics_Adapter#Limitations,_bugs_and_errata)" removal (configurable at build-time).
 - Accurate PIT-based I/O timing for floppy disk, 10-15% faster seek and read times.
 - Customizable POST test screen colors themes.
@@ -31,7 +31,7 @@ The results of the poll for [tagline for the next major version](https://github.
 
 - PC/XT 5160 and clones
 - PC 5150 with cassette
-- Turbo XTs (DTK, clones)
+- Turbo XTs (DTK, most clones)
 - [Faraday FE2010A](https://github.com/skiselev/micro_8088/blob/master/Documentation/Faraday-XT_Controller-FE2010A.md)-based PCs ([Headstart Plus](http://oldcomputer.info/pc/hs_plus/index.htm)/VTI Vendex 33-XT/PC-10 and others)
 - TD3900A-based PCs (Juko ST-12, UNIQUE, Auva, etc)
 - Support for [EMM Homebrew 8088](https://www.homebrew8088.com/) with 8088, V20 or V40
@@ -92,16 +92,7 @@ Flight Simulator 1.0
 
 ### Assembler Version
 
-Built using MASM 5.0. MASM and it's syntax has been what I have used and most familiar with in assembly programming. It also provides some sense of historical authenticity _[citation needed]_.
-
-### Code Formatting
-- Tab Size: 6 spaces. Indented with TAB characters.
-
-### Code style:
-GLaBIOS uses all UPPERCASE mnemonics because 1) it was the way I originally
-learned assembly language 2) it's what's used in MASM 5 documentation
-and manuals 3) it would have been an accepted practice in the era in when 
-PC BIOS clones were written.
+Build using MASM 5 or later.
 
 ### Build Process:
 
