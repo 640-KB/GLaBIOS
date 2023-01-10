@@ -6,7 +6,7 @@
 ;
 ; An scratch-built, open-source 8088 PC/clone BIOS alternative.
 ;
-; Copyright (c) 2022, 640KB and contributors
+; Copyright (c) 2022-2023, 640KB and contributors
 ;
 ;----------------------------------------------------------------------------;
 ;
@@ -22,7 +22,7 @@
 ; If not, see <https://www.gnu.org/licenses/>.
 ;
 ;----------------------------------------------------------------------------;
-; References and Credits:
+; References, Credits and Inspiration:
 ; 
 ;  https://stanislavs.org/helppc/
 ;  http://www.minuszerodegrees.net/
@@ -33,38 +33,22 @@
 ;  "System BIOS for IBM(R) PC/XT(TM)/AT(R) Computers and Compatibles",
 ;	Phoenix Technologies Ltd.
 ;  "Programmer's Guide to PC Video Systems", Second Edition, Wilton
+;  (Many more inline...)
 ;
 ;  Font bitmaps by "VileR", (CC BY-SA 4.0)
 ;  https://int10h.org/oldschool-pc-fonts/readme/#legal_stuff
 ;
-;  (Many more inline...)
-;
 ;  @Raffzahn, Contributor and Meckerhut.
 ;
 ;  https://github.com/640-KB/GLaBIOS#further-credits-to
+;
+;  "Every byte is sacred, every byte is great,
+;  when a byte is wasted, God gets quite irate..."
+;  - David W. Plummer
 ;----------------------------------------------------------------------------;
-; BUILD NOTES:
+; Build Instructions:
 ;
-; Build using MASM 5.0.
-;	Why? MASM and MASM syntax is what I have used and is what I am most 
-;	familiar in assembly language. Perhaps it also provides some sense of 
-;	historical authenticity [citation needed]?
-;
-; Code style:
-;	GLaBIOS uses all UPPERCASE mnemonics because 1) it was the way I 
-;	originally learned assembly language 2) it's what's used in MASM 5 
-;	documentation and manuals 3) it would have been an accepted practice in
-;	the era in when a PC BIOS clone was written.
-;
-; Code Formatting
-; 	- Tab Size: 6 spaces. Indented with TAB characters.
-;
-; Inline Documentation
-; 	The "Things you must/should do" sections are given as high-level 
-;	implementation requirements, similar to what a "clean room" engineer 
-;	might be given.
-;----------------------------------------------------------------------------;
-; Build Instructions (Using DOS or suitable emulator/VM):
+; Build using MASM 5 or later.
 ;
 ;  MAKE.BAT
 ;
@@ -74,14 +58,11 @@
 ;  LINK GLABIOS;
 ;  GLA2ROM GLABIOS.EXE GLABIOS.ROM		; Build 8K ROM
 ;
-; or
-;
-;  GLA2ROM /4 GLABIOS.EXE GLABIOS.ROM	; Build 32K ROM (8K duplicated 4x)
-;
 ; MASM Build Options:
 ;  /DVER_DATE='02/22/22'			; Must be MM/DD/YY format
 ;  /DARCH_TYPE='X'				; P, X, Y or T (see ARCH_* below)
 ;  /DCPU_TYPE='8'					; 8 or V (see CPU_* below)
+;
 ;----------------------------------------------------------------------------;
 ; POST Error Beep messages:
 ;
@@ -97,6 +78,7 @@
 ;	1	3	Base RAM (0-16KB) read/write error
 ;	3	3	Error loading video adapter ROM
 ;	1	4	Base RAM (0-16KB) parity error
+;
 ;----------------------------------------------------------------------------;
 
 ;----------------------------------------------------------------------------;
@@ -138,7 +120,7 @@ VER_NAME		EQU	'GLaBIOS'
 VER_NUM		EQU	'0.2.3'		; (max 6 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'12/21/22' 		; must be MM/DD/YY format
+VER_DATE		EQU	'01/10/23' 		; must be MM/DD/YY format
 	ENDIF
 	IFNDEF COPY_YEAR
 COPY_YEAR		EQU	'2022'		; can be set at build time
@@ -233,6 +215,7 @@ RAM_PARITY		=	1		; Enable RAM parity checking
 RAM_TEST_LONG	=	1		; Long RAM test on cold boot
 BASIC_ROM		=	1		; BASIC ROM support at 0F600h
 OPT_ROM_END		=	0FE00H	; Option ROM scan ending address
+FDC_ENABLE		=	1		; Enable INT 13h floppy support
 FDC_HLT_WAIT	=	1		; Halt CPU during FD access
 						;   Some chipsets (ST-12 known affected)
 						;   hang during floppy access if this is
@@ -336,15 +319,20 @@ CGA_SNOW_REMOVE	=	0			; disable snow removal
 DRAM_REFRESH	=	0			; disable refresh (no DRAM)
 RAM_PARITY		=	0			; disable memory parity check
 DMA_INSTALLED	=	0			; no DMA 8237A installed
+;FDC_ENABLE		=	0			; disable all INT 13h floppy tests (if no DMA)
+;POST_TEST_FD	=	0			; disable Seek Floppy Drives
 POST_TEST_DMA	=	0			; disable DMA Register Test (no DMA)
 POST_TEST_KB	=	0			; disable PKEY and PKI errors
 POST_TEST_PIT_1	=	0			; disable Timer 1 Test (no DRAM)
-;POST_TEST_FD	=	1			; disable Seek Floppy Drives
 POST_TEST_PIC_REG	=	0			; disable PIC Register Test
 SW1_VID		=	00b			; SW1 5/6 Video Type (0=EGA/VGA
 							;   1=CGA 40, 2=CGA 80, 3=MDA/Herc)
+			IF FDC_ENABLE EQ 1
 SW1_FLP		=	01b			; SW1 7/8 Max # of floppy drives (0-3)
 FD_AUTO_DETECT	=	1			; auto-detect number of floppy drives
+			ELSE
+SW1_FLP		=	00b			; SW1 7/8 Max # of floppy drives (0-3)
+			ENDIF
 			IF CPU_TYPE NE CPU_V20
 TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
 			ENDIF
@@ -765,14 +753,16 @@ CRTC	ENDS
 ;============================================================================;
 
 ;----------------------------------------------------------------------------;
+; Define Nibbles to Byte
 ; Convert two nibbles to byte (big endian)
 ;----------------------------------------------------------------------------;
-DNB	RECORD	HBN:4,LBN:4
+DNB	RECORD	HBN:4, LBN:4
 
 ;----------------------------------------------------------------------------;
+; Define Bytes to Word
 ; Convert two bytes to word (big endian)
 ;----------------------------------------------------------------------------;
-DBW	RECORD	HDB:8,LDB:8
+DBW	RECORD	HWB:8, LWB:8
 
 ;----------------------------------------------------------------------------;
 ; BDA Equipment Flags (40:10H)
@@ -789,43 +779,48 @@ DBW	RECORD	HDB:8,LDB:8
 ;         |      0	- FPU : FPU installed
 ;         |       1	- IPL : Floppy drive(s) installed (always 1 on 5160)
 ;----------------------------------------------------------------------------;
+				IF FDC_ENABLE EQ 1
 EQFLAGS RECORD	LPT:2,X1:1,GAM:1,COM:3,DMA:1,FLP:2,VIDM:2,MBRAM:2=11b,FPU:1,IPL:1=1
+				ELSE
+EQFLAGS RECORD	LPT:2,X1:1,GAM:1,COM:3,DMA:1,FLP:2,VIDM:2,MBRAM:2=11b,FPU:1,IPL:1=0
+				ENDIF
 
 ;----------------------------------------------------------------------------;
 ; GLaBIOS Equipment Flags (40:12H)
 ;----------------------------------------------------------------------------;
 ; 76543210
-; x 	    |			- TBD		: Reserved
-;  xxx    |			- RTCTY	; RTC Type
-;         |					; 0 = none
-;         |					; 1 = DS1285
-;         |					; 2 = MS5832
-;         |					; 3 = MM58167AN
-;         |					; 4 = RP5C15
-;     x   |			- TURBO	: Turbo supported
-;      x  |			- V20		: 1 if V20, 0 if 8088
-;       xx|			- GRND	; random number for tagline
+; x 	    |			- TBD		Reserved
+;  xxx    |			- RTCTY	RTC Type
+;         |					0 = none
+;         |					1 = DS1285
+;         |					2 = MS5832
+;         |					3 = MM58167AN
+;         |					4 = RP5C15
+;     x   |			- TURBO	Turbo supported
+;      x  |			- V20		1 if V20, 0 if 8088
+;       xx|			- TBD		Reserved
 ; 84218421
 ;----------------------------------------------------------------------------;
-GFLAGS RECORD	GTBD1:1,RTCTY:3,TURBO:1,V20:1,GRND:2
+GFLAGS RECORD	GTBD1:1,RTCTY:3,TURBO:1,V20:1,GTBD2:2
 
 ;----------------------------------------------------------------------------;
 ; POST status flags are stored in BP
 ;----------------------------------------------------------------------------;
 ; BP:
 ; 76543210
-; x 	    |			- WARM  : Warm Boot flag
-;  x 	    |			- PKI   : POST Keyboard Interrupt Received
-;   x     |			- PKEY  : Keyboard key stuck
-;    x    |			- PFDC  : FDC init failure
-;     x   |			- PFSK  : FDC seek test failure
-;      x  |			- PDMA  : DMA error
-;       x |			- PMEM  : Memory Error
-;        x|			- PFXX  : Reserved (do not use)
-;         |xxxxxxxx	- TBD
+; x 	    |			- WARM  	Warm Boot flag
+;  x 	    |			- PKI   	POST Keyboard Interrupt Received
+;   x     |			- PKEY  	Keyboard key stuck
+;    x    |			- PFDC  	FDC init failure
+;     x   |			- PFSK  	FDC seek test failure
+;      x  |			- PDMA  	DMA error
+;       x |			- PMEM  	Memory Error
+;        x|			- PFXX  	Reserved (do not use)
+;         |xxxxxx		- TBD
+;         |      xx	- GRND	Random number for tagline
 ; 84218421
 ;----------------------------------------------------------------------------;
-PFLAGS RECORD WARM:1,PKI:1,PKEY:1,PFDC:1,PFSK:1,PDMA:1,PMEM:1,PFXX:1,PTBD:8
+PFLAGS RECORD WARM:1,PKI:1,PKEY:1,PFDC:1,PFSK:1,PDMA:1,PMEM:1,PFXX:1,PTBD:6,GRND:2
 
 ;----------------------------------------------------------------------------;
 ; BDA Keyboard Flags
@@ -1190,7 +1185,7 @@ OCW1	RECORD	IRQ7:1,IRQ6:1,IRQ5:1,IRQ4:1,IRQ3:1,IRQ2:1,IRQ1:1,IRQ0:1
 ;      2  |		- O3P		1=Poll command, 0=No Poll command
 ;       10|		- O3RR	Read Register command
 ;----------------------------------------------------------------------------;
-OCW3	RECORD	O3D7:1,ESMM:2,O3D3:2=1,O3P:1,O3RR:2
+OCW3	RECORD	O3D7:1, ESMM:2, O3D3:2=1, O3P:1, O3RR:2
 
 ;----------------------------------------------------------------------------;
 ; V40 WCY1
@@ -1213,7 +1208,7 @@ V40_WCY1	RECORD	IOW:2, UMW:2, MMW:2, LMW:2
 ;       1 |			- VSPT	light pen trigger set
 ;        0|			- VSHS	horiz or vert retrace, RAM access OK
 ;----------------------------------------------------------------------------;
-VID_STAT	RECORD	VSX:4,VSVS:1,VSPE:1,VSPT:1,VSHS:1
+VID_STAT	RECORD	VSX:4, VSVS:1, VSPE:1, VSPT:1, VSHS:1
 
 ;----------------------------------------------------------------------------;
 ; 6845 Video - 3D9 Color Select Register (Text)
@@ -1224,7 +1219,7 @@ VID_STAT	RECORD	VSX:4,VSVS:1,VSPE:1,VSPT:1,VSHS:1
 ;     3   |			- CTIN	select intensity setting
 ;      210|			- CTBC	screen/border RGB
 ;----------------------------------------------------------------------------;
-VID_CSTXT	RECORD	CTX:3=001B,CTBI:1=1B,CTIN:1,CTBC:3
+VID_CSTXT	RECORD	CTX:3=001B, CTBI:1=1B, CTIN:1, CTBC:3
 
 ;----------------------------------------------------------------------------;
 ; 6845 Video - 3D9 Color Select Register (Graphics)
@@ -2342,8 +2337,8 @@ POST_FLAG_DONE:
 ;----------------------------------------------------------------------------;
 ; Set up temporary stack to point at ROM to enable CALL_NS MACRO
 ;----------------------------------------------------------------------------;
-	MOV	DX, CS 			; SS to temp boot stack CS
-	MOV	SS, DX			; SS to 0F000h BIOS segment
+	MOV	DX, CS 			; DX = 0F000h (BIOS segment)
+	MOV	SS, DX			; SS = temp boot stack in CS
 
 ;----------------------------------------------------------------------------;
 ; [5] Setup 8255 PPI to normal operating state
@@ -2381,7 +2376,7 @@ RESET_PPI:
 ;----------------------------------------------------------------------------;
 ; [8] Checksum (8 bit) the main ROM to ensure it is not corrupt
 ;----------------------------------------------------------------------------;
-; Input: AH = 0, DX = 0F000h
+; Input: AH = 0, CX = 0, DX = 0F000h
 ; On Failure: 2 long and 2 short beeps
 ;----------------------------------------------------------------------------;
 	JWB	CHECKSUM_OK			; skip on warm boot
@@ -2390,10 +2385,9 @@ CHECKSUM_ROM:
 	MOV	DS, DX			; DS to 0F000h BIOS segment
 	MOV	SI, OFFSET BIOS_TOP 	; offset to top of BIOS ROM
 	MOV	CH, HIGH (8 * 1024 / 2)	; checksum 8KB (in 2 byte words)
-	CWD					; DL = accumulator for sum, DH = 0
 CHECKSUM:
 	LODSW 				; next two bytes into AL and AH
-	ADD	DL, AL
+	ADD	DL, AL			; DL = accumulator for sum
 	ADD	DL, AH			; ZF if sum is 0
 	LOOP	CHECKSUM 			; loop through entire ROM
 	MOV	BL, BEEP_SL <2,2>		; on failure, 2 short and 2 long beeps
@@ -2436,8 +2430,8 @@ INIT_DMA1:
 	OUT	PIT_CTRL, AL		; set Counter mode
 	MOV	DX, LOW PIT_CH1		; DX = PIT channel 1
 	OUT	DX, AL			; set low byte (any value)
-	MOV	SI, 0FFH SHL 3		; look at bits 10-3 for 1 check
-	MOV	DI, NOT 0FFH SHL 3	; look at bits 10-3 for 0 check
+	MOV	SI, 0FFH SHL 3		; flag bits 10-3 for 1 check
+	MOV	DI, NOT 0FFH SHL 3	; flag bits 10-3 for 0 check
 	OUT	DX, AL			; set high byte (any value)
 INIT_PIT1_TEST:
 	TEST	DI, DI			; have all bits flipped to 0?
@@ -3304,7 +3298,7 @@ SET_EFLAG_FLP ENDP
 			ENDIF
 
 ;
-; 1 BYTE HERE
+; 2 BYTES HERE
 ;
 BYTES_HERE	INT_02
 
@@ -3488,7 +3482,7 @@ POST_KB_RESET PROC
 ;
 	IN	AL, INT_IMR 			; get PIC Port 1 INT mask
 	XCHG	AX, SI 				; SI = save previous INT mask
-	MOV	AL, NOT MASK IRQ1			; enable only keyboard interrupt
+	MOV	AL, NOT MASK IRQ1			; unmask only keyboard interrupt
 	OUT	INT_IMR, AL
 
 ;----------------------------------------------------------------------------;
@@ -3610,6 +3604,7 @@ DMA_STATUS_OK:
 ;----------------------------------------------------------------------------;
 	STI 						; Interrupts now enabled
 
+			IF FDC_ENABLE EQ 1
 ;----------------------------------------------------------------------------;
 ; [30] Recalibrate and test seek the floppy drive
 ;----------------------------------------------------------------------------;
@@ -3671,6 +3666,7 @@ FDC_POST_TESTS_COL:
 	POST_COL_END				;  NIB_HEX returns AL <= 46h
 
 FDC_POST ENDP
+			ENDIF				; IF FDC_ENABLE
 
 ;----------------------------------------------------------------------------;
 ; Detect and show hard drive info
