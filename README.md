@@ -4,17 +4,11 @@ A modern, scratch-built, open-source alternative BIOS for vintage PC, XT, 8088 C
 
 Copyright &copy; 2022-2023, [640KB](mailto:640kb@glabios.org) and contributors.
 
-## Version 0.2 released!
+## Stable Version 0.2:
 
-Version 0.2 is a significant update to version 0.1 adding numerous performance and stability improvements as well as new features and support for more hardware platforms.
-
-[Download 0.2 ROMs](https://github.com/640-KB/GLaBIOS/releases)
+[Download ROMs](https://github.com/640-KB/GLaBIOS/releases)
 
 [Source Code](https://github.com/640-KB/GLaBIOS/tree/main/src)
-
-### You spoke, we listened!
-
-The results of the poll for [tagline for the next major version](https://github.com/640-KB/GLaBIOS/discussions/14) are in, and the winner is... everybody!  GLaBIOS will now choose a different tagline on every reboot, based on mood.
 
 ## Features
 
@@ -52,11 +46,11 @@ There are other excellent BIOS projects out there each with it's own design goal
 
 If you aren't familiar with the reference, ask a gamer.
 
-### Where is the source code?
+### How can I try it?
 
-[Right here](https://github.com/640-KB/GLaBIOS/tree/main/src)
+[Click here](https://github.com/640-KB/GLaBIOS/wiki/How-to-try-GLaBIOS) to learn more!
 
-### Screenshots
+## Screenshots
 
 VGA with 8087 FPU:
 
@@ -104,14 +98,6 @@ OR
 
 1. Convert EXE manually by removing the EXE header (the first 512 bytes of the EXE file) and extracting the last 8 KiB
 2. Calculate 8-bit checksum byte and insert into relative file offset `1FFF` in GLABIOS.ROM.
-
-### Testing
-
-Hampa Hug's excellent [PCE/ibmpc emulator](http://hampa.ch/pce/pce-ibmpc.html) works very well for build testing and debugging.  This provides a near-perfect hardware-accurate emulation of a PC with inspection of ICs, memory and code stepping.  [86Box](http://86box.net/) and [PCem](http://pcem-emulator.co.uk/index.html) also work very well.
-
-### Real Hardware Deployment
-
-[Minuszerodegrees (-0°)](http://www.minuszerodegrees.net/) has a lot of information about [original ROM types](http://minuszerodegrees.net/rom/rom.htm) and "modern" equivalents. I found using [Winbond W27E257](http://www.minuszerodegrees.net/rom/misc/Winbond%20W27E257%20as%2027C256%20replacement.htm) EEPROMs worked very well since it could be electrically erased and re-written quickly.  Since these are 32K EEPROMS, the image will need to be written 4 times sequentially.  I use a TL866 II Plus to write the EEPROMs.
 
 ### Contact
 
