@@ -1266,11 +1266,11 @@ TD_WS_CR	RECORD	TDWSI:2,TDWSR:2,TDWIO:2,TDWRA:1,TDWRO:1
 ;----------------------------------------------------------------------------;
 ; 84218421
 ; 100	    |			- FSPD	CPU Clock Frequency and Wait States
-;         |						00x = 4.77, 1 IOWS, 0 MBWS
+;         |						00x = 4.77, 1 IOWS, 0 MBWS *
 ;         |						010 = 7.15, 4 IOWS, 2 MBWS
-;         |						011 = 7.15, 4 IOWS, 0 MBWS
+;         |						011 = 7.15, 4 IOWS, 0 MBWS *
 ;         |						100 = 9.54, 6 IOWS, 4 MBWS * default
-;         |						110 = 9.54, 6 IOWS, 2 MBWS *
+;         |						110 = 9.54, 6 IOWS, 2 MBWS
 ;         |						101 = 9.54, 6 IOWS, 0 MBWS
 ;         |						111 = 9.54, 6 IOWS, 0 MBWS
 ;    0    |			- FME1	RAM size high bit
@@ -2207,7 +2207,9 @@ NMI_ERR_IO	DB	'IO', 0			; NMI I/O Error string
 
 BIOS_TOP 	ENDP
 
+;
 ; 0 BYTES HERE
+;
 BYTES_HERE	BOOT
 
 			ASSUME CS:BIOS, DS:NOTHING, ES:NOTHING, SS:NOTHING
@@ -3092,7 +3094,7 @@ HELLO_WORLD:
 ; Jump over INT 02h fixed ORG to continue...
 ;
 			IF (ARCH_TYPE EQ ARCH_EMU) OR (ARCH_TYPE EQ ARCH_EHB) OR (ARCH_TYPE EQ ARCH_FE2010)
-	JMP	 INT_02_AFTER			; (jump hack)
+	JMP	 NEAR PTR INT_02_AFTER			; (jump hack)
 			ELSE
 	JMP	 SHORT INT_02_AFTER
 			ENDIF
@@ -4273,7 +4275,6 @@ POST_BOOT_TYPE PROC
 	MOV	BL, POST_CLR_COLD			; attribute to cold color
 	MOV	SI, OFFSET POST_COLD		; COLD string
 POST_BOOT_TYPE_OUT:
-	;MOV	CL, 4					; length of WARM/COLD string
 	CALL	OUT_SZ_ATTR				; write string with attribute
 	POST_COL_END_NL				; end of column end NL
 	RET
@@ -4368,7 +4369,7 @@ POST_SYS_VIDEO ENDP
 				ENDIF
 
 ;
-; 1 BYTE HERE
+; 0 BYTES HERE
 ;
 BYTES_HERE	INT_19
 
@@ -5827,7 +5828,7 @@ KB_BUF_CLEAR ENDP
 INT_09 ENDP
 
 ;
-; 1 BYTES HERE
+; 1 BYTE HERE
 ;
 BYTES_HERE	INT_13
 
@@ -7427,6 +7428,21 @@ INT_10_2_DONE:
 INT_10_2 ENDP
 
 ;----------------------------------------------------------------------------;
+; INT 10,3 - Read cursor position and Size for current page
+;----------------------------------------------------------------------------;
+; Return:
+;	ZF = 0 and BH = 0 if MDA/CGA GFX
+;  	ZF = 1 and BH = VID_PAGE if CGA text
+;----------------------------------------------------------------------------;
+INT_10_3_CUR_PAGE PROC
+	XOR	BH, BH			; BH = 0
+	TEST	VID_MODE, 0100B		; is >= 4?
+	JNZ	INT_10_GET_PAGE_DONE	; jump if not MDA or GFX
+	MOV	BH, VID_PAGE		; otherwise BH = VID_PAGE
+INT_10_GET_PAGE_DONE:
+INT_10_3_CUR_PAGE ENDP
+
+;----------------------------------------------------------------------------;
 ; INT 10,3 - Read cursor position and Size
 ;----------------------------------------------------------------------------;
 ; Input:
@@ -7832,7 +7848,7 @@ INT_10_SCR_GFX_RDY:
 INT_10_SCR_GFX_MOVE_LOOP:
 	MOV	CL, DL			; # of pixels to copy
 	REP	MOVSB				; copy odd field
-	MOV	SI, 2000H			; vid mem offset for interlaced field
+	MOV	SI, CGA_MEM_FLD		; vid mem offset for interlaced field
 	MOV	DI, SI
 	ADD	SI, AX			; add to line offset
 	ADD	DI, BX
@@ -7857,7 +7873,7 @@ INT_10_SCR_GFX_CLR:
 INT_10_SCR_GFX_CLR_LOOP:
 	MOV	CL, DL			; # of pixels to clear
 	REP	STOSB				; clear odd field
-	MOV	DI, 2000H			; vid mem offset for interlaced field
+	MOV	DI, CGA_MEM_FLD		; vid mem offset for interlaced field
 	ADD	DI, SI
 	MOV	CL, DL			; # of pixels to clear
 	REP	STOSB				; clear even field
@@ -7952,7 +7968,7 @@ INT_10_8_MODE_GFX PROC
 	PUSH	SS				; ES = SS
 	POP	ES
 	MOV	CX, 4				; loop counter for high and low res
-	MOV	DX, 2000H			; CGA memory interlace field offset
+	MOV	DX, CGA_MEM_FLD		; CGA memory interlace field offset
 	CMP	AL, 3				; is high-res graphics mode?
 	JZ	INT_10_8_GFX_HIGH		; jump to handle high-res 1 bpp spacing
 
@@ -8271,8 +8287,8 @@ INT_10_9A_GFX_LOW_PDEP:
 	XOR	AX, ES:[DI]			; XOR byte for current field
 INT_10_9A_GFX_LOW_WR:
 	MOV	ES:[DI], AX			; write 2 bytes to video memory
-	XOR	DI, 2000H			; alternate video fields
-	TEST	DI, 2000H			; is an even field next?
+	XOR	DI, CGA_MEM_FLD		; alternate video fields
+	TEST	DI, CGA_MEM_FLD		; is an even field next?
 	JNZ	INT_10_9A_GFX_LOW_NEXT	; jump if even (use same offset for even)
 	ADD	DI, 80			; if next is odd, move to next bitmap row
 INT_10_9A_GFX_LOW_NEXT:
@@ -8332,14 +8348,14 @@ INT_10_9A_GFX_HIGH_WORD:
 	TEST	BL, BL			; high bit set?
 	JNS	INT_10_9A_GFX_HIGH_WR	; jump if not
 	XOR	AL, ES:[DI]			; XOR byte on odd field
-	XOR	AH, ES:[DI][2000H]	; and even field
+	XOR	AH, ES:CGA_MEM_FLD[DI]	; and even field
 
 ;----------------------------------------------------------------------------;
 ; Write next two bytes to each field
 ;
 INT_10_9A_GFX_HIGH_WR:
 	STOSB					; write odd field in AL
-	MOV	ES:[DI][2000H-1], AH	; write even field in AH
+	MOV	ES:CGA_MEM_FLD[DI][-1], AH	; write even field in AH
 	ADD	DI, 80-1			; move to next bitmap row
 	DEC	BH
 	JNZ	INT_10_9A_GFX_HIGH_WORD	; loop 4 words
@@ -8551,12 +8567,12 @@ NOT_HI_RES:
 ;----------------------------------------------------------------------------;
 ; Calculate Y offset
 ;
-; Y offset = (DX / 2) * 80 + 2000H if DX % 2 == 1
+; Y offset = (DX / 2) * 80 + 2000H[DX is odd]
 ;
 	SHR	DX, 1			; DX = DX / 2
 	XCHG	DL, DH		; DX = DX << 4
 	JNC	FIELD_EVEN		; is odd or even field?
-	ADD	DI, 2000H		; odd field address offset
+	ADD	DI, CGA_MEM_FLD	; odd field address offset
 FIELD_EVEN:
 	SHR	DX, 1
 	SHR	DX, 1
@@ -8600,8 +8616,7 @@ INT_10_E PROC
 	PUSH	BX
 	PUSH	CX
 	PUSH	DX
-	CALL	INT_10_GET_PAGE	; BH = video page for CGA text, 0 for GFX/MDA
-	CALL	INT_10_3		; Get cursor position: DH = row, DL = column
+	CALL	INT_10_3_CUR_PAGE	; Get cursor position: DH = row, DL = column
 	CMP	AL, CR		; is maybe a control code?
 	JBE	INT_10_E_CTRL	; if so, jump to handle it
 
@@ -8742,22 +8757,6 @@ INT_10_GET_CUR_ADDR PROC
 	POP	AX
 	RET
 INT_10_GET_CUR_ADDR ENDP
-
-;----------------------------------------------------------------------------;
-; Get correct VID_PAGE for current video mode
-;----------------------------------------------------------------------------;
-; Return:
-;	ZF = 0 and BH = 0 if MDA/CGA GFX
-;  	ZF = 1 and BH = VID_PAGE if CGA text
-;----------------------------------------------------------------------------;
-INT_10_GET_PAGE PROC
-	XOR	BH, BH			; BH = 0
-	TEST	VID_MODE, 0100B		; is >= 4?
-	JNZ	INT_10_GET_PAGE_DONE	; jump if not MDA or GFX
-	MOV	BH, VID_PAGE		; otherwise BH = VID_PAGE
-INT_10_GET_PAGE_DONE:
-	RET
-INT_10_GET_PAGE ENDP
 
 ;----------------------------------------------------------------------------;
 ; 6845 CRT mode control register values
@@ -9260,7 +9259,7 @@ IO_DELAY_MS ENDP
 IO_WAIT_MS_125 ENDP
 
 ;
-; 3 BYTES HERE
+; 7 BYTES HERE
 ;
 BYTES_HERE	INT_12
 
@@ -10221,7 +10220,7 @@ POST_NONE		DB	'None', 0	; must be after POST_VIDEO
 POST_VGA		DB	'VGA', 0
 POST_EGA		DB	'EGA', 0
 POST_CGA		DB	'CGA', 0
-POST_MDA		DB	'MDA', 0
+POST_MDA		DB	'Mono', 0
 				ENDIF
 
 ;
@@ -10865,4 +10864,4 @@ END
 ; Modeline magic for various editors
 ;
 ; /* vim: set tabstop=6:softtabstop=6:shiftwidth=6:noexpandtab */
-; # sublime: tab_completion false; auto_complete vfalsealue; tab_size 6
+; # sublime: tab_completion false; auto_complete false; tab_size 6
