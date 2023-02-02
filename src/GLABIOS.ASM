@@ -10602,12 +10602,12 @@ INT_IRQ PROC
 						; AH = default return 0xFF in INT_LAST
 	OUT	INT_P0, AL			; write to PIC port 0 (20h)
 	PUSH	DS				; save DS and delay for PIC at least 1 clock pulse
+	MOV	DS, BX			; set DS to BDA
 	IN	AL, INT_P0			; get In-Service Register (ISR)
 	TEST	AL, AL 			; is there an active hardware interrupt?
 	JZ	INT_IRQ_DONE		; jump and exit if not
 	MOV	AH, AL 			; Save ISR in AH
 	IN	AL, INT_IMR			; get current Interrupt Mask Register (IMR)
-	MOV	DS, BX			; set DS to BDA
 	OR	AL, AH 			; apply IMR mask to ISR
 	OUT	INT_IMR, AL			; write AL to PIC port 1 (21h)
 	MOV	AL, INT_EOI 		; End of Interrupt OCW
