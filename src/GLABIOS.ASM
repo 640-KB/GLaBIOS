@@ -92,6 +92,7 @@ ARCH_TD3300		EQU	'S'			; TD3300A (ST-xx/UNIQUE/Auva)
 ARCH_FE2010		EQU	'F'			; Faraday FE2010A
 ARCH_EHB		EQU	'H'			; EMM Computers/Homebrew8088
 ARCH_EMU		EQU	'E'			; 86Box/Emulator
+ARCH_M88		EQU	'M'			; micro_8088/NuXT
 
 ;
 ; CPU Instruction Set Target
@@ -120,7 +121,7 @@ VER_NAME		EQU	'GLaBIOS'
 VER_NUM		EQU	'0.2.3'		; (max 6 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'01/10/23' 		; must be MM/DD/YY format
+VER_DATE		EQU	'02/02/23' 		; must be MM/DD/YY format
 	ENDIF
 	IFNDEF COPY_YEAR
 COPY_YEAR		EQU	'2022'		; can be set at build time
@@ -301,13 +302,14 @@ MICRO_8088		=	0			; build for micro_8088 / NuXT
 
 	IF MICRO_8088 EQ 1
 ;----------------------------------------------------------------------------;
-; Additional Configuration for micro_8088 / NuXT (experimental)
+; Additional Configuration for micro_8088 / NuXT
 ;
 UNITS_IEC		=	1			; use modern IEC size units
 DRAM_REFRESH	=	0			; disable DRAM refresh (for SRAM)
 RAM_PARITY		=	0			; disable memory parity check
 CGA_SNOW_REMOVE	=	0			; disable snow removal
 FE_CPU_CFG		=	110b			; boot to 9.54 MHz, 2 RAM WS
+ARCH_SUB_ID		=	'M'			; add sub-ID to ARCH string
 	ENDIF
 	ENDIF
 
@@ -2051,7 +2053,7 @@ FD1_TRACK		DB	?			; 95H  Drive 1 current track
 KB_FLAGS3		DB	?			; 96H  Keyboard mode/type (Enhanced)
 KB_FLAGS4		DB	?			; 97H  Keyboard LED flags (Enhanced)
 		ORG	0A0H
-RTC_WAIT		DB	?			; 0AH  RTC wait function flag
+RTC_WAIT		DB	?			; A0H  RTC wait function flag
 		ORG	0ACH				; ACH-B3H "Reserved" (can be used?)
 		ORG	0B0H
 RTC_DATA		DW	?			; B0H  GLaCLOCK address and RTC type
@@ -3380,10 +3382,13 @@ POST_DETECT_COM:
 	XOR	DI, DI 				; 00H BDA COM1-4 base addresses
 	MOV	DX, COM1_IIR			; 03FAH: COM1 Interrupt Ident Reg
 COM_DETECT_LOOP:
-	IN	AL, DX 				; should only have low 3 bits set
-	DEC	DX 					; get base port
+	XOR	AL, AL				; AL = 0
+	OUT	DX, AL				; clear FIFO Control Register (FCR)
+	IN	AL, DX 				; read IIR to clear DMA flags
+	IN	AL, DX 				; read IIR again
 	DEC	DX
-	TEST	AL, 11111000B 			; check if any high 5 bits are set
+	DEC	DX					; get base port
+	TEST	AL, 11110000B 			; check if any high 4 bits are set
 	JNZ	NO_COM_PORT				; if so, not a valid port
 	XCHG	AX, DX				; AX = detected port
 	STOSW 					; write I/O port to COM BDA table
@@ -4357,12 +4362,11 @@ POST_SYS_VIDEO_DONE:
 		IF (CASSETTE EQ 1)
 ;----------------------------------------------------------------------------;
 ; Must be relocated here for cassette builds
-; 16 bytes
+; 12 bytes
 ;
 POST_VGA		DB	'VGA', 0
 POST_EGA		DB	'EGA', 0
 POST_CGA		DB	'CGA', 0
-POST_MDA		DB	'MDA', 0
 		ENDIF
 
 POST_SYS_VIDEO ENDP
@@ -10105,12 +10109,11 @@ SHOW_DISK_PARAMS ENDP
 ;	DL = drive # to test (0 = A:, 1 = B:, etc)
 ; Output:
 ;	CF if error
-;	Clobbers SI
+;	Clobbers SI, AX
 ;
-; Size: 40 bytes
+; Size: 38 bytes
 ;-------------------------------------------------------------------------
 FDC_RECAL_SEEK_TEST PROC
-	PUSH	AX
 	PUSH	CX
 	CALL	FDC_RECAL				; Motor on, recal, DL = drive
 	JC	FDC_TEST_DRIVE_EXIT		; exit if error
@@ -10134,7 +10137,6 @@ FDC_TEST_DRIVE_DONE:
 	IO_DELAY					; delay between drives
 FDC_TEST_DRIVE_EXIT:
 	POP	CX
-	POP	AX
 	RET
 
 ;----------------------------------------------------------------------------;
@@ -10211,16 +10213,16 @@ HELLO_RAND_TAGLINE ENDP
 POST_VIDEO		DB	'Video', 0
 				ENDIF
 POST_NONE		DB	'None', 0	; must be after POST_VIDEO
+POST_MDA		DB	'Mono', 0
 
 ;----------------------------------------------------------------------------;
 ; Must be relocated for cassette builds
-; 16 bytes
+; 12 bytes
 ;
 				IF (POST_VIDEO_TYPE EQ 1 AND CASSETTE EQ 0)
 POST_VGA		DB	'VGA', 0
 POST_EGA		DB	'EGA', 0
 POST_CGA		DB	'CGA', 0
-POST_MDA		DB	'Mono', 0
 				ENDIF
 
 ;
@@ -10606,12 +10608,12 @@ INT_IRQ PROC
 	MOV	AH, AL 			; Save ISR in AH
 	IN	AL, INT_IMR			; get current Interrupt Mask Register (IMR)
 	MOV	DS, BX			; set DS to BDA
-	MOV	INT_LAST, AH	 	; save last interrupt to BDA and delay for PIC
 	OR	AL, AH 			; apply IMR mask to ISR
 	OUT	INT_IMR, AL			; write AL to PIC port 1 (21h)
 	MOV	AL, INT_EOI 		; End of Interrupt OCW
 	OUT	INT_P0, AL			; write EOI to PIC port 0 (20h)
 INT_IRQ_DONE:
+	MOV	INT_LAST, AH	 	; save last interrupt to BDA
 	POP	DS
 	POP	BX
 	POP	AX
@@ -10832,6 +10834,9 @@ VER 	DB	'Ver: '
 	DB	'-'				; Show CPU type and
 	DB	CPU_TYPE			; architecture target
 	DB	ARCH_TYPE
+			IFDEF ARCH_SUB_ID
+	DB	ARCH_SUB_ID			; add optional ARCH sub-identifier
+			ENDIF
 	DB	' '
 	DB	0
 
