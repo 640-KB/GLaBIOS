@@ -295,7 +295,7 @@ FD_AUTO_DETECT	=	1			; auto-detect number of floppy drives
 FE_CPU_CFG		=	100b			; boot to 9.54 MHz, 4 RAM WS (safest)
 ;FE_CPU_CFG		=	011b			; boot to 7.15 MHz, 0 RAM WS
 ;FE_CPU_CFG		=	000b			; boot to 4.77 MHz, 0 RAM WS
-POST_TEST_PIT_1	=	0			; this fails on FE2010A chipset
+POST_TEST_PIT_1	=	0			; FE2010A chipset cannot read timer 1
 SW1_FLP		=	01b			; SW1 5/6 Max # of floppy drives (0-1)
 TURBO_TYPE		=	TURBO_REV		; always use reverse
 MICRO_8088		=	0			; build for micro_8088 / NuXT
@@ -347,14 +347,15 @@ INT_19_BOOT_HD	=	1			; Try IPL to floppy then HD
 ;----------------------------------------------------------------------------;
 ; Configuration for 86Box/Emulators
 ;
-CGA_SNOW_REMOVE	=	0			; disable snow removal
-DRAM_REFRESH	=	0			; disable refresh (no DRAM)
+CGA_SNOW_REMOVE	=	0			; disable CGA snow removal
+DRAM_REFRESH	=	0			; disable DRAM refresh
 POST_TEST_CHK_ROM	=	0			; disable Checksum ROM
 POST_TEST_DMA	=	0			; disable DMA Register Test
 POST_TEST_PIC_INT	=	0			; disable PIC Interrupt Test
 POST_TEST_PIC_REG	=	0			; disable PIC Register Test
 POST_TEST_PIT_1	=	0			; disable Timer Channel 1 Test
-POST_TEST_FD	=	0			; disable Floppy Drive Test
+POST_TEST_FD	=	0			; disable Floppy Drive Seek Test
+							; disable Floppy Head Settle Delay
 RAM_TEST_LONG	=	0			; disable long RAM test
 TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
 	ENDIF
@@ -2710,9 +2711,10 @@ PIC_VECT_TMP_LOOP:
 
 ;----------------------------------------------------------------------------;
 ; - Mask all interrupts and ensure none are received
+; Input: AL = 0 (from MOV AX, CS)
 ;
 	MOV	DI, OFFSET INT_LAST_ABS
-	MOV	[DI], DH			; clear last interrupt flag (DH = 0)
+	MOV	[DI], AL			; clear last interrupt flag
 	STI					; enable interrupts
 	IO_DELAY				; wait for it...
 	CLI
@@ -4766,26 +4768,28 @@ PORT_TEST_DONE:
 PORT_TEST ENDP
 
 ;----------------------------------------------------------------------------;
-; Reset NMI enable flags
+; Check if AL is alpha char [A-Za-z]
 ;----------------------------------------------------------------------------;
+; Input:
+;	AL = char 'A'-'Z' or 'a'-'z'
 ; Output:
-;	AL = current PPI B flags
-;
-; Size: 11 bytes
+;	CF = 0 (NC) if alpha, CF = 1 (CY) if not alpha
+; Size: 12 bytes
 ;----------------------------------------------------------------------------;
-NMI_RESET PROC
-	IN	AL, PPI_B				; read current flags
-	OR	AL, MASK PBIO OR MASK PBPC	; parity, I/O flags high (disable)
-	OUT	PPI_B, AL				; write to PPI
-	XOR	AL, MASK PBIO OR MASK PBPC	; flags low (enable)
-	OUT	PPI_B, AL				; write to PPI
+IS_ALPHA PROC
+	PUSH	AX
+	OR	AL, 'a'-'A'			; lowercase it for comparison
+	CMP	AL, 'a'			; is less than 'a'?
+	JB	IS_ALPHA_DONE		; CF if not alpha
+	CMP	AL, 'z'+1			; is greater than 'z'?
+	CMC					; CF if not alpha
+IS_ALPHA_DONE:
+	POP	AX
 	RET
-NMI_RESET ENDP
-
-NMI_ERR_PAR		DB	'PAR', 0		; NMI Parity Error
+IS_ALPHA ENDP
 
 ;
-; 0 BYTES HERE
+; 3 BYTES HERE
 ;
 BYTES_HERE	INT_16
 
@@ -8977,7 +8981,7 @@ OUT_SZ_ATTR PROC
 ;
 MDA_COLOR_FIX:
 	CALL	INT_10_IS_TXT		; CF if MDA
-	JNC	OUT_SZ_ATTR_SET		; skip if MDA
+	JNC	OUT_SZ_ATTR_SET		; skip if not MDA
 	AND	BL, 01111111B		; remove MDA blink attr
 	OR	BL, 00000010B		; remove MDA underline attr
 
@@ -9056,6 +9060,17 @@ CRLF PROC
 CRLF ENDP
 
 OUTLN_SZ ENDP
+
+;----------------------------------------------------------------------------;
+; Write a space char to console (8 bytes)
+;----------------------------------------------------------------------------;
+SPACE PROC
+	PUSH	AX				; no clobbery AX
+	MOV	AX, DBW <0EH, ' '>	; AH = 0Eh, AL = space char
+	INT	10H				; send to console
+	POP	AX
+	RET
+SPACE ENDP
 
 ;----------------------------------------------------------------------------;
 ; Write Unsigned word as decimal to console - no clobber helper
@@ -9175,27 +9190,6 @@ WORD_HEX ENDP
 DWORD_HEX ENDP
 
 ;----------------------------------------------------------------------------;
-; Check if AL is alpha char [A-Za-z]
-;----------------------------------------------------------------------------;
-; Input:
-;	AL = char 'A'-'Z' or 'a'-'z'
-; Output:
-;	CF = 0 (NC) if alpha, CF = 1 (CY) if not alpha
-; Size: 12 bytes
-;----------------------------------------------------------------------------;
-IS_ALPHA PROC
-	PUSH	AX
-	OR	AL, 'a'-'A'			; lowercase it for comparison
-	CMP	AL, 'a'			; is less than 'a'?
-	JB	IS_ALPHA_DONE		; CF if not alpha
-	CMP	AL, 'z'+1			; is greater than 'z'?
-	CMC					; CF if not alpha
-IS_ALPHA_DONE:
-	POP	AX
-	RET
-IS_ALPHA ENDP
-
-;----------------------------------------------------------------------------;
 ; Delay using PIT counter increments of 125 ms
 ;----------------------------------------------------------------------------;
 ; Input:
@@ -9261,6 +9255,8 @@ IO_WAIT_LATCH:
 	RET
 IO_DELAY_MS ENDP
 IO_WAIT_MS_125 ENDP
+
+NMI_ERR_PAR		DB	'PAR', 0		; NMI Parity Error
 
 ;
 ; 7 BYTES HERE
@@ -10207,13 +10203,13 @@ HELLO_RAND_TAGLINE ENDP
 
 ;----------------------------------------------------------------------------;
 ; POST Video Adapter Type Strings
-; 27 bytes
+; 16 bytes
 ;
 				IF POST_VIDEO_TYPE EQ 1
+POST_MDA		DB	'Mono', 0
 POST_VIDEO		DB	'Video', 0
 				ENDIF
 POST_NONE		DB	'None', 0	; must be after POST_VIDEO
-POST_MDA		DB	'Mono', 0
 
 ;----------------------------------------------------------------------------;
 ; Must be relocated for cassette builds
@@ -10557,7 +10553,7 @@ VECTOR_TABLE PROC
 		ORG 0FEF3H
 	DW  OFFSET INT_08 		; int 08	IRQ0 - System timer
 	DW  OFFSET INT_09_POST		; int 09	IRQ1 - Keyboard IRQ (during POST)
-	DW  OFFSET INT_IRQ		; int 0A	IRQ2 - INT_DEFAULT
+	DW  OFFSET INT_IRQ		; int 0A	IRQ2 - Reserved
 	DW  OFFSET INT_IRQ		; int 0B	IRQ3 - COM2
 	DW  OFFSET INT_IRQ		; int 0C	IRQ4 - COM1
 	DW  OFFSET INT_IRQ		; int 0D	IRQ5 - XT FDC
@@ -10590,49 +10586,53 @@ VECTOR_TABLE ENDP
 ; Acknowledge interrupt and write last HW interrupt to BDA.
 ;
 ; Output:
-;	INT_LAST = last interrupt or 0xFF if non-hardware/unknown interrupt
+;	INT_LAST = last interrupt or 0FFH if non-hardware/unknown interrupt
 ;----------------------------------------------------------------------------;
 		ORG 0FF23H
 INT_IRQ PROC
 			ASSUME DS:_BDA
-	PUSH	AX 				; save registers
-	PUSH	BX
-	MOV	BX, SEG _BDA 		; set up for DS to BDA
-	MOV	AX, DBW <0FFH, OCW3 <,,,,11B>> ; AL = OCW3 (Read ISR reg on next pulse)
-						; AH = default return 0xFF in INT_LAST
+	PUSH	AX
+	PUSH	DS				; save DS
+	MOV	AL, OCW3 <,,,,11B> 	; AL = OCW3: Read ISR reg on next pulse
 	OUT	INT_P0, AL			; write to PIC port 0 (20h)
-	PUSH	DS				; save DS and delay for PIC at least 1 clock pulse
-	MOV	DS, BX			; set DS to BDA
+	MOV	AX, SEG _BDA 		; AH = 0, delay for PIC at least 1 clock pulse
+	MOV	DS, AX			; set DS to BDA
 	IN	AL, INT_P0			; get In-Service Register (ISR)
-	TEST	AL, AL 			; is there an active hardware interrupt?
-	JZ	INT_IRQ_DONE		; jump and exit if not
-	MOV	AH, AL 			; Save ISR in AH
+	DEC	AX				; if AL is zero, AH = FFh
+	INC	AL				; is there an active (non-zero) hardware int?
+	JZ	INT_IRQ_DONE		; if not, exit with INT_LAST = FFh
+	MOV	AH, AL 			; Save ISR to AH
 	IN	AL, INT_IMR			; get current Interrupt Mask Register (IMR)
-	OR	AL, AH 			; apply IMR mask to ISR
+	OR	AL, AH 			; add active interrupt to IMR
 	OUT	INT_IMR, AL			; write AL to PIC port 1 (21h)
 	MOV	AL, INT_EOI 		; End of Interrupt OCW
 	OUT	INT_P0, AL			; write EOI to PIC port 0 (20h)
 INT_IRQ_DONE:
 	MOV	INT_LAST, AH	 	; save last interrupt to BDA
 	POP	DS
-	POP	BX
 	POP	AX
 	IRET
 
 INT_IRQ ENDP
 
 ;----------------------------------------------------------------------------;
-; Write a space char to console (9 bytes)
+; Reset NMI enable flags
 ;----------------------------------------------------------------------------;
-SPACE PROC
-	PUSH	AX				; no clobbery AX
-	MOV	AX, DBW <0EH, ' '>	; AH = 0Eh, AL = space char
-	INT	10H				; send to console
-	POP	AX
+; Output:
+;	AL = current PPI B flags
+;
+; Size: 11 bytes
+;----------------------------------------------------------------------------;
+NMI_RESET PROC
+	IN	AL, PPI_B				; read current flags
+	OR	AL, MASK PBIO OR MASK PBPC	; parity, I/O flags high (disable)
+	OUT	PPI_B, AL				; write to PPI
+	XOR	AL, MASK PBIO OR MASK PBPC	; flags low (enable)
+	OUT	PPI_B, AL				; write to PPI
 	RET
-SPACE ENDP
+NMI_RESET ENDP
 
-; 1 BYTE HERE
+; 0 BYTES HERE
 
 BYTES_HERE	INT_RET
 
