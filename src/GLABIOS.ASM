@@ -4768,28 +4768,25 @@ PORT_TEST_DONE:
 PORT_TEST ENDP
 
 ;----------------------------------------------------------------------------;
-; Check if AL is alpha char [A-Za-z]
+; Reset NMI enable flags
 ;----------------------------------------------------------------------------;
-; Input:
-;	AL = char 'A'-'Z' or 'a'-'z'
 ; Output:
-;	CF = 0 (NC) if alpha, CF = 1 (CY) if not alpha
-; Size: 12 bytes
+;	AL = current PPI B flags
+;
+; Size: 11 bytes
 ;----------------------------------------------------------------------------;
-IS_ALPHA PROC
-	PUSH	AX
-	OR	AL, 'a'-'A'			; lowercase it for comparison
-	CMP	AL, 'a'			; is less than 'a'?
-	JB	IS_ALPHA_DONE		; CF if not alpha
-	CMP	AL, 'z'+1			; is greater than 'z'?
-	CMC					; CF if not alpha
-IS_ALPHA_DONE:
-	POP	AX
+NMI_RESET PROC
+	IN	AL, PPI_B				; read current flags
+	OR	AL, MASK PBIO OR MASK PBPC	; parity, I/O flags high (disable)
+	OUT	PPI_B, AL				; write to PPI
+	XOR	AL, MASK PBIO OR MASK PBPC	; flags low (enable)
+	OUT	PPI_B, AL				; write to PPI
 	RET
-IS_ALPHA ENDP
+NMI_RESET ENDP
+NMI_ERR_PAR		DB	'PAR', 0		; NMI Parity Error
 
 ;
-; 3 BYTES HERE
+; 0 BYTES HERE
 ;
 BYTES_HERE	INT_16
 
@@ -9256,10 +9253,8 @@ IO_WAIT_LATCH:
 IO_DELAY_MS ENDP
 IO_WAIT_MS_125 ENDP
 
-NMI_ERR_PAR		DB	'PAR', 0		; NMI Parity Error
-
 ;
-; 7 BYTES HERE
+; 11 BYTES HERE
 ;
 BYTES_HERE	INT_12
 
@@ -10586,7 +10581,7 @@ VECTOR_TABLE ENDP
 ; Acknowledge interrupt and write last HW interrupt to BDA.
 ;
 ; Output:
-;	INT_LAST = last interrupt or 0FFH if non-hardware/unknown interrupt
+;	INT_LAST = last interrupt or 0FFh if non-hardware/unknown interrupt
 ;----------------------------------------------------------------------------;
 		ORG 0FF23H
 INT_IRQ PROC
@@ -10598,9 +10593,9 @@ INT_IRQ PROC
 	MOV	AX, SEG _BDA 		; AH = 0, delay for PIC at least 1 clock pulse
 	MOV	DS, AX			; set DS to BDA
 	IN	AL, INT_P0			; get In-Service Register (ISR)
-	DEC	AX				; if AL is zero, AH = FFh
-	INC	AL				; is there an active (non-zero) hardware int?
-	JZ	INT_IRQ_DONE		; if not, exit with INT_LAST = FFh
+	DEC	AX				; if no active (non-zero) hardware int
+	JS	INT_IRQ_DONE		; ... exit with INT_LAST = FFh
+	INC	AX				; restore ISR
 	MOV	AH, AL 			; Save ISR to AH
 	IN	AL, INT_IMR			; get current Interrupt Mask Register (IMR)
 	OR	AL, AH 			; add active interrupt to IMR
@@ -10616,21 +10611,25 @@ INT_IRQ_DONE:
 INT_IRQ ENDP
 
 ;----------------------------------------------------------------------------;
-; Reset NMI enable flags
+; Check if AL is alpha char [A-Za-z]
 ;----------------------------------------------------------------------------;
+; Input:
+;	AL = char 'A'-'Z' or 'a'-'z'
 ; Output:
-;	AL = current PPI B flags
-;
-; Size: 11 bytes
+;	CF = 0 (NC) if alpha, CF = 1 (CY) if not alpha
+; Size: 12 bytes
 ;----------------------------------------------------------------------------;
-NMI_RESET PROC
-	IN	AL, PPI_B				; read current flags
-	OR	AL, MASK PBIO OR MASK PBPC	; parity, I/O flags high (disable)
-	OUT	PPI_B, AL				; write to PPI
-	XOR	AL, MASK PBIO OR MASK PBPC	; flags low (enable)
-	OUT	PPI_B, AL				; write to PPI
+IS_ALPHA PROC
+	PUSH	AX
+	OR	AL, 'a'-'A'			; lowercase it for comparison
+	CMP	AL, 'a'			; is less than 'a'?
+	JB	IS_ALPHA_DONE		; CF if not alpha
+	CMP	AL, 'z'+1			; is greater than 'z'?
+	CMC					; CF if not alpha
+IS_ALPHA_DONE:
+	POP	AX
 	RET
-NMI_RESET ENDP
+IS_ALPHA ENDP
 
 ; 0 BYTES HERE
 
