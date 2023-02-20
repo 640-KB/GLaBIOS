@@ -50,6 +50,10 @@ If you aren't familiar with the reference, ask a gamer.
 
 [Click here](https://github.com/640-KB/GLaBIOS/wiki/How-to-try-GLaBIOS) to learn more!
 
+### More questions?
+
+[Check out the Wiki](https://github.com/640-KB/GLaBIOS/wiki)!
+
 ## Screenshots
 
 VGA with 8087 FPU:
