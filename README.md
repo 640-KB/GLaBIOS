@@ -34,7 +34,7 @@ Copyright &copy; 2022-2023, [640KB](mailto:640kb@glabios.org) and contributors.
 
 ## FAQ
 
-### Why another 8088 PC BIOS in 2022?
+### Why another 8088 PC BIOS in <strike>2022</strike> 2023?
 
 There are other excellent BIOS projects out there each with it's own design goals and use cases. The goals for GLaBIOS are:
 
