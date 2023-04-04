@@ -32,6 +32,12 @@ Copyright &copy; 2022-2023, [640KB](mailto:640kb@glabios.org) and contributors.
 - Emulator-optmized ([86Box](https://86box.net/) and others) for improved performance and stability
 - Experimental support for [micro_8088](https://github.com/skiselev/micro_8088) / [NuXT](https://monotech.fwscart.com/) (looking for testers!)
 
+### Companion ROMs
+
+[Companion ROMs](https://github.com/640-KB/GLaBIOS/wiki/Companion-ROMs) are PC Option ROMs that add additional features and support to any standard BIOS (not just GLaBIOS).
+
+- **[GLaTICK](https://github.com/640-KB/GLaTICK)** - ROM based support for ISA Real Time Clocks providing `INT 1Ah` services elimiating the need for DOS programs/drivers.
+
 ## FAQ
 
 ### Why another 8088 PC BIOS in <strike>2022</strike> 2023?
