@@ -298,7 +298,10 @@ FE_CPU_CFG		=	100b			; boot to 9.54 MHz, 4 RAM WS (safest)
 POST_TEST_PIT_1	=	0			; FE2010A chipset cannot read timer 1
 SW1_FLP		=	01b			; SW1 5/6 Max # of floppy drives (0-1)
 TURBO_TYPE		=	TURBO_REV		; always use reverse
+
+	IFNDEF MICRO_8088
 MICRO_8088		=	0			; build for micro_8088 / NuXT
+	ENDIF
 
 	IF MICRO_8088 EQ 1
 ;----------------------------------------------------------------------------;
