@@ -119,7 +119,7 @@ TURBO_REV		EQU	2			; reversed PPI B (bit 3)
 ;
 VER_NAME		EQU	'GLaBIOS'
 	IFNDEF VER_NUM
-VER_NUM		EQU	'0.2.4'		; (max 6 chars)
+VER_NUM		EQU	'0.2.4'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
 VER_DATE		EQU	'04/07/23' 		; must be MM/DD/YY format
@@ -222,7 +222,7 @@ BASIC_ROM		=	1		; BASIC ROM support at 0F600h
 OPT_ROM_END		=	0FE00H	; Option ROM scan ending address
 FDC_ENABLE		=	1		; Enable INT 13h floppy support
 FDC_HLT_WAIT	=	1		; Halt CPU during FD access
-						;   Some chipsets (ST-12 known affected)
+						;   Some chipsets (TD3300A known affected)
 						;   hang during floppy access if this is
 						;   enabled
 KB_HLT_WAIT		=	1		; Halt CPU during KB wait
@@ -289,7 +289,7 @@ TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
 ; Configuration for TD3300A (90h register)
 ;
 BASIC_ROM		= 	0			; disable to free code space
-FDC_HLT_WAIT	=	0			; seems to cause issues on ST-xx
+FDC_HLT_WAIT	=	0			; seems to cause issues on TD3300A
 TURBO_TYPE		=	TURBO_STD		; always use Standard
 	ENDIF
 
@@ -297,7 +297,7 @@ TURBO_TYPE		=	TURBO_STD		; always use Standard
 ;----------------------------------------------------------------------------;
 ; Configuration for FE2010A
 ;
-BASIC_ROM		= 	0			; disable to free code space
+;BASIC_ROM		= 	0			; can be disabled to free code space
 FD_AUTO_DETECT	=	1			; auto-detect number of floppy drives
 ;FE_CPU_CFG		=	110b			; boot to 9.54 MHz, 2 RAM WS
 FE_CPU_CFG		=	100b			; boot to 9.54 MHz, 4 RAM WS (safest)
@@ -306,6 +306,10 @@ FE_CPU_CFG		=	100b			; boot to 9.54 MHz, 4 RAM WS (safest)
 POST_TEST_PIT_1	=	0			; FE2010A chipset cannot read timer 1
 SW1_FLP		=	01b			; SW1 5/6 Max # of floppy drives (0-1)
 TURBO_TYPE		=	TURBO_REV		; always use reverse
+	IF BASIC_ROM EQ 1				; if BASIC enabled, PIC tests are
+POST_TEST_PIC_REG	=	0			;  disabled to fit available code space
+POST_TEST_PIC_INT	=	0			; Since PIC is integrated on FE2010A
+	ENDIF						;  these tests may be unnecessary
 
 	IF ARCH_SUB_TYPE EQ ARCH_M88
 ;----------------------------------------------------------------------------;
@@ -402,13 +406,6 @@ POST_HD_PARMS	=	0			; disable HD PARM display also
 
 	IF WARM_ENABLE EQ 0
 POST_WARM_COLD	=	0			; disable show boot WARM or COLD
-	ENDIF
-
-;----------------------------------------------------------------------------;
-; Force features using command line
-;
-	IFDEF ROM_BASIC
-BASIC_ROM		=	ROM_BASIC		; /DROM_BASIC to override
 	ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -604,7 +601,7 @@ TD_WS			EQU	70H			; RAM, I/O wait state control
 TD_TURBO		EQU	90H			; Write 2 for Turbo, 3 for Normal
 
 ; NMI flip/flop
-NMI_R0		EQU	0A0H			; CPU NMI Register
+NMI_R0		EQU	0A0H			; NMI Mask Register
 
 ; Joystick / Game Port
 GAME_CTRL		EQU	0201H			; Game Port
@@ -1232,6 +1229,15 @@ OCW2	RECORD	O2CMD:3=001b, O2X:2, O2L:3
 OCW3	RECORD	O3D7:1, ESMM:2, O3D3:2=1, O3P:1, O3RR:2
 
 ;----------------------------------------------------------------------------;
+; NMI Mask Register
+;----------------------------------------------------------------------------;
+; 84218421
+; x 	    |		- NMIE	1=enable NMI, 0=disable
+;  0000000|		- NMIX	unused (0)
+;----------------------------------------------------------------------------;
+NMI	RECORD	NMIE:1, NMIX:7
+
+;----------------------------------------------------------------------------;
 ; V40 WCY1
 ;----------------------------------------------------------------------------;
 ; 84218421
@@ -1293,7 +1299,7 @@ VID_CSGFX	RECORD	CGPH:2,CGPL:1=1B,CGX:1=1B,CGIN:1=1B,CGBG:3=111B
 PPI_CR RECORD	PPEN:1=1,PPAM:2=00b,PPAD:1=1,PPCU:1=1,PPBM:1,PPBD:1,PPCL:1=1
 
 ;----------------------------------------------------------------------------;
-; TD3300A/ST-xx Wait State Config Register (70H)
+; TD3300A Wait State Config Register (70H)
 ;----------------------------------------------------------------------------;
 ; 84218421
 ; 76 	    |			- TDWSI	Slot I/O  (# of wait states 0-3)
@@ -2292,8 +2298,6 @@ COPYRIGHT	DB	CR, LF
 		DB	LF
 		DB	0
 
-;NMI_ERR_IO	DB	'IO', 0			; NMI I/O Error string
-
 BIOS_TOP 	ENDP
 
 ;
@@ -2452,7 +2456,7 @@ RESET_PPI:
 
 			IF ARCH_TYPE EQ ARCH_TD3300
 ;----------------------------------------------------------------------------;
-; Set up Turbo mode for ST-xx
+; Set up Turbo mode for TD3300A
 ;
 	IN	AL, TD_TURBO		; read current register
 			IF BOOT_SPEED EQ BOOT_TURBO
@@ -2936,7 +2940,7 @@ INIT_ROM_BASIC_DONE:
 ; If V20 is build target but V20 not detected - beep 1 long, 4 short
 ;----------------------------------------------------------------------------;
 CPU_IS_V20:
-	MOV	AX, 0101H				; Attempt to "pack" bytes into nibbles
+	MOV	AX, DBW <1,1>			; Attempt to pack bytes into nibbles
 	DB	0D5H, 10H				; AAD	10H
 	CMP	AL, 0BH				; result is 0Bh if V20, 11h if x86
 							;   ZF = 1 if V20, ZF = 0 if 8088
@@ -3155,8 +3159,8 @@ VID_MODE_OK:
 	JZ	RESET_VIDEO				; ZF if CGA 40
 	MOV	AL, 3					; CGA 80x25 color
 	DEC	DX					; ZF if CGA 80
-	JZ	RESET_VIDEO				; jump if CGA, fall through if MDA
-	MOV	AL, 7					; else MDA
+	JZ	RESET_VIDEO				; jump if CGA, fall through if Mono
+	MOV	AL, 7					; else Mono
 
 ;----------------------------------------------------------------------------;
 ; Clear screen and reset the video display.
@@ -3224,7 +3228,7 @@ TOGGLE_TURBO PROC
 
 		IF ARCH_TYPE EQ ARCH_TD3300
 ;----------------------------------------------------------------------------;
-; ST-xx Port 90h Turbo switch
+; TD3300A Port 90h Turbo switch
 ; If port 90 == 1, send 2 (0010b) Normal -> Turbo
 ; If port 90 == 0, send 3 (0011b) Turbo -> Normal
 ;
@@ -3467,7 +3471,7 @@ POST_DETECT_PORTS:
 	MOV	BX, OFFSET EQUIP_FLAGS[1]	; BX = high byte of EQUIP_FLAGS
 
 ;----------------------------------------------------------------------------;
-; [38] Detect and enable Game ports
+; [38] Detect and enable Game port
 ;----------------------------------------------------------------------------;
 ; Port 201H
 ; Input: 
@@ -3617,13 +3621,11 @@ POST_KB_RESET PROC
 	STI 						; enable interrupts
 KB_RESET_TEST:
 	NOP 						; give a little more time
-	;NOP 						;  and a little more time still
 	POST_FLAG_TEST  PKI			; KB test flag yet?
 	LOOPZ	KB_RESET_TEST			; Loop until KB flag OR CX is 0 (timeout)
 	CLI 						; disable interrupts again
 	POST_FLAG_FLIP  PKI			; invert PKI flag: 1 = error, 0 = success
 		ENDIF
-
 	IO_DELAY_LONG 				; additional delay, CX = 0
 
 ;----------------------------------------------------------------------------;
@@ -3634,16 +3636,12 @@ KB_RESET_TEST:
 	OUT	DX, AL				; send to PPI port B
 	AND	AL, NOT MASK PBKB			; keyboard enable (clear low)
 	OUT	DX, AL				; send to PPI port B
-
 	IO_DELAY					; delay for KBC, CX = 0
-
 	IN	AL, PPI_A 				; check KB for extraneous key
-
 			IF POST_TEST_KB NE 0
 	TEST	AL, AL				; AL should be 0
 	JZ	KB_HAPPY				; if so, KB is ready
 	POST_FLAG_SET  PKEY			; otherwise set flag for keyboard error
-
 			ELSE
 	POST_FLAG_CLR  PKI			; clear any KB error
 			ENDIF
@@ -3838,13 +3836,13 @@ HDD_POST_DONE:
 HDD_POST ENDP
 
 ;----------------------------------------------------------------------------;
-; [39] Clear and enable I/O and parity NMI's
+; [39] Clear and enable I/O and parity NMIs
 ;----------------------------------------------------------------------------;
 	CALL	NMI_RESET				; reset NMI flags
 
 			IF RAM_PARITY EQ 1
 ENABLE_NMI:
-	MOV	AL, 10000000b			; AL = 80H to enable NMI
+	MOV	AL, NMI <1>				; AL = enable NMI
 	OUT	NMI_R0, AL				; write to controller
 			ENDIF
 
@@ -3869,7 +3867,7 @@ ENABLE_NMI:
 ; Display any POST errors
 ;
 POST_ERROR:
-	PRINT_SZ  POST_ERR
+	PRINT_SZ  POST_ERR			; display "Post Error"
 	MOV	AX, BP				; AX = POST error flags
 	CALL	WORD_HEX				; display POST error value
 	CALL	CRLF
@@ -3961,12 +3959,12 @@ TRY_INT_18:
 ;----------------------------------------------------------------------------;
 INT_18 PROC
 		ASSUME DS:_BDA_ABS
-	PRINT_SZ  BOOT_FAIL		; print boot failure string
-	XOR	AX, AX			; AH = 0 (wait for key)
-	MOV	DS, AX			; DS = 0000
-	MOV	WARM_FLAG_ABS, AX		; do a cold boot
-	INT	16H				; wait for key press
-	JMP	BOOT				; reboot
+	PRINT_SZ  BOOT_FAIL			; print boot failure string
+	XOR	AX, AX				; AH = 0 (wait for key)
+	MOV	DS, AX				; DS = 0000
+	MOV	WARM_FLAG_ABS, AX			; do a cold boot
+	INT	16H					; wait for key press
+	JMP	BOOT					; reboot
 INT_18 ENDP
 
 BOOT ENDP
@@ -4060,7 +4058,7 @@ CHECK_ROM:
 	MOV	BX, SEG _BDA 			; ES = 0040H (BIOS BDA segment)
 	MOV	ES, BX				; re-set ES for each ROM call
 	PUSH	DS					; save current DS segment
-	MOV	BL, 80H				; next 2K boundary length
+	MOV	BL, 2048 SHR 4			; next 2K segment boundary length
 	PUSH	BX					; save for use if no ROM found
 	XOR	SI, SI 				; reset offset to 0
 	LODSW 					; AX = first word (should be 0AA55H)
@@ -4453,7 +4451,7 @@ BIOS_VIDEO:
 ; stanislavs.org/helppc/int_10-1a.html
 ;
 CHECK_VGA:
-	MOV	AX, 1A00H				; AH = 1AH, get video display
+	MOV	AX, DBW <1AH, 0>			; AH = 1AH, get video display
 	INT	10H					; BL = display type
 	CMP	AL, 1AH				; is VGA?
 	JNE	CHECK_EGA				; jump if not VGA
@@ -4465,8 +4463,8 @@ CHECK_VGA:
 ; stanislavs.org/helppc/int_10-12.html
 ;
 CHECK_EGA:
-	MOV 	AH, 12H
-	MOV	BL, 10H				; return video configuration
+	MOV 	AH, 12H				; AH = 12H, get video configuration
+	MOV	BL, 10H				; configuration info
 	INT	10H
 	CMP	BL, 10H				; check if param hasn't changed
 	JE	POST_SYS_VIDEO_DONE		; jump if not EGA
@@ -4537,7 +4535,7 @@ INT_19 ENDP
 ;----------------------------------------------------------------------------;
 ;  Input:
 ;	DL = drive number
-;  Return:
+;  Output:
 ; 	CF if Error
 ;	AL = number of heads (AX if no error)
 ; 	AH = return code
@@ -4606,7 +4604,7 @@ INT_14 PROC
 	MOV	DI, DX 			; DI = COM port index (0-3)
 	SHL	DI, 1 			; convert to word index
 	MOV	DX, [DI] 			; DX = 3F8/2F8 base port address
-	SHR	DI, 1 			; back to byte index (cheaper than PUSH/POP)
+	SHR	DI, 1 			; back to byte index
 	TEST	DX, DX 			; is port index valid (detected)?
 	JZ	INT_14_DONE 		; if not, exit
 	CMP	AH, CL			; check function number (CL = 3)
@@ -4681,9 +4679,9 @@ INT_14_0_SET_PSW:
 ;----------------------------------------------------------------------------;
 ; INT 14,3  Get Serial port status
 ;----------------------------------------------------------------------------;
-; In:
+; Input:
 ; 	DX = base port address
-; return:
+; Output:
 ;	AH = port status
 ;	AL = modem status
 ;----------------------------------------------------------------------------;
@@ -4713,7 +4711,7 @@ INT_14_0 ENDP
 ;----------------------------------------------------------------------------;
 ; INT 14, 1 - Send/write character in AL
 ;----------------------------------------------------------------------------;
-; In:
+; Input:
 ; 	DX = base port address
 ;	BL = port timeout
 ;----------------------------------------------------------------------------;
@@ -4743,10 +4741,10 @@ INT_14_1 ENDP
 ;----------------------------------------------------------------------------;
 ; INT 14, 2 - Receive/read character in AL
 ;----------------------------------------------------------------------------;
-; In:
+; Input:
 ;	DX = base port address
 ;	BL = port timeout
-; Out:
+; Output:
 ;	AH = port status
 ;	AL = character read
 ;	NZ = timeout or failure occurred
@@ -4774,12 +4772,12 @@ INT_14_2 ENDP
 ;----------------------------------------------------------------------------;
 ; INT 14 - Poll line then modem status registers
 ;----------------------------------------------------------------------------;
-; In:
+; Input:
 ;	DI = port index (0 based byte)
 ; 	DX = 3FE Modem Status Register
 ;	BL = line status expected masked
 ;	BH = modem status expected masked
-; Out:
+; Output:
 ;	AH = port status
 ;	DX = 3FD Line Status Register
 ;	NZ = timeout or failure occurred
@@ -5971,7 +5969,7 @@ BYTES_HERE	INT_13
 ;	DL = drive number		(0=A:, 1=B:, 80H=C:, 81H=D:) (for AH=2-5)
 ;	ES:BX = address of user buffer
 ;
-;  Return:
+;  Output:
 ;	CF = 0 if successful
 ;	   = 1 if error
 ;	AH = status of operation (https://stanislavs.org/helppc/int_13-1.html)
@@ -7032,12 +7030,13 @@ INT_17 PROC
 ;----------------------------------------------------------------------------;
 ; Write character and returns status
 ;
+; Input:
 ;	AH = -1 (not 0)
 ;	AL = character to print
 ;	CX = timeout "value" (the number of 64k loops)
 ;	DX = LPT data port (278, 378, 3BC)
 ;
-;	on return:
+; Output:
 ;	AH = printer status, see AH = 2
 ;
 ;----------------------------------------------------------------------------;
@@ -7079,10 +7078,11 @@ INT_17_0_OK:
 ;----------------------------------------------------------------------------;
 ; Return status of specified printer port
 ;
+; Input:
 ;	AH = 1 (not 2)
 ;	DX = LPT data port (278, 378, 3BC)
 ;
-;	on return:
+; Output:
 ;	AH = status:
 ;
 ;		|7|6|5|4|3|2|1|0|  Printer status bits
@@ -7116,10 +7116,11 @@ INT_17_IRET:
 ;----------------------------------------------------------------------------;
 ; AH = 1 - Initialize printer port
 ;----------------------------------------------------------------------------;
+; Input:
 ;	AH = 0 (not 1)
 ;	DX = LPT data port (278, 378, 3BC)
 ;
-;	on return:
+; Output:
 ;	AH = status, see AH = 2
 ;----------------------------------------------------------------------------;
 INT_17_1:
@@ -7211,7 +7212,7 @@ INT_10_JMP LABEL WORD
 		ORG 0F065H
 INT_10 PROC
 	STI					; enable interrupts
-	CMP	AH, 15			; function > 15?
+	CMP	AH, 0FH			; function > 15?
 	JA	INT_10_IRET			; exit if function not valid
 	PUSH	ES				; always preserve these registers
 	PUSH	DS
@@ -7237,7 +7238,7 @@ INT_10_IRET:
 ;----------------------------------------------------------------------------;
 ; Input:
 ; 	DS = BDA (040h)
-; Return:
+; Output:
 ;	AL = current video mode
 ; 	ZF = 0 if CGA GFX (modes 4-6)
 ;	ZF = 1 if CGA/MDA Text (modes 0-3 and 7)
@@ -7256,7 +7257,7 @@ INT_10_IS_TXT ENDP
 ;----------------------------------------------------------------------------;
 ; Is Current video CGA 80 col?
 ;----------------------------------------------------------------------------;
-; Return:
+; Output:
 ;	ZF = 1 if mode is 2 or 3
 ;	ZF = 0 all others
 ;----------------------------------------------------------------------------;
@@ -7554,7 +7555,7 @@ INT_10_2 ENDP
 ;----------------------------------------------------------------------------;
 ; INT 10,3 - Read cursor position and Size for current page
 ;----------------------------------------------------------------------------;
-; Return:
+; Output:
 ;	ZF = 0 and BH = 0 if MDA/CGA GFX
 ;  	ZF = 1 and BH = VID_PAGE if CGA text
 ;----------------------------------------------------------------------------;
@@ -7570,7 +7571,7 @@ INT_10_3_CUR_PAGE PROC
 ; Input:
 ;	AH = 03
 ;	BH = video page
-; Return:
+; Output:
 ;	CH = cursor starting scan line (low order 5 bits)
 ;	CL = cursor ending scan line (low order 5 bits)
 ;	DH = row
@@ -8017,7 +8018,7 @@ INT_10_7 ENDP
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	BH = display page
-; Return:
+; Output:
 ;	AH = attribute of character (alpha modes only)
 ;	AL = character at cursor position
 ;
@@ -8067,7 +8068,7 @@ INT_10_8_NOT_CGA:
 ; Input:
 ;	AL = 3 if high res, 2 if low-res
 ;	ES = video mem segment
-; Return:
+; Output:
 ;	AH = 0
 ;	AL = character at cursor position, 0 if not found
 ;----------------------------------------------------------------------------;
@@ -8611,7 +8612,7 @@ INT_10_C ENDP
 ;	BH = page number
 ;	CX = X / column (zero based)
 ;	DX = Y / row (zero based)
-; Return:
+; Output:
 ;	AL = color of pixel read
 ;	AH clobbered
 ;----------------------------------------------------------------------------;
@@ -8634,7 +8635,7 @@ INT_10_D ENDP
 ;	CX = X / column (zero based)
 ;	DX = Y / row (zero based)
 ;
-; Return:
+; Output
 ;	DI = pixel byte offset
 ;	AH = pixel data mask
 ;	CL = pixel right shift counter
@@ -8839,7 +8840,7 @@ INT_10_E ENDP
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	AH = 0F
-; Return:
+; Output
 ;	AH = number of screen columns
 ;	AL = mode currently set
 ;	BH = current display page
@@ -8855,7 +8856,7 @@ INT_10_F ENDP
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	BH = current video page
-; Return:
+; Output
 ;	DI = memory offset of current cursor in memory
 ;----------------------------------------------------------------------------;
 INT_10_GET_CUR_ADDR PROC
@@ -9397,7 +9398,7 @@ BYTES_HERE	INT_12
 ;----------------------------------------------------------------------------;
 ; INT 12H - Memory Size Determination
 ;----------------------------------------------------------------------------;
-; Return:
+; Output
 ;	AX = number of contiguous 1k memory blocks found at startup
 ;----------------------------------------------------------------------------;
 		ORG 0F841H
@@ -9415,7 +9416,7 @@ INT_12 ENDP
 ;----------------------------------------------------------------------------;
 ; INT 11H - BIOS Equipment Determination / BIOS Equipment Flags
 ;----------------------------------------------------------------------------;
-; Return:
+; Output
 ;	AX = data stored at BIOS Data Area location 0040:0010
 ;----------------------------------------------------------------------------;
 		ORG 0F84DH
@@ -9438,10 +9439,9 @@ INT_11 ENDP
 ;	INT 15,2  Read blocks from cassette
 ;	INT 15,3  Write blocks to cassette
 ;
-; Return:
+; Output:
 ;	CF = 1, AH = 86H (unsupported/no cassette present)
 ;
-; Docs are conflicting here for what to return:
 ; https://stanislavs.org/helppc/int_15.html
 ; http://www.ctyme.com/intr/int-15.htm
 ; http://www.techhelpmanual.com/212-int_15h__at_extended_services___apm.html
@@ -9595,7 +9595,7 @@ CAS_MOTOR_WAIT:
 ;	CX = count of bytes to write
 ;	ES:BX = pointer to data buffer
 ;
-; Return:
+; Output:
 ;	AX clobbered
 ;	CX = zero
 ;	ES:BX = pointer to byte following last byte written
@@ -9624,7 +9624,6 @@ CAS_WRITE PROC
 ;
 	MOV	AL, PIT_CW <2, 11B, 3>	; Select Timer 2, LE, Mode 3 (square), Binary
 	OUT	PIT_CTRL, AL		; (10 11 011 0) Send to PIT control word (43H)
-
 	IN	AL, PPI_B			; read PPI B
 	OR	AL, MASK PBST		; turn on timer 2
 	OUT	PPI_B, AL			; send to PPI B
@@ -9865,7 +9864,7 @@ CAS_CRC_ADD ENDP
 ;	CX = count of bytes to read
 ;	ES:BX = pointer to data buffer
 ;
-; Return: 
+; Output:
 ;	CF = 1 if error
 ;	AH = result:
 ;	  00h = successful
@@ -10511,7 +10510,7 @@ INT_1A PROC
 ;----------------------------------------------------------------------------;
 ; INT 1A,0   Read system clock counter
 ;----------------------------------------------------------------------------;
-; Return:
+; Output:
 ;	AL = midnight flag, 1 if 24 hours passed since reset
 ;	CX = high order word of tick count
 ;	DX = low order word of tick count
@@ -10658,50 +10657,51 @@ NMI_ERR_IO	DB	'IO', 0			; NMI I/O Error string
 BYTES_HERE	VECTOR_TABLE
 
 ;----------------------------------------------------------------------------;
-; Interrupt Vector Table template
+; Interrupt Vector Table - These fill the IVT prior to bootstrap
 ;----------------------------------------------------------------------------;
-; These fill the IVT prior to bootstrap.
+; Each ISR is found at the compatibility offset described here:
+; https://www.intel.com/content/dam/doc/reference-guide/efi-compatibility-support-module-specification-v097.pdf
 ;----------------------------------------------------------------------------;
 		ORG 0FEE3H
 VECTOR_TABLE PROC
-	DW  OFFSET INT_IRQ 		; int 00	INT_IRQ
-	DW  OFFSET INT_IRQ 		; int 01	INT_IRQ
-	DW  OFFSET INT_02 		; int 02	INT_02 - NMI
-	DW  OFFSET INT_IRQ 		; int 03	INT_IRQ
-	DW  OFFSET INT_IRQ 		; int 04	INT_IRQ
-	DW  OFFSET INT_05 		; int 05	INT_05 - Print Screen
-	DW  OFFSET INT_IRQ 		; int 06	INT_IRQ
-	DW  OFFSET INT_IRQ 		; int 07	INT_IRQ
+	DW  OFFSET INT_IRQ 		; INT 00
+	DW  OFFSET INT_IRQ 		; INT 01
+	DW  OFFSET INT_02 		; INT 02	NMI
+	DW  OFFSET INT_IRQ 		; INT 03
+	DW  OFFSET INT_IRQ 		; INT 04
+	DW  OFFSET INT_05 		; INT 05	Print Screen
+	DW  OFFSET INT_IRQ 		; INT 06
+	DW  OFFSET INT_IRQ 		; INT 07
 
 ;----------------------------------------------------------------------------;
 ; Compatibility fixed ORG for INT 08 - 1Eh
 ;
 		ORG 0FEF3H
-	DW  OFFSET INT_08 		; int 08	IRQ0 - System timer
-	DW  OFFSET INT_09_POST		; int 09	IRQ1 - Keyboard IRQ (during POST)
-	DW  OFFSET INT_IRQ		; int 0A	IRQ2 - Reserved
-	DW  OFFSET INT_IRQ		; int 0B	IRQ3 - COM2
-	DW  OFFSET INT_IRQ		; int 0C	IRQ4 - COM1
-	DW  OFFSET INT_IRQ		; int 0D	IRQ5 - XT FDC
-	DW  OFFSET INT_0E			; int 0E	IRQ6 - Floppy Controller
-	DW  OFFSET INT_IRQ		; int 0F	IRQ7 - LPT
-	DW  OFFSET INT_10			; int 10	INT_10 - Video
-	DW  OFFSET INT_11			; int 11	INT_11 - Equipment Check
-	DW  OFFSET INT_12			; int 12	INT_12 - Memory Size
-	DW  OFFSET INT_13			; int 13	INT_13 - Floppy Disk
-	DW  OFFSET INT_14			; int 14	INT_14 - Serial Port
-	DW  OFFSET INT_15			; int 15	INT_15 - System Services
-	DW  OFFSET INT_16			; int 16	INT_16 - Keyboard Services
-	DW  OFFSET INT_17			; int 17	INT_17 - Printer
-	DW  OFFSET INT_18 		; int 18	INT_18 - Unbootable/ROM BASIC
-	DW  OFFSET INT_19			; int 19	INT_19 - Bootstrap
-	DW  OFFSET INT_1A			; int 1A	INT_1A - Time of day
-	DW  OFFSET INT_RET 		; int 1B	INT_1B - Ctrl Brk
-	DW  OFFSET INT_RET 		; int 1C	INT_1C - Timer Tick
-	DW  OFFSET INT_1D 		; int 1D	INT_1D - CRTC param table
-	DW  OFFSET INT_1E 		; int 1E	INT_1E - Floppy param table
+	DW  OFFSET INT_08 		; INT 08	IRQ0 System timer
+	DW  OFFSET INT_09_POST		; INT 09	IRQ1 Keyboard IRQ (during POST)
+	DW  OFFSET INT_IRQ		; INT 0A	IRQ2 Reserved
+	DW  OFFSET INT_IRQ		; INT 0B	IRQ3 COM2
+	DW  OFFSET INT_IRQ		; INT 0C	IRQ4 COM1
+	DW  OFFSET INT_IRQ		; INT 0D	IRQ5 XT FDC
+	DW  OFFSET INT_0E			; INT 0E	IRQ6 Floppy Controller
+	DW  OFFSET INT_IRQ		; INT 0F	IRQ7 LPT
+	DW  OFFSET INT_10			; INT 10	Video
+	DW  OFFSET INT_11			; INT 11	Equipment Check
+	DW  OFFSET INT_12			; INT 12	Memory Size
+	DW  OFFSET INT_13			; INT 13	Floppy Disk
+	DW  OFFSET INT_14			; INT 14	Serial Port
+	DW  OFFSET INT_15			; INT 15	System Services
+	DW  OFFSET INT_16			; INT 16	Keyboard Services
+	DW  OFFSET INT_17			; INT 17	Printer
+	DW  OFFSET INT_18 		; INT 18	Unbootable/ROM BASIC
+	DW  OFFSET INT_19			; INT 19	Bootstrap
+	DW  OFFSET INT_1A			; INT 1A	Time of day
+	DW  OFFSET INT_RET 		; INT 1B	Ctrl Brk
+	DW  OFFSET INT_RET 		; INT 1C	Timer Tick
+	DW  OFFSET INT_1D 		; INT 1D	CRTC param table
+	DW  OFFSET INT_1E 		; INT 1E	Floppy param table
 L_VECTOR_TABLE = ($-VECTOR_TABLE)/2	; number of vectors 1Fh (31)
-	DW  0 				; int 1F	INT_1F - 8x8 (CP 128-255) custom
+	DW  0 				; INT 1F	8x8 (CP 128-255) custom
 						;		 video font table (0000:0000)
 VECTOR_TABLE ENDP
 
@@ -10819,7 +10819,7 @@ INT_05 PROC
 	PUSH	CX
 	PUSH	DX
 	CALL	LPT_CRLF				; start print head on new line
-	;JC	INT_05_DONE				; exit if print error
+	JC	INT_05_DONE				; exit if print error
 	MOV	AH, 0FH				; get video state (columns)
 	INT	10H					; AH = screen columns, BH = page
 	MOV	BL, AH				; BL = screen columns
@@ -10867,7 +10867,7 @@ INT_05_EXIT:
 LPT_CRLF PROC
 	MOV	AL, CR
 	CALL	LPT_CHAR
-	JC	LPT_CHAR_EXIT			; exit if print error
+	;JC	LPT_CHAR_EXIT			; exit if print error
 
 ;----------------------------------------------------------------------------;
 ; LPT_LF - Write LF to PRN
@@ -10967,7 +10967,7 @@ VER 	DB	'Ver: '
 			IF ARCH_SUB_TYPE NE 0
 	DB	ARCH_SUB_TYPE		; add optional ARCH sub-identifier
 			ENDIF
-	DB	' '
+	DB	' '				; space before date
 	DB	0
 
 ;
