@@ -17,7 +17,7 @@ Copyright &copy; 2022-2023, [640KB](mailto:640kb@glabios.org) and contributors.
 - 5150 Cassette tape support.
 - NEC V20 enhanced instruction set support.
 - Multiple levels of "[CGA snow](https://en.wikipedia.org/wiki/Color_Graphics_Adapter#Limitations,_bugs_and_errata)" removal (configurable at build-time).
-- Accurate PIT-based I/O timing for floppy disk, 10-15% faster seek and read times.
+- Accurate PIT-based I/O timing for floppy disk for faster seek and read times.
 - Customizable POST test screen colors themes.
 - Fits in an 8K ROM to drop in to any original PC or clone.
 
