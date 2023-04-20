@@ -27,10 +27,10 @@ Copyright &copy; 2022-2023, [640KB](mailto:640kb@glabios.org) and contributors.
 - PC 5150 with cassette
 - Turbo XTs (DTK, most clones)
 - [Faraday FE2010A](https://github.com/skiselev/micro_8088/blob/master/Documentation/Faraday-XT_Controller-FE2010A.md)-based PCs ([Headstart Plus](http://oldcomputer.info/pc/hs_plus/index.htm)/VTI Vendex 33-XT/PC-10 and others)
-- TD3900A-based PCs (Juko ST-12, UNIQUE, Auva, etc)
-- Support for [EMM Homebrew 8088](https://www.homebrew8088.com/) with 8088, V20 or V40
-- Emulator-optmized ([86Box](https://86box.net/) and others) for improved performance and stability
-- Experimental support for [micro_8088](https://github.com/skiselev/micro_8088) / [NuXT](https://monotech.fwscart.com/) (looking for testers!)
+- TD3300A-based PCs (Juko ST, UNIQUE, Auva, etc)
+- [micro_8088](https://github.com/skiselev/micro_8088) / [NuXT](https://monotech.fwscart.com/)
+- [EMM Homebrew 8088](https://www.homebrew8088.com/) with 8088, V20 or V40
+- Emulator-optmized ([86Box](https://86box.net/) and others) for improved performance
 
 ### Companion ROMs
 
