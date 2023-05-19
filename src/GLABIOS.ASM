@@ -94,6 +94,7 @@ ARCH_EHB		EQU	'H'			; EMM Computers/Homebrew8088
 ARCH_EMU		EQU	'E'			; 86Box/Emulator
 ARCH_M88		EQU	'M'			; micro_8088/NuXT
 ARCH_MIST		EQU	'I'			; PCXT_MiSTer
+ARCH_UM82		EQU	'U'			; UMC UM82C088 / ALi M1101
 
 ;
 ; CPU Instruction Set Target
@@ -122,7 +123,7 @@ VER_NAME		EQU	'GLaBIOS'
 VER_NUM		EQU	'0.2.4'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'04/07/23' 		; must be MM/DD/YY format
+VER_DATE		EQU	'05/19/23' 		; must be MM/DD/YY format
 	ENDIF
 COPY_YEAR		EQU	'2022-23'		; Copyright year range
 
@@ -140,9 +141,10 @@ COPY_YEAR		EQU	'2022-23'		; Copyright year range
 ARCH_TYPE		EQU	ARCH_TURBO		; Standard Turbo
 ;ARCH_TYPE		EQU	ARCH_TD3300		; TD3300A (ST-xx/UNIQUE/Auva)
 ;ARCH_TYPE		EQU	ARCH_FE2010		; Faraday FE2010A
+;ARCH_TYPE		EQU	ARCH_UM82		; UMC UM82C088 / ALi M1101
 ;ARCH_TYPE		EQU	ARCH_EHB		; EMM Computers/Homebrew 8088
-;ARCH_TYPE		EQU	ARCH_EMU		; 86Box/Emulator (will not work
-	ENDIF						;  on real hardware)
+;ARCH_TYPE		EQU	ARCH_EMU		; 86Box/Emulators (not for real hardware)
+	ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Sub Architecture Types (use with the ARCH_TYPE in parentheses)
@@ -286,11 +288,23 @@ TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
 
 	IF ARCH_TYPE EQ ARCH_TD3300
 ;----------------------------------------------------------------------------;
-; Configuration for TD3300A (90h register)
+; Configuration for TD3300A
 ;
 BASIC_ROM		= 	0			; disable to free code space
 FDC_HLT_WAIT	=	0			; seems to cause issues on TD3300A
 TURBO_TYPE		=	TURBO_STD		; always use Standard
+TURBO_SWITCH	=	1			; boot under hardware Turbo control
+	ENDIF
+
+	IF ARCH_TYPE EQ ARCH_UM82
+;----------------------------------------------------------------------------;
+; Configuration for UM82C088
+;
+BASIC_ROM		= 	0			; disable to free code space
+		IF BASIC_ROM EQ 1			; if BASIC enabled, disable
+POST_TEST_PIC_REG	=	0			;  unnecessary tests to free code
+POST_TEST_PIC_INT	=	0			;  space since PIC is integrated
+		ENDIF
 	ENDIF
 
 	IF ARCH_TYPE EQ ARCH_FE2010
@@ -599,6 +613,11 @@ POST_CARD_PORT	EQU	80H			; can be 60H, 80H, 300H, 313H
 ; TD3300A (ST-xx/UNIQUE/Auva) Control Registers (90h)
 TD_WS			EQU	70H			; RAM, I/O wait state control
 TD_TURBO		EQU	90H			; Write 2 for Turbo, 3 for Normal
+TD_UMA		EQU	0E0H			; Upper Memory bank switch
+
+; UM82C088 Speed / Status registers
+UM82_SPEED		EQU	0C0H			; write any value to toggle speed mode
+UM82_STATUS		EQU	0E0H			; read memory size, speed mode
 
 ; NMI flip/flop
 NMI_R0		EQU	0A0H			; NMI Mask Register
@@ -819,19 +838,13 @@ EQFLAGS RECORD	LPT:2,X1:1,GAM:1,COM:3,DMA:1,FLP:2,VIDM:2,MBRAM:2=11b,FPU:1,IPL:1
 ; GLaBIOS Equipment Flags (40:12H)
 ;----------------------------------------------------------------------------;
 ; 76543210
-; x 	    |			- TBD		Reserved
-;  xxx    |			- RTCTY	RTC Type
-;         |					0 = none
-;         |					1 = DS1285
-;         |					2 = MS5832
-;         |					3 = MM58167AN
-;         |					4 = RP5C15
+; xxxx    |			- TBD		Reserved
 ;     x   |			- TURBO	Turbo supported
 ;      x  |			- V20		1 if V20, 0 if 8088
 ;       xx|			- TBD		Reserved
 ; 84218421
 ;----------------------------------------------------------------------------;
-GFLAGS RECORD	GTBD1:1,RTCTY:3,TURBO:1,V20:1,GTBD2:2
+GFLAGS RECORD	GTBD1:4,TURBO:1,V20:1,GTBD2:2
 
 ;----------------------------------------------------------------------------;
 ; POST status flags are stored in BP
@@ -1309,6 +1322,45 @@ PPI_CR RECORD	PPEN:1=1,PPAM:2=00b,PPAD:1=1,PPCU:1=1,PPBM:1,PPBD:1,PPCL:1=1
 ;        0| 		- TDWRO	Board ROM
 ;----------------------------------------------------------------------------;
 TD_WS_CR	RECORD	TDWSI:2,TDWSR:2,TDWIO:2,TDWRA:1,TDWRO:1
+
+;----------------------------------------------------------------------------;
+; TD3300A Speed (Turbo/Normal) Register (90H)
+;----------------------------------------------------------------------------;
+; 765432  |			- TDSX	Unused
+;       1 |			- TDSH	0=use hardware switch, 1=use bit 0 (TDSS)
+;        0| 		- TDSS	if TDSH=1: 1=4.77, 0=turbo
+;----------------------------------------------------------------------------;
+			IF ARCH_TYPE EQ ARCH_TD3300
+			IF TURBO_SWITCH EQ 1
+TD_TURBO_CR	RECORD	TDSX:6,TDSH:1=0,TDSS:1	; hardware switch enabled
+			ELSE
+TD_TURBO_CR	RECORD	TDSX:6,TDSH:1=1,TDSS:1	; hardware switch disabled
+			ENDIF
+			ENDIF
+
+;----------------------------------------------------------------------------;
+; TD3300A Upper Memory bank switch Register (E0H)
+;----------------------------------------------------------------------------;
+; 7654321 |			- TDUX	Unused
+;        0| 		- TDUB	map 2000h-F000h: 0=lower bank,1=upper bank
+;----------------------------------------------------------------------------;
+TD_UMA_CR	RECORD	TDUX:7,TDUB:1
+
+			IF ARCH_TYPE EQ ARCH_UM82
+;----------------------------------------------------------------------------;
+; UM82C088 Status Register (E0H)
+;----------------------------------------------------------------------------;
+; 7       |			- U8SPD	Speed: 0=Low, 1=High
+;  6      | 		- U8X1	Unused
+;   54    |			- U8MEM	11b=256K, 01b=512K, x0b=640K
+;     32  |			- U8VID	Video adapter
+;       10|			- U8FLP	Floppy drives
+;----------------------------------------------------------------------------;
+UM82_ST	RECORD	U8SPD:1,U8X1:1,U8MEM:2,U8VID:2,U8FLP:2
+UM82_256K	EQU	UM82_ST <0,0,11b>		; 256K RAM
+UM82_512K	EQU	UM82_ST <0,0,01b>		; 512K RAM
+UM82_640K	EQU	UM82_ST <0,0,10b>		; 640K RAM
+			ENDIF
 
 			IF ARCH_TYPE EQ ARCH_FE2010
 ;----------------------------------------------------------------------------;
@@ -2149,7 +2201,7 @@ KB_FLAGS4		DB	?			; 97H  Keyboard LED flags (Enhanced)
 RTC_WAIT		DB	?			; A0H  RTC wait function flag
 		ORG	0ACH				; ACH-B3H "Reserved" (can be used?)
 		ORG	0B0H
-RTC_DATA		DW	?			; B0H  GLaCLOCK address and RTC type
+RTC_DATA		DW	?			; B0H  GLaTICK address and RTC type
 		ORG	0E8H				; E8H-EFH "Reserved" (can be used?)
 CURSOR_DEFAULT	DW	?			; E8H  Power on cursor bottom:top scan line (for Turbo)
 VID_MEM_SEG		DW	?			; EAH	 Video mem segment (MDA = B000, CGA = B800)
@@ -2455,15 +2507,12 @@ RESET_PPI:
 	OUT	PPI_B, AL			; send to 8255 Port B
 
 			IF ARCH_TYPE EQ ARCH_TD3300
-;----------------------------------------------------------------------------;
-; Set up Turbo mode for TD3300A
-;
 	IN	AL, TD_TURBO		; read current register
-			IF BOOT_SPEED EQ BOOT_TURBO
-	MOV	AL, 0010B
-			ELSE
-	MOV	AL, 0011B
-			ENDIF
+				IF BOOT_SPEED EQ BOOT_TURBO
+	MOV	AL, TD_TURBO_CR<,,0>	; switch to turbo
+				ELSE
+	MOV	AL, TD_TURBO_CR<,,1>	; switch to normal (4.77)
+				ENDIF
 	OUT	TD_TURBO, AL		; write new register
 			ENDIF			; ENDIF ARCH_TD3300
 
@@ -3233,12 +3282,14 @@ TOGGLE_TURBO PROC
 ; If port 90 == 0, send 3 (0011b) Turbo -> Normal
 ;
 	IN	AL, TD_TURBO			; read current state
-	CMP	AL, 0001b				; is 1 or 0?
+	CMP	AL, MASK TDSS			; is 1 or 0?
 	JA	TOGGLE_TURBO_DONE			; exit if register not valid
-	OR	AL, 0010b				; add "set" bit
-	XOR	AL, 0001b				; flip 2 <=> 3
+	JZ	TOGGLE_TURBO_TD_1			; jump if 1 (currently Turbo)
+	OR	AL, MASK TDSH			; set software speed bit
+TOGGLE_TURBO_TD_1:
+	XOR	AL, MASK TDSS			; toggle turbo bit
 	OUT	TD_TURBO, AL			; write to board
-	CMP	AL, 0011B				; turbo on?
+	CMP	AL, MASK TDSH OR MASK TDSS	; turbo on? (NZ = turbo)
 
 			ELSE				; NOT ARCH_TD3300
 ;----------------------------------------------------------------------------;
@@ -3258,6 +3309,13 @@ TOGGLE_TURBO PROC
 	CALL	FE2010_SETUP_SAVE			; write to memory and register
 	XCHG	AX, CX				; restore AX
 			ENDIF				; ARCH_FE2010
+
+			IF ARCH_TYPE EQ ARCH_UM82
+;----------------------------------------------------------------------------;
+; UM82C088 speed mode
+;
+	OUT	UM82_SPEED, AL			; write any value to toggle speed
+			ENDIF				; ARCH_UM82
 
 			IF ARCH_TYPE EQ ARCH_EHB
 ;----------------------------------------------------------------------------;
@@ -3328,6 +3386,28 @@ FE2010_SETUP_OUT:
 FE2010_SETUP_SAVE ENDP
 
 FE2010_SETUP_MEM ENDP
+			ENDIF
+
+			IF ARCH_TYPE EQ ARCH_UM82
+;----------------------------------------------------------------------------;
+; Read UM82 memory size
+;----------------------------------------------------------------------------;
+; Output: CX = memory in # of 16K blocks above the first 16K block
+;----------------------------------------------------------------------------;
+UM82_IS_512	= NOT UM82_512K AND MASK U8MEM
+UM82_IS_640	= NOT UM82_640K AND MASK U8MEM
+UM82_MEM_SIZE PROC
+	IN	AL, UM82_STATUS			; read UM82 status
+	MOV	CX, 40 - 1				; 40 * 16K = 640K
+	TEST	AL, UM82_IS_640			; is 640K?
+	JE	UM82_DONE				; if so, done
+	MOV	CL, 32 - 1				; 32 * 16K = 512K
+	TEST	AL, UM82_IS_512			; is 512K?
+	JE	UM82_DONE				; if so, done
+	MOV	CL, 16 - 1				; 16 * 16K = 256K
+UM82_DONE:
+	RET
+UM82_MEM_SIZE ENDP
 			ENDIF
 
 			IF ARCH_TYPE EQ ARCH_EHB
@@ -3450,8 +3530,11 @@ INT_02_NMI_HALT:
 	OUT	NMI_R0, AL				; mask the unmaskable
 	INT	10H					; switch to text video mode
 	CALL	OUT_SZ 				; display string in CS:SI
+	CALL	NMI_RESET				; clear NMI/parity flags
+INT_02_LOOP:
 	CLI						; ensure interrupts off
 	HLT						; halt CPU
+	JMP	SHORT INT_02_LOOP
 INT_02 ENDP
 
 INT_02_AFTER:
@@ -4159,6 +4242,10 @@ DETECT_MEMORY PROC
 	PUSH	DS
 	MOV	AX, SEG _BDA
 	MOV	DS, AX
+
+;----------------------------------------------------------------------------;
+; 5150: get MAX RAM from SW2
+;
 			IF ARCH_TYPE EQ ARCH_5150
 	MOV	AX, MEM_SZ_PC			; SW2 RAM size in KB
 	MOV	CL, 4					; shift counter
@@ -4166,8 +4253,20 @@ DETECT_MEMORY PROC
 	XCHG	AX, CX				; CX = 16KB RAM blocks
 	DEC	CX					;  after first 16K block
 			ELSE
+
+;----------------------------------------------------------------------------;
+; UM82C088: get RAM status register
+;
+				IF ARCH_TYPE EQ ARCH_UM82
+	CALL	UM82_MEM_SIZE			; CX = 16KB RAM blocks - 1
+
+;----------------------------------------------------------------------------;
+; Otherwise, use default for MAX_RAM and detect
+;
+				ELSE
 	MOV	CX, (MAX_RAM SHR 4) - 1		; Max number of 16KB RAM blocks
 							; (ex: 640K / 16K = 40)
+				ENDIF
 			ENDIF
 	MOV	DX, 16 * 1024 SHR 4		; Start at second 16KB block
 	MOV	ES, DX				; ES = seg 0400H
@@ -4475,6 +4574,8 @@ POST_SYS_VIDEO_DONE:
 	POST_COL_END_NL
 	RET
 
+POST_MDA		DB	'Mono', 0
+
 POST_SYS_VIDEO ENDP
 				ENDIF
 
@@ -4724,9 +4825,8 @@ INT_14_1 PROC
 	INC	DX
 	INC	DX 					; DX = 3FE - Modem Status Register
 	MOV	BX, DBW <MASK THRE OR MASK LBI, MASK MDSR> ; BH = line (THRE)
-	PUSH	SI					;  BL = modem (DSR/CTS)
+							;  BL = modem (DSR/CTS)
 	CALL	INT_14_POLL 			; poll both registers, AH = status
-	POP	SI
 	POP	BX
 	MOV	AL, BL 				; AL = output char
 	POP	DX 					; restore base port
@@ -4759,9 +4859,7 @@ INT_14_2 PROC
 	INC	DX
 	INC	DX 					; DX = 3FE/2FE - Modem Status Register
 	MOV	BX, DBW <MASK MDSR, MASK LDR>	; BH = modem (DSR), BL = line (data ready)
-	PUSH	SI 					; call-preserve SI 
 	CALL	INT_14_POLL 			; poll both registers, AH = status
-	POP	SI
 	POP	DX 					; restore base port
 	AND	AH, MASK LBI OR MASK LFE OR MASK LPE OR MASK LOE ; include only 
 							;  error bits in port status
@@ -4782,14 +4880,19 @@ INT_14_2 ENDP
 ;	DX = 3FD Line Status Register
 ;	NZ = timeout or failure occurred
 ;
-; Clobbers: AX, CX, SI
+; Clobbers: AX, CX
 ;----------------------------------------------------------------------------;
 INT_14_POLL PROC
 	CALL	INT_14_POLL_PORT 		; first poll modem status
-	JNZ	INT_14_POLL_DONE  	; jump if ZF = 0, timeout or failure occurred
+	JNZ	INT_14_POLL_RET  		; jump if ZF = 0, timeout or failure occurred
 	XCHG	BH, BL 			; BH = line status
 	DEC	DX				; DX = 3FD Line Status Register (LSR)
-INT_14_POLL_PORT:
+
+;----------------------------------------------------------------------------;
+; INT 14 - Poll status register in DX
+;----------------------------------------------------------------------------;
+INT_14_POLL_PORT PROC
+	PUSH	SI 				; call-preserve SI
 	XOR	CX, CX			; reset poll loop counter
 	MOV	AL, COM_TIME_B[DI]	; AL = port timeout (< 127)
 	CBW					; clear high byte of AX for move to SI
@@ -4804,7 +4907,10 @@ INT_14_POLL_LOOP:
 	DEC	SI 				; 
 	JNZ	INT_14_POLL_LOOP		; Jump if timeout not expired
 INT_14_POLL_DONE:
+	POP	SI
+INT_14_POLL_RET:
 	RET
+INT_14_POLL_PORT ENDP
 INT_14_POLL ENDP
 
 INT_14 ENDP
@@ -4887,6 +4993,7 @@ NMI_RESET PROC
 	OUT	PPI_B, AL				; write to PPI
 	RET
 NMI_RESET ENDP
+NMI_ERR_IO		DB	'IO'			; NMI I/O Error string
 NMI_ERR_PAR		DB	'PAR', 0		; NMI Parity Error
 
 ;
@@ -5997,37 +6104,45 @@ BYTES_HERE	INT_13
 ;
 ;----------------------------------------------------------------------------;
 		ORG 0EC59H
+
+INT_13_STAT	EQU BYTE PTR [DI]					; use as FD_LAST_OP
+INT_13_LAST	EQU BYTE PTR [DI][FDC_LAST_ST-FD_LAST_OP]	; use as FDC_LAST_ST
+
 INT_13 PROC
 	STI 						; enable interrupts
 	CLD
 	PUSH	DS
+	PUSH	DI
 	PUSH	DX
-	PUSH	CX	
+	PUSH	CX
 	PUSH	BX
 	PUSH	AX					; save original AX
 	PUSH	BX
 	MOV	BX, SEG _BDA			; set DS = BDA
 	MOV	DS, BX
 	POP	BX
+	MOV	DI, OFFSET FD_LAST_OP		; DI = FD_LAST_OP throughout
 	CMP	AH, 1 				; AH = 1?
 	JB	INT_13_0 				; AH = 0, jump to Reset
 	JZ	INT_13_1 				; AH = 1, jump to Status
 	CMP	DL, 3 				; is drive number > 3?
 	JA	INT_13_BAD_CMD 			; if so, exit
+	MOV	INT_13_STAT, FDC_ST_OK		; clear last operation
 	CMP	AH, 6 				; AH = 2 through 5?
 	JB	INT_13_2_5 				; jump to FDC RWVF command
 INT_13_BAD_CMD:
-	MOV	FD_LAST_OP, FDC_ST_BADCMD	; otherwise return "bad command"
+	MOV	INT_13_STAT, FDC_ST_BADCMD	; otherwise return "bad command"
 INT_13_DONE:
 	MOV	AL, DBT.FMCT 			; INT_1E[2] = motor shutoff counter
 	CALL	INT_1E_PARAM 			; AL = shutoff counter value (37)
 	MOV	FD_MOTOR_CT, AL 			; update in BDA
 	POP	AX 					; restore original AL
-	MOV	AH, FD_LAST_OP 			; AH = last operation status
+	MOV	AH, INT_13_STAT 			; AH = last operation status
 INT_13_EXIT:
 	POP	BX 					; restore original registers
 	POP	CX
 	POP	DX
+	POP	DI
 	POP	DS
 	CMP	AH, FDC_ST_OK+1			; check AH for error (CF = AH < 1)
 	CMC   					; invert CF for return (CF = ! CF)
@@ -6103,7 +6218,7 @@ INT_13_0_2:
 	OUT	DX, AL				; send to FDC
 	XOR	CX, CX 				; clear CX, delay for FDC to settle	(3)
 	MOV	FD_CAL_ST, CL 			; flag all drives for recalibration	(19)
-	MOV	FD_LAST_OP, CL 			; clear last operation flags		(19)
+	MOV	INT_13_STAT, CL 			; clear last operation flags		(19)
 
 ;----------------------------------------------------------------------------;
 ; Re-enable FDC by setting bit 2 to 1.
@@ -6119,8 +6234,8 @@ INT_13_0_2:
 INT_13_0_RESET_BAD:
 	MOV	AH, FDC_ST_ERR_FDC		; otherwise, controller failure
 INT_13_0_RESET_DONE:
-	MOV	FD_LAST_OP, AH			; set last result
-	;JNZ	INT_13_0_DONE			; exit if there was an error
+	MOV	INT_13_STAT, AH			; set last result
+	;JNZ	INT_13_DONE				; exit if there was an error (why not?)
 
 ;----------------------------------------------------------------------------;
 ; (Re)send Specify bytes to FDC
@@ -6144,10 +6259,18 @@ INT_13_0 ENDP
 ;----------------------------------------------------------------------------;
 INT_13_1 PROC
 	POP	AX 					; discard original AX
-	MOV	AL, FD_LAST_OP 			; AL = last operation status
+	MOV	AL, INT_13_STAT 			; AL = last operation status
 	MOV	AH, AL				; AH = last operation status
 	JMP	SHORT INT_13_EXIT
 INT_13_1 ENDP
+
+;----------------------------------------------------------------------------;
+; DMA page boundary overrun
+;
+FDC_DMA_BOUND:
+	OR	INT_13_STAT, FDC_ST_DMA_64K	; DMA boundary error
+	STC						; re-set CF
+	JMP	SHORT FDC_INIT_DMA_EXIT		; rebalance stack and exit
 
 ;----------------------------------------------------------------------------;
 ; INT 13, AH=2-5: FDC read/write operations
@@ -6180,11 +6303,11 @@ INT_13_1 ENDP
 ;	- Check if drive is valid? Check if exists in BDA and not a hard drive
 ;----------------------------------------------------------------------------;
 INT_13_2_5 PROC
-	MOV	FD_LAST_OP, FDC_ST_OK		; clear last operation
 	CALL	FDC_SEEK 				; Turn on motor, CH = track, DL = drive
+INT_13_0A_DONE:
 	JC	INT_13_DONE				; exit if seek error
-	PUSH	AX
-	PUSH	DX
+	PUSH	AX					; save function / sector count
+	PUSH	DX					; save head / drive
 	XCHG	AX, DX 				; DL = sectors count
 	MOV	AL, DH				; AL = function number
 	MOV	DH, DMA_MR <1,0,0,2,2> 		; set DMA 8237A write/format mode 2 (AH = 3,5)
@@ -6198,10 +6321,103 @@ INT_13_2_5 PROC
 	MOV	DH, DMA_MR <1,0,0,1,2> 		; else set 8237A read mode 1 (AH = 2)
 INT_13_2_5_SETUP_DMA:
 	XCHG	AX, DX				; AL = sectors to read, AH = DMA mode
-	CALL	FDC_INIT_DMA 			; set up DMA
+							; fall through to set up DMA
+
+;-------------------------------------------------------------------------
+; FDC_INIT_DMA: Configure DMA channel 2 for FDC operation
+;-------------------------------------------------------------------------
+; Input:
+;  AL = sectors to read
+;  AH = DMA mode:
+;	01000110 (46H) - Read
+;	01000010 (42H) - Verify
+;	01001010 (4AH) - Write
+; 	01 			; Mode: Single mode select
+; 	  0  			; Address increment
+;	   0 			; Auto-initialization disable
+;	    xx		; 00=verify, 01=write, 10=read, 11=unused
+;	      10		; Channel 2 select
+;  ES:BX = pointer to buffer
+;
+; Output:
+;  CF = 0 success, 1 if error DMA exceeds segment
+;-------------------------------------------------------------------------
+; Things you must do:
+;	- Calculate # of bytes to transfer by multiplying AL (sectors) by
+;		sector size in INT 1E Disk Base Table.
+;	- Calculate linear memory address from ES:BX and normalize to
+;		Paragraph:Offset (P:FFFFH).
+;	- Verify that Offset + Byte Count does not exceed the remaining
+;		space in that paragraph. The DMA controller can only select one
+;		paragraph bank at a time, so writes will NOT wrap to next para.
+;		Exit with DMA Boundary error if segment is exceeded.
+;	- Reset the high/low byte flip-flop (send any value to I/O port 0CH)
+;	- Set DMA mode for Channel 2 to either Verify, Read or Write/Format
+;	- Disable interrupts while programming DMA
+;	- Set the DMA Page (memory paragraph) for DMA channel 2 (I/O port 81H)
+;	- Set the DMA Byte Counter to size of transfer minus 1 (since
+;		DMA's counter is 0-indexed)
+;	- Set the DMA Address register to beginning of DMA buffer from ES:BX
+;	- Enable interrupts and unmask DMA Channel 2
+;
+;-------------------------------------------------------------------------
+; References:
+;  https://pdf1.alldatasheet.com/datasheet-pdf/view/127822/AMD/8237A.html
+;  https://wiki.osdev.org/ISA_DMA#Floppy_Disk_DMA_Initialization
+;  https://stackoverflow.com/questions/52396915/how-to-write-assembly-language-to-make-dma-works
+;  https://userpages.umbc.edu/~squire/intel_book.pdf
+;-------------------------------------------------------------------------
+FDC_INIT_DMA:
+	PUSH	CX					; save track / sector
+	OUT	DMA_FF, AL				; DMA clear flip-flop (port 0CH) (any value)
+	MOV	DX, ES 				; get and shift ES by one nibble
+			IF CPU_TYPE EQ CPU_V20
+	ROL	DX, 4					; V20 only
+			ELSE
+	MOV	CL, 4					; DL = highest and lowest nibble of ES
+	ROL	DX, CL				; DH = middle nibbles
+			ENDIF
+	XCHG	AL, AH				; AL = DMA mode, AH = sectors to read
+	OUT	DMA_MODE, AL			; write to DMA mode reg (port 0BH)
+	XOR	AL, AL				; AX = sectors to read << 8
+	XCHG	AX, CX				; CX = sectors, AX = scratch
+	MOV	AL, DBT.FBPS			; get bytes/sector param (0=128, 1=256, 2=512, 3=1024)
+	CALL	INT_1E_PARAM			; AL = shift count (default 2 => 512)
+	XCHG	AX, CX				; AX = sectors, CL = bytes per sector shifts
+	SHR	AX, 1					; adjust shift for bytes/sector * 128
+	SHL	AX, CL				; AX = bytes to transfer (AX * 2^CL)
+	DEC	AX					; AX = bytes to transfer - 1
+	XCHG	AX, CX				; CX = bytes to transfer - 1
+	MOV	AL, DL				; AL = highest and lowest nibble of ES
+	AND	AL, 0FH				; AL = only high nibble of ES
+	AND	DL, 0F0H				; DX = low three nibbles of ES (shifted left 1 nibble)
+	ADD	DX, BX				; DX = DMA start offset for transfer
+	ADC	AL, 0					; AL = DMA page
+	MOV	BX, DX				; check that buffer offset + length does not exceed segment
+	ADD	BX, CX				; BX = DMA end offset, test for boundary overflow
+	JC	FDC_DMA_BOUND			; error if DMA access across 64k boundary
+	CLI						; Disable interrupts
+	OUT	DMA_P_C2, AL 			; set DMA Channel 2 Page Address Register (port 81H)
+	XCHG	AX, DX				; AL = address low byte, AH = high byte (4)
+	OUT	DMA_2_A, AL				;
+	XCHG	AL, AH 				; AH = address low byte, AL = high byte (4)
+	OUT	DMA_2_A, AL				;
+	XCHG	AX, CX				; AL = byte/count low byte, AH = high byte (4)
+	OUT	DMA_2_C, AL				;
+	XCHG	AL, AH				; AH = byte/count low byte, AL = high byte (4)
+	OUT	DMA_2_C, AL
+	STI						; Enable interrupts
+	MOV	AL, DMA_SMR <0, 2>		; DMA clear single channel 2 mask bit
+	OUT	DMA_MASK, AL			; Unmask DMA Channel 2 (port 0AH)
+FDC_INIT_DMA_EXIT:
+	POP	CX					; restore track / sector
 	POP	DX 					; restore drive number DL
 	POP	AX					; restore function number AH
-	JC	INT_13_0_DONE			; jump if DMA error
+	JC	INT_13_0_DONE			; exit if DMA error
+
+;-------------------------------------------------------------------------
+; Set FDC command byte
+;
 	MOV	AL, FDC_CB <1,1,,FDC_CMD_WR>	; FDC Write Data - Multi-Track, MFM
 	CMP	AH, 3 				; is write?
 	JE	FDC_RWVF				; jump if write
@@ -6212,6 +6428,12 @@ INT_13_2_5_SETUP_DMA:
 
 ;-------------------------------------------------------------------------
 ; FDC_RWVF: read, write, verify or format sectors
+;-------------------------------------------------------------------------
+; Input:
+;	AL = FDC command
+;	AH = function
+;	DL = drive
+;	DH = head
 ;-------------------------------------------------------------------------
 FDC_RWVF:
 	PUSH	AX					; preserve AH function number
@@ -6233,12 +6455,9 @@ FDC_RWVF:
 ; FDC_RWV: read, write or verify sectors
 ;-------------------------------------------------------------------------
 ; Input:
-; 	AL = number of sectors to read (1-128 dec.)
-;	CH = track/cylinder number  (0-1023 dec., see below)
-;	CL = sector number  (1-17 dec.)
-;	DH = head number  (0-15 dec.)
-;	DL = drive number (0=A:, 1=2nd floppy, 80h=drive 0, 81h=drive 1)
-;	ES:BX = pointer to buffer
+;	CH = track/cylinder number (0-39)
+;	CL = sector number (1-17)
+;	DL = head number (0-1)
 ; 	(All registers clobbered)
 ;
 ; Output:
@@ -6264,6 +6483,11 @@ FDC_RWV PROC
 	CALL	FDC_SEND_PARAM
 	JC	FDC_RWV_ERR
 	MOV	AL, DBT.LSEC			; [8] data length (if cmd byte 5==0)
+
+;-------------------------------------------------------------------------
+; Send last param and wait for status
+;
+FDC_RWV_SEND_WAIT:
 	CALL	FDC_SEND_PARAM
 	JC	FDC_RWV_ERR
 	CALL	FDC_WAIT_STATUS			; wait for WIF and get status
@@ -6274,10 +6498,9 @@ FDC_RWV PROC
 ; FDC_SEC_COUNT: get the number of sectors read/verified/written
 ;-------------------------------------------------------------------------
 ; Input:
-;	CH = start track/cylinder number  (0-1023 dec., see below)
-;	CL = start sector number  (1-17 dec.)
-;	DH = head number  (0-15 dec.)
-;	DL = drive number (0=A:, 1=2nd floppy, 80h=drive 0, 81h=drive 1)
+;	CH = start track/cylinder number (0-39)
+;	CL = start sector number (1-17)
+;	DL = head number (0-1)
 ; Ouput:
 ;	AL = sectors transferred
 ;
@@ -6286,16 +6509,27 @@ FDC_RWV PROC
 ;	of the next track.
 ;-------------------------------------------------------------------------
 FDC_SEC_COUNT PROC
-	MOV	AL, FDC_LAST_ST.SEC		; AL = FDC reported end sector
-	MOV	DL, CH				; DH = start head, DL = start track
-	CMP	DX, WORD PTR FDC_LAST_ST.CYL	; did it end on the same head/track?
-	JZ	FDC_SEC_COUNT_SAME		; if not, it rolled to next next/track
+	MOV	AH, FDC_LAST_ST.SEC		; AL = FDC reported end sector
+	MOV	DH, DL				; DH = start head
+	MOV	DL, CH				; DL = start track
+	CMP	DX, WORD PTR FDC_LAST_ST.CYL	; end on the same head and track?
+	JE	FDC_SEC_COUNT_SAME		; if not, rolled to next head or track
+
+;----------------------------------------------------------------------------;
+; FDC has ended on a different head or track. Calculate the correct number of
+; sectors spanned.
+;
 	MOV	AL, DBT.SPT				; get INT 1E sectors per track
-	CALL	INT_1E_PARAM			; AL = last sector
-	INC	AX					; fix INT 13 1-based sector index
+	CALL	INT_1E_PARAM			; AL = last sector (# of SPT)
+	CMP	DH, FDC_LAST_ST.HEAD		; end on same head but different track?
+	JNE	FDC_SEC_COUNT_SAME_CYL		; if so, has spanned a full head
+	SHL	AL, 1					; two tracks worth of sectors
+FDC_SEC_COUNT_SAME_CYL:
+	ADD	AH, AL				; add ending sector
 FDC_SEC_COUNT_SAME:
-	SUB	AL, CL				; AL = last_sector - starting_sector
-FDC_SEC_COUNT ENDP				;   returns AL = sectors read
+	MOV	AL, AH				; AL = last_sector - starting_sector
+	SUB	AL, CL				;   returns AL = sectors read
+FDC_SEC_COUNT ENDP
 
 FDC_RWV ENDP					; fall through for exit
 
@@ -6308,6 +6542,9 @@ INT_13_2_5_DONE:
 INT_13_2_5_EXIT:
 	JMP	INT_13_DONE
 
+;----------------------------------------------------------------------------;
+; Clear AL and exit on any read/write error
+;
 FDC_RWV_ERR:
 FDC_FORMAT_ERR:
 	MOV	AL, 0					; on error: sectors read = 0
@@ -6318,10 +6555,9 @@ FDC_FORMAT_ERR:
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	AH = 05
-;	AL = interleave value (XT only)
+;	AL = interleave value (XT only) / sectors per track
 ;	CX = track/cylinder number (see below for format)
-;	DH = head number  (0-15 dec.)
-;	DL = drive number (0=A:, 1=2nd floppy, 80h=drive 0, 81h=drive 1)
+;	DL = head number  (0-15 dec.)
 ;	ES:BX = pointer to block of "track address fields" (provided by DOS)
 ;----------------------------------------------------------------------------;
 FDC_FORMAT PROC
@@ -6335,10 +6571,8 @@ FDC_FORMAT PROC
 	CALL	FDC_SEND_PARAM
 	JC	FDC_FORMAT_ERR
 	MOV	AL, DBT.FFILL			; [5] format fill byte
-	CALL	FDC_SEND_PARAM
-	JC	FDC_FORMAT_ERR
-	CALL	FDC_WAIT_STATUS			; wait for WIF and get status
-	JMP	SHORT INT_13_2_5_EXIT		; (-1 byte for short double jump)
+	MOV	CL, 1					; format always starts at sector 1
+	JMP	SHORT FDC_RWV_SEND_WAIT		; send, wait for WIF and get status
 FDC_FORMAT ENDP
 
 INT_13_2_5 ENDP
@@ -6378,7 +6612,7 @@ FDC_SEEK_DONE:
 	POP	AX
 	RET
 FDC_SEEK_ERR:
-	OR	FD_LAST_OP, FDC_ST_ERR_SEEK
+	OR	INT_13_STAT, FDC_ST_ERR_SEEK
 FDC_SEEK_RECAL_ERR:
 	STC
 	JMP	SHORT FDC_SEEK_DONE
@@ -6445,113 +6679,6 @@ FDC_DRIVE_STARTED:
 	RET
 FDC_MOTOR_ON ENDP
 
-;-------------------------------------------------------------------------
-; FDC_INIT_DMA: Configure DMA channel 2 for FDC operation
-;-------------------------------------------------------------------------
-; Input:
-;  AL = sectors to read
-;  AH = DMA mode:
-;	01000110 (46H) - Read
-;	01000010 (42H) - Verify
-;	01001010 (4AH) - Write
-; 	01 			; Mode: Single mode select
-; 	  0  			; Address increment
-;	   0 			; Auto-initialization disable
-;	    xx		; 00=verify, 01=write, 10=read, 11=unused
-;	      10		; Channel 2 select
-;  ES:BX = pointer to buffer
-;
-; Output:
-;  CF = 0 success, 1 if error DMA exceeds segment
-;-------------------------------------------------------------------------
-; Things you must do:
-;	- Calculate # of bytes to transfer by multiplying AL (sectors) by
-;		sector size in INT 1E Disk Base Table.
-;	- Calculate linear memory address from ES:BX and normalize to 
-;		Paragraph:Offset (P:FFFFH).
-;	- Verify that Offset + Byte Count does not exceed the remaining
-;		space in that paragraph. The DMA controller can only select one
-;		paragraph bank at a time, so writes will NOT wrap to next para.
-;		Exit with DMA Boundary error if segment is exceeded.
-;	- Reset the high/low byte flip-flop (send any value to I/O port 0CH)
-;	- Set DMA mode for Channel 2 to either Verify, Read or Write/Format
-;	- Disable interrupts while programming DMA
-;	- Set the DMA Page (memory paragraph) for DMA channel 2 (I/O port 81H)
-;	- Set the DMA Byte Counter to size of transfer minus 1 (since 
-;		DMA's counter is 0-indexed)
-;	- Set the DMA Address register to beginning of DMA buffer from ES:BX
-;	- Enable interrupts and unmask DMA Channel 2
-;
-;-------------------------------------------------------------------------
-; References:
-;  https://pdf1.alldatasheet.com/datasheet-pdf/view/127822/AMD/8237A.html
-;  https://wiki.osdev.org/ISA_DMA#Floppy_Disk_DMA_Initialization
-;  https://stackoverflow.com/questions/52396915/how-to-write-assembly-language-to-make-dma-works
-;  https://userpages.umbc.edu/~squire/intel_book.pdf
-;-------------------------------------------------------------------------
-FDC_INIT_DMA PROC
-	PUSH	AX
-	PUSH	BX
-	PUSH	CX
-	PUSH	DX
-	OUT	DMA_FF, AL			; DMA clear flip-flop (port 0CH) (any value)
-	MOV	DX, ES 			; get and shift ES by one nibble
-			IF CPU_TYPE EQ CPU_V20
-	ROL	DX, 4				; V20 only
-			ELSE
-	MOV	CL, 4				; DL = highest and lowest nibble of ES
-	ROL	DX, CL			; DH = middle nibbles
-			ENDIF
-	XCHG	AL, AH			; AL = DMA mode, AH = sectors to read
-	OUT	DMA_MODE, AL		; write to DMA mode reg (port 0BH)
-	XCHG	AL, AH			; AH = DMA mode, AL = sectors to read
-	CBW					; AX = zero extend AL (DMA mode always < 80H)
-	XCHG	AX, CX			; CX = sectors to read, AX = scratch
-	MOV	AL, DBT.FBPS		; get bytes/sector param (0=128, 1=256, 2=512, 3=1024)
-	CALL	INT_1E_PARAM		; AL = shift count (default 2 => 512)
-	ADD	AL, 7				; additional shifts: bytes/sector * 128
-	XCHG	AX, CX			; CL = bytes per sector shifts + 7, AX = sectors to read
-	SHL	AX, CL			; AX = bytes to transfer (AX * 2^CL)
-	DEC	AX				; AX = bytes to transfer - 1
-	XCHG	AX, CX			; CX = bytes to transfer - 1
-	MOV	AL, DL			; AL = highest and lowest nibble of ES
-	AND	AL, 0FH			; AL = only low nibble of ES
-	AND	DL, 0F0H			; DX = low three nibbles (shifted left 4)
-	ADD	DX, BX			; DX = DMA address
-	ADC	AL, 0				; AL = DMA page
-	MOV	BX, DX			; check that buffer offset + length does not exceed segment
-	ADD	BX, CX			; test for overflow (ignore sum in BX)
-	JC	FDC_DMA_BOUND		; DMA access across 64k boundary error
-	CLI					; Disable interrupts
-	OUT	DMA_P_C2, AL 		; set DMA Channel 2 Page Address Register (port 81H)
-	XCHG	AX, DX			; AL = address low byte, AH = high byte (4)
-	OUT	DMA_2_A, AL			;
-	XCHG	AL, AH 			; AH = address low byte, AL = high byte (4)
-	OUT	DMA_2_A, AL			;
-	XCHG	AX, CX			; AL = byte/count low byte, AH = high byte (4)
-	OUT	DMA_2_C, AL			;
-	XCHG	AL, AH			; AH = byte/count low byte, AL = high byte (4)
-	OUT	DMA_2_C, AL
-	STI					; Enable interrupts
-	MOV	AL, DMA_SMR <0, 2>	; DMA clear single channel 2 mask bit
-	OUT	DMA_MASK, AL		; Unmask DMA Channel 2 (port 0AH)
-FDC_INIT_DMA_EXIT:
-	POP	DX
-	POP	CX
-	POP	BX
-	POP	AX
-	RET
-
-;----------------------------------------------------------------------------;
-; DMA page boundary overrun
-;
-FDC_DMA_BOUND:
-	OR	FD_LAST_OP, FDC_ST_DMA_64K
-	STC
-	JMP	SHORT FDC_INIT_DMA_EXIT
-
-FDC_INIT_DMA ENDP
-
 ;----------------------------------------------------------------------------;
 ; FDC_RECV: Wait for FDC ready to send and read next FDC Status byte into AL
 ;----------------------------------------------------------------------------;
@@ -6560,7 +6687,7 @@ FDC_INIT_DMA ENDP
 ; Input: None
 ; Output:
 ;	AL = top of FDC status stack
-;	AH = 80H if error, AH preserved if success
+;	AH = 80H if error, 0 if success
 ;	CF if timeout or error
 ;----------------------------------------------------------------------------;
 FDC_RECV PROC
@@ -6587,7 +6714,7 @@ FDC_SEND_PARAM PROC
 ;
 ; Output:
 ;	AL = status register
-;	AH = 80H if error, AH preserved if success
+;	AH = 80H if error, 0 if success
 ;	CF and ZF if error
 ;----------------------------------------------------------------------------;
 FDC_SEND PROC
@@ -6670,7 +6797,7 @@ FDC_SEND_WAIT_TIMER:
 
 FDC_WAIT_TIMEOUT:
 	MOV	AH, FDC_ST_TIMEOUT 		; time out, drive not ready error
-	OR	FD_LAST_OP, AH			; set flag in BDA
+	OR	INT_13_STAT, AH			; set flag in BDA
 	STC						; set error
 	JMP	SHORT	FDC_WAIT_EXIT
 
@@ -6714,12 +6841,13 @@ FDC_RECV_STATUS PROC
 FDC_RECV_ALL PROC
 	PUSH	ES
 	PUSH	CX
-	PUSH	DI
+	PUSH	DI					; preserve DI (FD_LAST_OP)
 	PUSH	DX
 	MOV	DX, FDC_STAT
 	MOV	AX, SEG _BDA
 	MOV	ES, AX
-	MOV	DI, OFFSET FDC_LAST_ST 		; FDC Command Status Last Result
+	;MOV	DI, OFFSET FDC_LAST_ST 		; FDC Command Status Last Result
+	INC	DI					; DI = FDC_LAST_ST (previously FD_LAST_OP)
 	MOV	CX, 7					; loop up to 7 FDC bytes
 FDC_RECV_ALL_LOOP:
 	CALL	FDC_RECV				; AL = next byte, AH = 0 if success
@@ -6789,15 +6917,15 @@ FDC_WAIT_STATUS_ERR PROC
 	JZ	FDC_WAIT_STATUS_ERR_DONE	; skip if AH = 0
 	MOV	SI, OFFSET FDC_ERR1_MAP
 FDC_ERR_MAP_LOOP:
-	LODS	BYTE PTR CS:[SI]			; fetch next error
+	LODS	BYTE PTR CS:[SI]			; fetch next error byte
 	SHL	AH, 1					; CF if this status flag
-	JC	FDC_WAIT_STATUS_ERR_DONE	; jump if flag set
-	JNZ	FDC_ERR_MAP_LOOP			; loop until AH = 0
+	JA	FDC_ERR_MAP_LOOP			; loop if NC (not this flag)
+							;  and NZ (more flags to check)
 FDC_WAIT_STATUS_ERR_DONE:
 	MOV	AH, AL				; AH = last result
 FDC_WAIT_ERR_EXIT:
 	POP	SI
-	OR	FD_LAST_OP, AH			; BDA 40:41H
+	OR	INT_13_STAT, AH			; BDA 40:41H
 	STC
 FDC_WAIT_ERR_EXIT_OK:
 	RET
@@ -6839,12 +6967,11 @@ INT_1E_PARAM PROC
 	XLAT 						; AL = byte
 	POP	BX
 	POP	DS
-INT_1E_PARAM_DONE:
 	RET
 INT_1E_PARAM ENDP
 
 ;
-; 0 BYTES HERE
+; 21 BYTES HERE
 ;
 BYTES_HERE	INT_0E
 
@@ -6894,7 +7021,7 @@ FDC_WAIT_INT_LOOP2:
 	CMP	AX, TIMER.LW			; has timer tick changed?
 	JZ	FDC_WAIT_INT_LOOP2		; if not, wait for next INT
 	LOOP	FDC_WAIT_INT_LOOP1		; decrement tick counter and resume loop
-	OR	FD_LAST_OP, FDC_ST_TIMEOUT 	; FDC result set time out, drive not ready
+	OR	INT_13_STAT, FDC_ST_TIMEOUT 	; FDC result set time out, drive not ready
 	STC
 	JMP	SHORT FDC_WAIT_INT_DONE
 FDC_WAIT_INT_OK:
@@ -7208,6 +7335,17 @@ INT_10_JMP LABEL WORD
 ; INT 10h - Video BIOS Services
 ;----------------------------------------------------------------------------;
 ; BIOS Interface to CGA/MDA display adapters.
+;----------------------------------------------------------------------------;
+; References and Info Sources:
+;  "PC System Programming", Tischer
+;  "Programmer's Guide to PC Video Systems", Second Edition, Wilton
+;  https://github.com/joncampbell123/dosbox-x/blob/master/src/ints/int10_char.cpp
+;  https://github.com/joncampbell123/dosbox-x/issues/256
+;  https://www.seasip.info/VintagePC/cga.html
+;  https://www.reenigne.org/blog/crtc-emulation-for-mess/
+;  (many other posts and articles...)
+;
+; Thx to @Raffzahn for "clean room" specs for various display routines.
 ;----------------------------------------------------------------------------;
 		ORG 0F065H
 INT_10 PROC
@@ -7536,7 +7674,7 @@ INT_10_SET_CUR_OFFSET:
 	ADD	AX, DX			; AX = ( row * screen cols ) + col
 						; AX = byte offset for cursor position to page memory
 	MOV	BX, VID_SEG
-	SHR	BX, 1				; byte align 
+	SHR	BX, 1				; byte align
 	ADD	BX, AX
 	MOV	AL, CA_H			; 6845 Cursor address high reg (0EH)
 	MOV	AH, BH			; Cursor address (MSB)
@@ -7665,15 +7803,6 @@ INT_10_5 ENDP
 ;   0101  05  C 320x200 4 color graphics (CGA)
 ;   0110  06  M 640x200 B/W graphics (CGA)
 ;   0111  07  M 80x25 Monochrome text (MDA)
-;
-; References and Info Sources:
-;  "PC System Programming", Tischer
-;  "Programmer's Guide to PC Video Systems", Second Edition, Wilton
-;  https://github.com/joncampbell123/dosbox-x/blob/master/src/ints/int10_char.cpp
-;  https://github.com/joncampbell123/dosbox-x/issues/256
-;  https://www.seasip.info/VintagePC/cga.html
-;  https://www.reenigne.org/blog/crtc-emulation-for-mess/
-;  (many other posts and articles...)
 ;----------------------------------------------------------------------------;
 ; Things you must do:
 ; 	1. Calculate coordinates of existing rectangle and new rectangle.
@@ -8072,8 +8201,6 @@ INT_10_8_NOT_CGA:
 ;	AH = 0
 ;	AL = character at cursor position, 0 if not found
 ;----------------------------------------------------------------------------;
-; Thx to @Raffzahn for "clean room" specs for graphics/char routines.
-;----------------------------------------------------------------------------;
 INT_10_8_MODE_GFX PROC
 	PUSH	BX
 	PUSH	CX
@@ -8393,9 +8520,9 @@ INT_10_9A_GFX_LOW_BYTE:
 INT_10_9A_GFX_LOW_PDEP:
 	SHL	AL, 1				; CF = source pixel bit
 	LAHF					; save CF
-	ADC	BX, BX			; shift CF into next bit
+	RCL	BX, 1				; shift CF into next bit
 	SAHF					; restore CF
-	ADC	BX, BX			; shift CF into next bit again
+	RCL	BX, 1				; shift CF into next bit again
 	LOOP	INT_10_9A_GFX_LOW_PDEP
 	XCHG	AX, BX			; AX = result
 	XCHG	AL, AH			; convert endian
@@ -8694,7 +8821,7 @@ NOT_HI_RES:
 ; Y offset = (DX / 2) * 80 + 2000H[DX is odd]
 ;
 	SHR	DX, 1			; DX = DX / 2
-	XCHG	DL, DH		; DX = DX << 4
+	XCHG	DL, DH		; DX = DX << 8
 	JNC	FIELD_EVEN		; is odd or even field?
 	ADD	DI, CGA_MEM_FLD	; odd field address offset
 FIELD_EVEN:
@@ -8729,7 +8856,7 @@ INT_10_GFX_PIXEL ENDP
 ;		- BELL: beep and exit
 ;		- Backspace: if cursor column is 0, exit else DEC col and go to 6
 ;		- CR: set cursor to column 0 and go to step 6
-;		- LF: Increment row and go to step 5 to check if scroll is needed
+;		- LF: increment row and go to step 5 to check if scroll is needed
 ;	4. Write the char to the current position (INT 10,A)
 ;	5. If new row > last row, scroll up 1 row (INT 10,8).
 ;	6. Update cursor position (INT 10,6)
@@ -10206,10 +10333,10 @@ SHOW_DISK_PARAMS PROC
 ;
 	CALL	OUT_SZ				; 'MB ('
 	XCHG	AX, BX				; AX = cylinders, BX = size in MB
-	CALL	OUT_DECU				; print # cylinders
+	CALL	OUT_DECU_R				; print # cylinders
 	CALL	SPACE
 	POP	AX					; AX = heads
-	CALL	OUT_DECU				; print # heads
+	CALL	OUT_DECU_R				; print # heads
 	CALL	SPACE
 	POP	AX					; AX = sectors/track
 	CALL	OUT_DECU_R				; print sec/track
@@ -10280,14 +10407,19 @@ FDC_RECAL_SEEK_TEST ENDP
 ; Size: 15 bytes
 ;----------------------------------------------------------------------------;
 INT_KB_TOGGLE_TURBO PROC
-			IF ARCH_TYPE EQ ARCH_EHB
+			IF ARCH_TYPE EQ ARCH_TD3300
+	IN	AL, TD_TURBO			; read current state
+	CMP	AL, MASK TDSS			; turbo on? (NZ = turbo)
+			ELSE
+				IF ARCH_TYPE EQ ARCH_EHB
 	MOV	DX, V40_WCR1			; V40 W/S register
 	IN	AL, DX				; FF = slow, 0 = Turbo
 	NOT	AL					; flip bits
-			ELSE
+				ELSE
 	IN	AL, PPI_B				; read standard PPI register
-			ENDIF
+				ENDIF			; /IF ARCH_TYPE EQ ARCH_EHB
 	TEST	AL, MASK PBTB			; is in Turbo mode?
+			ENDIF				; /IF ARCH_TYPE EQ ARCH_TD3300
 	JNZ	INT_KB_TURBO_IS_ON		; if so, only one meep since
 	CALL	MEEP					;  switching to low speed
 INT_KB_TURBO_IS_ON:
@@ -10336,16 +10468,15 @@ HELLO_RAND_TAGLINE ENDP
 
 ;----------------------------------------------------------------------------;
 ; POST Video Adapter Type Strings (2 of 2)
-; 16 bytes
+; 11 bytes
 ;
 				IF POST_VIDEO_TYPE EQ 1
-POST_MDA		DB	'Mono', 0
 POST_VIDEO		DB	'Video', 0
 				ENDIF
 POST_NONE		DB	'None', 0	; must be after POST_VIDEO
 
 ;
-; 247 BYTES HERE / (0 BYTES HERE 5150)
+; 252 BYTES HERE / (0 BYTES HERE 5150)
 ;
 BYTES_HERE	GFX_CHARSET
 
@@ -10576,9 +10707,7 @@ BYTES_HERE	INT_08
 ; - only take jumps on special cases
 ;
 ; IMPORTANT NOTE: ROM BASIC's INT 1CH handler clobbers DX, so DX
-; MUST be call-preserved here. 
-;
-; Bug fixes/suggestions thx to @Raffzahn
+; MUST be call-preserved here.
 ;----------------------------------------------------------------------------;
 		ORG 0FEA5H
 INT_08 PROC
@@ -10649,10 +10778,8 @@ INT_08_RESET:
 INT_08 ENDP
 INT_08_PROC ENDP
 
-NMI_ERR_IO	DB	'IO', 0			; NMI I/O Error string
-
 ;
-; 0 BYTES HERE
+; 3 BYTES HERE
 ;
 BYTES_HERE	VECTOR_TABLE
 
