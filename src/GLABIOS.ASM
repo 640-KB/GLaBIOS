@@ -5724,8 +5724,8 @@ INT_KB_CTRL_ASC_TBL_LOOP:
 	JNZ	INT_KB_CTRL_ASC_TBL_DONE		; no matches, restore AX and continue
 	CMP	CL, 6						; was first list segment? (L_INT_KB_CTRL_SCAN_TBL)
 	JG	INT_KB_CTRL_NO_DONE			; if so, match found and AX is set, exit
-	CBW							; ASCII code = 0
-	XCHG	AL, AH					; replace scan code in AH, AL = 0
+	MOV	AH, 0						; ASCII code 0
+	XCHG	AL, AH					; AH = scan code
 INT_KB_CTRL_NO_DONE:
 	JMP	KB_INT_IS_CTRL_DONE			; AX set, exit
 INT_KB_CTRL_ASC_TBL_DONE:
