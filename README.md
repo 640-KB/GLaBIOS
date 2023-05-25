@@ -13,6 +13,7 @@ Copyright &copy; 2022-2023, [640KB](mailto:640kb@glabios.org) and contributors.
 ## Features
 
 - A complete [100% PC Compatible](#compatibility) BIOS for retro/vintage PC, XT, 8088 Clone, Turbo and Homebrew PCs.
+- Colorful [POST screen](#screenshots) with useful information such as CPU, FPU, port addresses, floppy drives and hard disk geometry.
 - FAST! [Performance-optmized](doc/about/perf.md) CGA/MDA text and graphics routines.
 - 5150 Cassette tape support.
 - NEC V20 enhanced instruction set support.
