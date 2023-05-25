@@ -10945,8 +10945,6 @@ INT_05 PROC
 	PUSH	BX					; preserve working registers
 	PUSH	CX
 	PUSH	DX
-	CALL	LPT_CRLF				; start print head on new line
-	JC	INT_05_DONE				; exit if print error
 	MOV	AH, 0FH				; get video state (columns)
 	INT	10H					; AH = screen columns, BH = page
 	MOV	BL, AH				; BL = screen columns
@@ -10954,7 +10952,9 @@ INT_05 PROC
 	MOV	AH, 3					; get cursor position
 	INT	10H					; DH = cursor row, DL = cursor column
 	PUSH	DX					; save starting cursor position
-	XOR	DX, DX				; start position at row 0, col 0
+	CALL	LPT_CRLF				; start print head on new line
+	JC	INT_05_DONE				; exit if print error
+	CWD						; start position at row 0, col 0
 INT_05_LOOP_1:
 	MOV	AH, 2					; set cursor position
 	INT	10H					; set cursor to DH=row, DL=col
@@ -10973,7 +10973,6 @@ INT_05_NEXT_COL:
 	JNE	INT_05_LOOP_1			; loop while not last row, CF=0 when done
 INT_05_DONE:
 	SBB	AL, AL				; print status: AL = 0 if NC, AL = -1 if CF
-	CLI						; make sure this completes w/o other INTs
 	DEC	DI					; undo earlier STOSB increment
 	STOSB						; update BDA status
 	POP	DX					; restore starting cursor position
@@ -10994,7 +10993,7 @@ INT_05_EXIT:
 LPT_CRLF PROC
 	MOV	AL, CR
 	CALL	LPT_CHAR
-	;JC	LPT_CHAR_EXIT			; exit if print error
+	JC	LPT_CHAR_EXIT			; exit if print error
 
 ;----------------------------------------------------------------------------;
 ; LPT_LF - Write LF to PRN
