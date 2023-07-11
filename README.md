@@ -12,7 +12,7 @@ Copyright &copy; 2022-2023, [640KB](mailto:640kb@glabios.org) and contributors.
 
 ## Features
 
-- A complete [100% PC Compatible](#compatibility) BIOS for retro/vintage PC, XT, 8088 Clone, Turbo and Homebrew PCs.
+- A complete [100% PC Compatible](#compatibility) BIOS for retro/vintage PC, XT, 8088 Clone, Turbo, Homebrew PCs and more!
 - Colorful [POST screen](#screenshots) with useful information such as CPU, FPU, port addresses, floppy drives and hard disk geometry.
 - FAST! [Performance-optmized](doc/about/perf.md) CGA/MDA text and graphics routines.
 - 5150 Cassette tape support.
@@ -29,9 +29,11 @@ Copyright &copy; 2022-2023, [640KB](mailto:640kb@glabios.org) and contributors.
 - Turbo XTs (DTK, most clones)
 - [Faraday FE2010A](https://github.com/skiselev/micro_8088/blob/master/Documentation/Faraday-XT_Controller-FE2010A.md)-based PCs ([Headstart Plus](http://oldcomputer.info/pc/hs_plus/index.htm)/VTI Vendex 33-XT/PC-10 and others)
 - TD3300A-based PCs (Juko ST, UNIQUE, Auva, etc)
+- UMC UM82C088/ALi M1101 chipset
 - [micro_8088](https://github.com/skiselev/micro_8088) / [NuXT](https://monotech.fwscart.com/)
 - [EMM Homebrew 8088](https://www.homebrew8088.com/) with 8088, V20 or V40
-- Emulator-optmized ([86Box](https://86box.net/) and others) for improved performance
+- Vendex 888-XT/PB88/Samsung
+- Emulator-optmized [MartyPC](https://github.com/dbalsom/martypc), [86Box](https://86box.net/) and others
 
 ### Companion ROMs
 
@@ -63,9 +65,9 @@ If you aren't familiar with the reference, ask a gamer.
 
 ## Screenshots
 
-VGA with 8087 FPU:
+VGA with 8087 FPU and [GLaTICK](https://github.com/640-KB/GLaTICK):
 
-![Screenshot VGA 07-29-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_0.0.11_vga_1.png)
+![ss_0 2 5_vga_fpu_1 png](https://github.com/640-KB/GLaBIOS/assets/23486433/4dd6c54f-63f0-4e96-9744-988c100258d6)
 
 EGA with V20:
 
@@ -125,9 +127,10 @@ Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org or
 ### Further Credits to:
 
 - The [Code Golf (CGCC)](https://codegolf.stackexchange.com/) community on Stack Exchange for helping me become a better ASM programmer.
-- Hampa Hug for the excellent [PCE software](http://www.hampa.ch/pce/pce-ibmpc.html) that helped make development and debugging much easier.
+- @dbalsom (aka gloriouscow) for moral support and the incredible [MartyPC](https://github.com/dbalsom/martypc) emulator software.
 - @Raffzahn, Contributor, Advisor and Meckerhut.
 - @MadMaxx12345, @Makefile, @punishedbunny, @PickledDog and many others for testing, bug finding and feature suggestions.
+- Hampa Hug for the excellent [PCE software](http://www.hampa.ch/pce/pce-ibmpc.html) that helped make development and debugging much easier.
 - Dave Nault, my partner in crime for 2 semesters of college assembly language programming classes back in the day. Wherever you are buddy, hope you're doing well!
 
 ## License
