@@ -218,10 +218,14 @@ POST_TEST_KEY	=	1		; POST Key Test (PKEY)
 ;----------------------------------------------------------------------------;
 ; Advanced Options (may void your warranty)
 ;
-MAX_RAM 		=	640		; Max detectable low RAM (in KB)
+MAX_RAM_PC		EQU	640		; 0000-A000 (ought to be enough)
+MAX_RAM_MDA		EQU	704		; MDA include A000-B000
+MAX_RAM_CGA		EQU	736		; CGA include A000-B800
+MAX_RAM 		=	MAX_RAM_PC	; Max detectable low RAM (in KB)
 						;   640 max using EGA/VGA
-						;   704 max using MDA
-						;   736 max using CGA
+						;   704 max using MDA (MAX_RAM_MDA)
+						;   736 max using CGA (MAX_RAM_CGA)
+MAX_RAM_AUTO	=	0		; Auto-detect MAX_RAM from video DIP switches
 DRAM_REFRESH	=	1		; 1=Use standard DMA DRAM refresh
 						; 0=Disable refresh (use only with SRAM!)
 RAM_PARITY		=	1		; Enable RAM parity checking
@@ -390,6 +394,7 @@ POST_TEST_FD	=	0			; disable Floppy Drive Seek Test
 							; disable Floppy Head Settle Delay
 RAM_TEST_LONG	=	0			; disable long RAM test
 TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
+MAX_RAM_AUTO	=	1			; select max RAM from video setting
 
 	IF ARCH_SUB_TYPE EQ ARCH_MIST
 ;----------------------------------------------------------------------------;
@@ -3220,7 +3225,7 @@ SETTINGS_FE2010_1:
 
 		ELSE
 ;----------------------------------------------------------------------------;
-; Is a 5160 or standard clone build
+; Is a 5160 or standard PPI
 ;
 SETTINGS_5160:
 	AND	AL, NOT MASK PBSW			; set bit 3 = 0 for low switch select
@@ -3240,6 +3245,24 @@ SETTINGS_5160:
 	SHL	AL, CL				; shift drives and video to high nibble
 			ENDIF
 	OR	AL, CH				; combine RAM, FPU with drives and vid
+
+			IF MAX_RAM_AUTO EQ 1
+;----------------------------------------------------------------------------;
+; Set MAX_RAM from video DIP switches: CGA=736, MDA=704 else 640
+; 21 bytes
+;
+	PUSH	AX					; save original equipment byte
+	MOV	DX, MAX_RAM_PC			; default 640K
+	AND	AL, MASK VIDM			; bits 4-5 video only
+	JZ	MAX_RAM_AUTO_DONE			; done if EGA/VGA (off, off)
+	MOV	DL, LOW MAX_RAM_MDA		; try MDA 704K
+	CMP	AL, 11b SHL 4			; is MDA (on, on)?
+	JE	MAX_RAM_AUTO_DONE			; done if MDA
+	MOV	DL, LOW MAX_RAM_CGA		; else CGA 736K
+MAX_RAM_AUTO_DONE:
+	MOV	MEM_SZ_PC, DX			; save to BDA
+	POP	AX					; restore equipment byte
+			ENDIF
 
 		ENDIF					; not ARCH_TYPE EQ ARCH_EHB
 		ENDIF					; not ARCH_TYPE EQ ARCH_FE2010
@@ -4381,9 +4404,9 @@ DETECT_MEMORY PROC
 	MOV	DS, AX
 
 ;----------------------------------------------------------------------------;
-; 5150: get MAX RAM from SW2
+; 5150 or MAX_RAM_AUTO: get MAX RAM from MEM_SZ_PC
 ;
-			IF ARCH_TYPE EQ ARCH_5150
+			IF ARCH_TYPE EQ ARCH_5150 OR MAX_RAM_AUTO EQ 1
 	MOV	AX, MEM_SZ_PC			; SW2 RAM size in KB
 	MOV	CL, 4					; shift counter
 	SHR	AX, CL				; Number of 16KB RAM blocks
