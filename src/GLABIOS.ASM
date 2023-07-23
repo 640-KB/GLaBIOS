@@ -122,10 +122,10 @@ TURBO_REV		EQU	2			; reversed PPI B (bit 3)
 ;
 VER_NAME		EQU	'GLaBIOS'
 	IFNDEF VER_NUM
-VER_NUM		EQU	'0.2.4'		; (max 5 chars)
+VER_NUM		EQU	'0.2.5'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'07/11/23' 		; must be MM/DD/YY format
+VER_DATE		EQU	'07/23/23' 		; must be MM/DD/YY format
 	ENDIF
 COPY_YEAR		EQU	'2022-23'		; Copyright year range
 
@@ -537,10 +537,6 @@ POST_COL_VT		EQU	POST_COL_LBL_W + L_POST_L
 ; space between next column
 POST_TAB_COL_I	EQU	POST_TAB_COL - POST_COL_LBL_W - L_POST_L - POST_COL_PAD
 
-; hard drive post display
-POST_HD_CHS_L	EQU	'('			; chars to enclose CHS display
-POST_HD_CHS_R	EQU	')'
-
 ; prefer period-correct "KB" or IEC "KiB"
 				IF UNITS_IEC EQ 1
 POST_K_UNIT		EQU	<'KiB'>		; KiB size unit abbrev.
@@ -631,7 +627,7 @@ PPI_B			EQU	61H			; PPI (8255) Port B OUT - Speaker, Switch selection, Misc
 PPI_C			EQU	62H			; PPI (8255) Port C IN  - Switches
 PPI_CW		EQU	63H			; PPI (8255) Port Control Word
 
-; 8042 Keyboard Controller
+; 8042 (AT) Keyboard Controller
 ATKB_IO		EQU	60H			; 8042 Keyboard input/output buffer register
 ATKB_CMD		EQU	64H			; 8042 Keyboard command/status register
 
@@ -2227,7 +2223,6 @@ _BDA_ABS	ENDS
 ; 0030:0000 - Bootstrap temporary stack
 ;----------------------------------------------------------------------------;
 _BOOT_STACK	SEGMENT AT 30H
-_TEMP_MEM		LABEL BYTE 			; use for scratch space during POST
 			DW 	80H DUP(?)
 STACK_TOP		DW 	?
 _BOOT_STACK	ENDS
@@ -3283,7 +3278,7 @@ SETTINGS_SAVE:
 
 			IF ARCH_SUB_TYPE EQ ARCH_VEN888
 ;----------------------------------------------------------------------------;
-; Explicitly set initial speed for Vendex 888-XT
+; Set initial speed for Vendex 888-XT
 ;
 	CALL	TOGGLE_TURBO			; set speed according to PPI (reversed)
 			ENDIF
@@ -3906,7 +3901,7 @@ POST_KB_RESET ENDP
 	CALL	CRLF					; clear row if video type not shown
 			ENDIF
 
-		IF DRAM_REFRESH EQ 1
+			IF DRAM_REFRESH EQ 1
 ;----------------------------------------------------------------------------;
 ; [27B] Verify that the 8237 DMA Channel 0 Terminal Count (TC 0) status bit 
 ; is on. This test is only done on a cold boot.
@@ -3917,7 +3912,7 @@ POST_KB_RESET ENDP
 	JNZ	DMA_STATUS_OK			; jump if zero reached
 	POST_FLAG_SET  PDMA			; else mark in POST error flags
 DMA_STATUS_OK:
-		ENDIF
+			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Display Additional Configuration Items such as COM/LPT, CPU, FPU, etc
@@ -4213,8 +4208,7 @@ BOOT_FAIL		DB	'Disk Boot Fail.'
 			DB	' You monster.'
 NL2_ANY_KEY		DB	LF
 NL_ANY_KEY		DB	CR, LF
-ANY_KEY		DB	'Press the Any Key'
-			DB	'...'
+ANY_KEY		DB	'Press the Any Key...'
 			DB	 0
 BANNER_STRINGS ENDP
 
@@ -4266,6 +4260,8 @@ STRINGS ENDP
 ; Input:
 ;	AX = starting segment
 ;	DI = ending segment
+; Output:
+;	AX, DI = ending segment
 ;
 ; Note: ROM init's can clobber any or all registers so important to save
 ; any that are used here between calls.
@@ -4274,7 +4270,7 @@ STRINGS ENDP
 ; Size: 73 bytes
 ;----------------------------------------------------------------------------;
 BIOS_ROM_SCAN PROC
-		ASSUME ES:_BDA
+			ASSUME ES:_BDA
 	PUSHX	BP, DS, ES				; some option ROMs may clobber BP
 	MOV	DS, AX 				; DS = starting segment
 CHECK_ROM:
@@ -4346,7 +4342,7 @@ BIOS_ROM_SCAN ENDP
 ; Size: 20 bytes
 ;----------------------------------------------------------------------------;
 ROM_CHECKSUM PROC
-		ASSUME DS:BIOS
+			ASSUME DS:BIOS
 	PUSH	CX
 	PUSH	SI
 	CBW					; AH = 0
@@ -4460,7 +4456,9 @@ ZERO_ALL_RAM:
 	ADC	AL, POST_COL_VT			; space inner column for 2 or 3 digits
 	CALL	MOVE_COL				; move to start of inner column
 	MOV	AX, BX				; move RAM size to AX for display
+	PUSH	BX					; save RAM size
 	CALL	OUT_DECU				; display AX as decimal
+	POP	BX					; restore RAM size
 	MOV	AX, ES				; AX = last segment tested
 	ADD	AX, 16 * 1024 SHR 4		; move to next 16K segment/block
 	CMP	AX, DX				; is last segment of RAM?
@@ -4722,7 +4720,7 @@ POST_SYS_VIDEO ENDP
 				ENDIF
 
 ;
-; 2 BYTES HERE
+; 0 BYTES HERE
 ;
 BYTES_HERE	INT_19
 
@@ -5130,12 +5128,8 @@ NMI_RESET PROC
 	RET
 NMI_RESET ENDP
 
-			IF POST_VIDEO_TYPE EQ 1
-POST_MDA	DB	'Mono', 0
-			ENDIF
-
 ;
-; 1 BYTE HERE
+; 6 BYTES HERE
 ;
 BYTES_HERE	INT_16
 
@@ -5564,8 +5558,6 @@ BYTES_HERE	INT_09
 ;
 ; In short, it needs to do this:
 ;    https://stanislavs.org/helppc/scan_codes.html
-;
-; TODO: this still needs some clean up.
 ;----------------------------------------------------------------------------;
 		ORG 0E987H
 INT_09 PROC
@@ -5587,11 +5579,11 @@ INT_09 PROC
 	OUT	INT_P0, AL					; write EOI to port 0
 	STI							; enable interrupts
 	CLD							; string functions increment
-		IF CPU_TYPE EQ CPU_V20
+			IF CPU_TYPE EQ CPU_V20
 	PUSHA							; save working registers
-		ELSE
+			ELSE
 	PUSHX	BX, CX, DX, DI, SI			; save working registers
-		ENDIF
+			ENDIF
 	PUSHX	DS, ES					; save segment registers
 	MOV	DX, SEG _BDA 				; DX = BIOS Data Area
 	MOV	AL, AH					; AL = original scan code
@@ -5737,7 +5729,6 @@ KB_INT_UC:							;  one to use lower case
 KB_INT_NOT_FLAG:
 	TEST	AH, AH					; test high bit of scan code
 	JS	INT_KB_DONE					; if set, it is an unhandled break code
-								; TODO verify this where 0Eh are caught
 KB_INT_IS_CAPS:
 	TEST	DL, MASK K1CL				; is CAPS LOCK on?
 	JZ	KB_INT_IS_CAPS_DONE
@@ -5818,11 +5809,11 @@ KB_INT_CHECK_FULL:
 ;
 INT_KB_DONE:
 	POPX	ES, DS
-		IF CPU_TYPE EQ CPU_V20
+			IF CPU_TYPE EQ CPU_V20
 	POPA							; restore used registers
-		ELSE
+			ELSE
 	POPX	SI, DI, DX, CX, BX			; restore used registers
-		ENDIF
+			ENDIF
 	POP	AX
 	IRET
 
@@ -7487,11 +7478,11 @@ INT_10 PROC
 	CMP	AH, 0FH			; function > 15?
 	JA	INT_10_IRET			; exit if function not valid
 	PUSHX	ES, DS, DI			; always preserve these registers
+	CLD					; string instructions forward direction
 	MOV	DI, SEG _BDA		; DS = BDA segment
 	MOV	DS, DI
 	MOV	DI, AX			; save AX
 	XCHG	AH, AL			; AL = function, AH = video mode
-	CLD					; string instructions forward direction
 	SHL	AL, 1				; word align index
 	CBW					; AX = jump index
 	XCHG	AX, DI			; restore AX, DI = jump offset
@@ -7939,8 +7930,7 @@ INT_10_5 ENDP
 ;----------------------------------------------------------------------------;
 ; NOTE: The original XT BIOS (and maybe clones) appear to have a bug where
 ; if the lines to scroll (AL) is greater than the height of the rectangle
-; it will scroll incorrectly.
-; TODO: Fix this "bug" or be consistent with XT behavior?
+; it will scroll incorrectly. This behavior has been preserved.
 ;----------------------------------------------------------------------------;
 INT_10_7 PROC
 	STD					; Set direction flag
@@ -8782,9 +8772,9 @@ INT_10_B_SET_PAL:
 			IF CPU_TYPE	EQ CPU_V20
 	ROR	BL, 3					; move low bit into bit 5
 			ELSE
-	REPT	3
+		REPT	3
 	ROR	BL, 1					; move low bit into bit 5
-	ENDM
+		ENDM
 			ENDIF
 INT_10_B_DONE:
 	OR	AL, BL				; combine bytes
@@ -9382,7 +9372,7 @@ MOVE_COL_SET:
 	INT	10H 				; row = DH, column = DL
 			IF CPU_TYPE	EQ CPU_V20
 	POPA					; restore all registers
-			ELSE	
+			ELSE
 	POPX	DX, CX, BX, AX
 			ENDIF
 	RET
@@ -9421,40 +9411,26 @@ SPACE PROC
 SPACE ENDP
 
 ;----------------------------------------------------------------------------;
-; Write Unsigned word as decimal to console - preserve all registers
-;----------------------------------------------------------------------------;
-; Input: AX value
-; Size: 33 bytes
-;----------------------------------------------------------------------------;
-OUT_DECU PROC
-	PUSHX	AX, BX, DX
-	CALL	OUT_DECU_R
-	POPX	DX, BX, AX
-	RET
-
-;----------------------------------------------------------------------------;
 ; Write Unsigned word as decimal to console
 ;----------------------------------------------------------------------------;
 ; Input: AX value
-; Clobbers AX, BX, DX
+; Clobbers: AX, BX
 ;----------------------------------------------------------------------------;
-OUT_DECU_R PROC
+OUT_DECU PROC
 	MOV	BX, 10			; decimal divisor = 10
-OUT_DECU_DIV:
+OUT_DECU_R:
+	PUSH	DX				; save remainder digit / caller DX
 	XOR	DX, DX 			; clear high word of dividend
 	DIV	BX				; AX = DX:AX / 10, DX = DX:AX % 10
 	TEST	AX, AX			; is zero?
 	JZ	OUT_DECU_DONE		; loop while AX > 0
-	PUSH	DX				; save remainder digit
-	CALL	OUT_DECU_DIV		; recursive call to next division
-	POP	DX				; restore digit
+	CALL	OUT_DECU_R			; recursive call to next division
 OUT_DECU_DONE:
 	XCHG	AX, DX			; AL = digit, AH = 0
-OUT_DECU_OUT_R:
 	XOR	AX, DBW <0EH, '0'>	; ASCII convert digit, AH = 0EH
-	INT	10H
+	INT	10H				; write to console
+	POP	DX				; restore digit
 	RET
-OUT_DECU_R ENDP
 OUT_DECU ENDP
 
 ;----------------------------------------------------------------------------;
@@ -9491,9 +9467,9 @@ BYTE_HEX PROC
 			IF CPU_TYPE	EQ CPU_V20
 	DB	0FH, 28H, 0C0H		; ROL4 AL ; swap nibbles (V20 only)
 			ELSE
-	REPT	4
+		REPT	4
 	SHR	AL, 1				; move high nibble to low nibble
-	ENDM
+		ENDM
 			ENDIF
 	CALL	NIB_HEX 			; write low nibble of AL as HEX to console
 	POP	AX 				; restore AL
@@ -9611,16 +9587,17 @@ IO_WAIT_MS_125 ENDP
 
 			IF POST_VIDEO_TYPE EQ 1
 ;----------------------------------------------------------------------------;
-; POST Video Adapter Type Strings (1 of 2)
-; 12 bytes
+; POST Video Adapter Type Strings
+; 17 bytes
 ;
 POST_VGA		DB	'VGA', 0
 POST_EGA		DB	'EGA', 0
 POST_CGA		DB	'CGA', 0
+POST_MDA		DB	'Mono', 0
 			ENDIF
 
 ;
-; 3 BYTES HERE
+; 8 BYTES HERE
 ;
 BYTES_HERE	INT_12
 
@@ -10390,20 +10367,20 @@ INT_15 ENDP
 ;
 ; Input:
 ;	DL = drive #
-; Output:
-;	AH = status
 ;
-; AL clobbered
+; Clobbers: AX, BX
 ;
-; Size: 99 bytes
+; Size: 100 bytes
 ;----------------------------------------------------------------------------;
 SHOW_DISK_PARAMS PROC
-	PUSHX	BX, CX, DX				; call preserve working registers
-	PUSH	DX					; save drive ID again
+	PUSHX	CX, DX				; call preserve working registers
+	PUSH	DX					; save drive ID
 	CALL	GET_DISK_PARAMS			; AL=heads, BX=cyl, CL=sec, DL=#drives
 	POP	DX					; restore drive ID
-	PUSH	AX					; save return status in AH
 	JC	SHOW_DISK_PARAMS_DONE		; exit if error getting drive
+	PUSH	CX					; save sectors/track for CHS display
+	PUSH	AX					; save heads
+	PUSH	BX					; save cylinders
 
 ;----------------------------------------------------------------------------;
 ; Display Drive letter
@@ -10413,8 +10390,6 @@ SHOW_DISK_PARAMS PROC
 	AND	AL, 0011B				; only drives 0-3
 	ADD	AL, 'C'				; convert to drive letter
 	CALL	OUT_CHAR
-	PUSH	CX					; save sectors/track
-	PUSH	DX					; save heads
 
 ;----------------------------------------------------------------------------;
 ; Display HD size: MiB = C*H*S*512/1024/1024 = C*H*S/2048
@@ -10424,17 +10399,17 @@ SHOW_DISK_PARAMS PROC
 	MUL	BX					; DX:AX = heads * sectors * cyl
 	MOV	CX, 1024 * (1024 / 512)		; AX = DX:AX / 2048
 	DIV	CX					; (size in MB)
-	POST_COL_1	POST_HD, POST_CLR_VAL1, 1 ; start column 1, SI = POST_MB
+	POST_COL_1	POST_HD, POST_CLR_VAL1	; start column 1, SI = POST_MB
 	CALL	OUT_DECU				; print size in MB
-	CALL	OUT_SZ				; 'MB', SI = POST_MB
-	XCHG	AX, BX				; AX = cylinders, BX = size in MB
+	CALL	OUT_SZ				; 'MB' (SI = POST_MB from above)
+	POP	AX					; AX = cylinders
 	POST_COL_END				; end column 1
 
 ;----------------------------------------------------------------------------;
 ; Display HD geometry: Cylinders Heads Sectors
 ;
 	POST_COL_2	POST_CHS, POST_CLR_VAL1 ; start column 2
-	CALL	OUT_DECU_R				; print # cylinders
+	CALL	OUT_DECU				; print # cylinders
 	CALL	SPACE
 	POP	AX					; AX = heads
 	CALL	OUT_DECU_R				; print # heads
@@ -10444,8 +10419,7 @@ SHOW_DISK_PARAMS PROC
 	POST_COL_END_NL				; end column 2
 
 SHOW_DISK_PARAMS_DONE:
-	POP	AX					; restore return status
-	POPX	DX, CX, BX				; restore working registers
+	POPX	DX, CX				; restore working registers
 	RET
 
 POST_CHS	DB	'CHS', 0			; CHS column 2 label
@@ -10602,7 +10576,7 @@ ROM_SCAN_POST_CHK:
 	PRINT_SZ	S_OPT_CHK				; display 'Checksum' message
 	MOV	AL, DL					; AL = computed checksum
 	CALL	BYTE_HEX					; write as hex byte
-	JMP	SHORT ROM_SCAN_POST_DONE		; end column and return
+	JMP	ROM_SCAN_POST_DONE			; end column and return
 
 S_OPT_ROM	DB	'ROM', 0
 S_OPT_SIZE	DB	'Size', 0
@@ -10613,7 +10587,7 @@ ROM_SCAN_POST ENDP
 		ENDIF
 
 ;
-; 269 BYTES HERE / (16 BYTES HERE 5150)
+; 274 BYTES HERE / (16 BYTES HERE 5150)
 ;
 BYTES_HERE	GFX_CHARSET
 
