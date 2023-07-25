@@ -218,13 +218,10 @@ POST_TEST_KEY	=	1		; POST Key Test (PKEY)
 ;----------------------------------------------------------------------------;
 ; Advanced Options (may void your warranty)
 ;
-MAX_RAM_PC		EQU	640		; 0000-A000 (ought to be enough)
-MAX_RAM_MDA		EQU	704		; MDA include A000-B000
-MAX_RAM_CGA		EQU	736		; CGA include A000-B800
+MAX_RAM_PC		EQU	640		; 640K: base 0000-A000 (EGA/VGA)
+MAX_RAM_MDA		EQU	704		; 704K: include A000-B000 (MDA)
+MAX_RAM_CGA		EQU	736		; 736K: include A000-B800 (CGA)
 MAX_RAM 		=	MAX_RAM_PC	; Max detectable low RAM (in KB)
-						;   640 max using EGA/VGA
-						;   704 max using MDA (MAX_RAM_MDA)
-						;   736 max using CGA (MAX_RAM_CGA)
 MAX_RAM_AUTO	=	0		; Auto-detect MAX_RAM from video DIP switches
 DRAM_REFRESH	=	1		; 1=Use standard DMA DRAM refresh
 						; 0=Disable refresh (use only with SRAM!)
@@ -363,8 +360,7 @@ POST_TEST_DMA	=	0			; disable DMA Register Test (no DMA)
 POST_TEST_KB	=	0			; disable PKEY and PKI errors
 POST_TEST_PIT_1	=	0			; disable Timer 1 Test (no DRAM)
 POST_TEST_PIC_REG	=	0			; disable PIC Register Test
-SW1_VID		=	00b			; SW1 5/6 Video Type (0=EGA/VGA
-							;   1=CGA 40, 2=CGA 80, 3=MDA/Herc)
+SW1_VID		=	VID_ROM		; SW1 5/6 Video Type
 			IF FDC_ENABLE EQ 1
 SW1_FLP		=	01b			; SW1 7/8 Max # of floppy drives (0-3)
 FD_AUTO_DETECT	=	1			; auto-detect number of floppy drives
@@ -409,7 +405,7 @@ TURBO_TYPE		=	TURBO_STD		; enable Turbo features
 ;----------------------------------------------------------------------------;
 ; Additional Configuration for MartyPC emulator
 ;
-MAX_RAM 		=	736			; 736 KB Max detectable low RAM
+MAX_RAM 		=	MAX_RAM_CGA		; 736 KB Max detectable low RAM
 CASSETTE		=	0			; use all features on 5150
 CGA_SNOW_REMOVE	=	0			; disable CGA snow removal
 ;RAM_TEST_LONG	=	0			; disable long RAM test
@@ -421,7 +417,7 @@ CGA_SNOW_REMOVE	=	0			; disable CGA snow removal
 ;
 BASIC_ROM		=	0			; disable to free code space
 TURBO_TYPE		=	TURBO_STD		; use inverse so toggle sets speed
-;MAX_RAM 		=	704			; if using integrated MDA
+;MAX_RAM 		=	MAX_RAM_MDA		; if using integrated MDA
 	ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -851,17 +847,25 @@ EFLAGS86	RECORD FSF:1,FZF:1,FR1:1,FAF:1,FR2:1,FPF:1,FR3:1=1,FCF:1
 ;     000 |			- COM : # of COM ports present
 ;        0| 		- DMA : DMA (should always be 0)
 ;         |00	 	- FLP : Floppy drives present (+1) (0=1 drive,1=2,etc)
-;         |  00		- VIDM: Video mode (00=EGA/VGA, 01=CGA 40x25, 
+;         |  00		- VID : Video mode (00=EGA/VGA, 01=CGA 40x25,
 ; 				-	10=CGA 80x25, 11=MDA 80x25)
 ;         |    11 	- MBRAM: MB RAM (00=64K, 01=128K, 10=192K, 11=256K+)
 ;         |      0	- FPU : FPU installed
 ;         |       1	- IPL : Floppy drive(s) installed (always 1 on 5160)
 ;----------------------------------------------------------------------------;
 				IF FDC_ENABLE EQ 1
-EQFLAGS RECORD	LPT:2,X1:1,GAM:1,COM:3,DMA:1,FLP:2,VIDM:2,MBRAM:2=11b,FPU:1,IPL:1=1
+EQFLAGS RECORD	LPT:2,X1:1,GAM:1,COM:3,DMA:1,FLP:2,VID:2,MBRAM:2=11b,FPU:1,IPL:1=1
 				ELSE
-EQFLAGS RECORD	LPT:2,X1:1,GAM:1,COM:3,DMA:1,FLP:2,VIDM:2,MBRAM:2=11b,FPU:1,IPL:1=0
+EQFLAGS RECORD	LPT:2,X1:1,GAM:1,COM:3,DMA:1,FLP:2,VID:2,MBRAM:2=11b,FPU:1,IPL:1=0
 				ENDIF
+
+;----------------------------------------------------------------------------;
+; Video Card (VID) DIP switch settings (bits 4-5)
+;
+VID_ROM	EQU	DNB < 00b >		; OFF/OFF:	EGA/VGA/Option ROM
+VID_CGA40	EQU	DNB < 01b >		; OFF/ON:	CGA 40 column
+VID_CGA80	EQU	DNB < 10b >		; ON/OFF:	CGA 80 column
+VID_MDA	EQU	DNB < 11b >		; ON/ON:	MDA
 
 ;----------------------------------------------------------------------------;
 ; GLaBIOS Equipment Flags (40:12H)
@@ -3141,7 +3145,7 @@ CPU_TYPE_DONE:
 ;	    |  0		; FPU installed
 ; 	    |   0		; Test Loop (always 0)
 ;
-; EQUIP_FLAGS: LPT:2,X1:1,GAM:1,COM:3,DMA:1,FLP:2,VIDM:2,MBRAM:2,FPU:1,IPL:1
+; EQUIP_FLAGS: LPT:2,X1:1,GAM:1,COM:3,DMA:1,FLP:2,VID:2,MBRAM:2,FPU:1,IPL:1
 ;----------------------------------------------------------------------------;
 GET_SW_SETTINGS:
 	IN	AL, PPI_B 				; read Port B register
@@ -3212,7 +3216,7 @@ SETTINGS_FE2010_1:
 	MOV	CL, 4
 	SHL	AL, CL				; shift drives and video to high nibble
 			ENDIF
-	AND	AL, MASK VIDM			; Bits 4-5 Video only
+	AND	AL, MASK VID			; Bits 4-5 Video only
 	OR	AL, EQFLAGS <,,,,,SW1_FLP AND 1,,,1>; set FPU: 1, defaults and SW1_FLP
 							;   FD: 00b=1 drive, 01b=2 drives
 
@@ -3251,17 +3255,19 @@ SETTINGS_5160:
 ; Set MAX_RAM from video DIP switches: CGA=736, MDA=704 else 640
 ; 21 bytes
 ;
+MAX_RAM_AUTO_SETUP PROC
 	PUSH	AX					; save original equipment byte
 	MOV	DX, MAX_RAM_PC			; default 640K
-	AND	AL, MASK VIDM			; bits 4-5 video only
-	JZ	MAX_RAM_AUTO_DONE			; done if EGA/VGA (off, off)
+	AND	AL, MASK VID			; bits 4-5 video only
+	JZ	MAX_RAM_AUTO_DONE			; done if EGA/VGA (OFF, OFF)
 	MOV	DL, LOW MAX_RAM_MDA		; try MDA 704K
-	CMP	AL, 11b SHL 4			; is MDA (on, on)?
+	CMP	AL, VID_MDA				; is MDA (ON, ON)?
 	JE	MAX_RAM_AUTO_DONE			; done if MDA
 	MOV	DL, LOW MAX_RAM_CGA		; else CGA 736K
 MAX_RAM_AUTO_DONE:
 	MOV	MEM_SZ_PC, DX			; save to BDA
 	POP	AX					; restore equipment byte
+MAX_RAM_AUTO_SETUP ENDP
 			ENDIF
 
 		ENDIF					; not ARCH_TYPE EQ ARCH_EHB
@@ -3326,14 +3332,14 @@ SETTINGS_SAVE:
 ;  - If MB video switch is 0 (option ROM), skip reset
 ;  - If not 0, determine correct 6845 video mode and do INT 10H reset
 ;----------------------------------------------------------------------------;
-	GET_EFLAG  VIDM				; AX = 00=error(ZF), 01=CGA 40, 10=CGA 80, 11=MDA
+	GET_EFLAG  VID				; AX = 00=error(ZF), 01=CGA 40, 10=CGA 80, 11=MDA
 	XCHG	AX, DX				; AL = EQUIP_FLAGS, DX = BDA initial video mode
 	JNZ	VID_MODE_OK				; jump if mode valid or video option ROM loaded
 	MOV	BL, BEEP_SL <3,3>			; Beep 3 long, 3 short
 HALT_BEEP_2:
 	JMP	HALT_BEEP				; NEAR jump to beep
 VID_MODE_OK:
-	TEST	AL, MASK VIDM			; is SW1 mode 00?
+	TEST	AL, MASK VID			; is SW1 mode 00?
 	JZ	RESET_VIDEO_DONE			; if custom video ROM, skip reset
 	DEC	DX
 	MOV	AX, 1					; CGA 40x25 color, AH = 0 (for INT 10h below)
@@ -4262,13 +4268,6 @@ POST_LSEP		DB	POST_L, 0
 POST_RSEP		DB	POST_R, 0
 POST_STRINGS ENDP
 
-NMI_ERR_IO		DB	'IO'				; NMI I/O Error string
-NMI_ERR_PAR		DB	' PAR'
-					IF POST_OPT_ROM NE 1
-			DB	'ITY'				; TODO: fix size hack
-					ENDIF
-			DB	0				; NMI Parity Error
-
 STRINGS ENDP
 
 ;============================================================================;
@@ -4408,22 +4407,25 @@ DETECT_MEMORY PROC
 ;
 			IF ARCH_TYPE EQ ARCH_5150 OR MAX_RAM_AUTO EQ 1
 	MOV	AX, MEM_SZ_PC			; SW2 RAM size in KB
-	MOV	CL, 4					; shift counter
-	SHR	AX, CL				; Number of 16KB RAM blocks
+				IF CPU_TYPE	EQ CPU_V20
+	SHR	AX, 4					; V20: Number of 16KB RAM blocks
+				ELSE
+	MOV	CL, 4					; 8088: Number of 16KB RAM blocks
+	SHR	AX, CL
+				ENDIF
 	XCHG	AX, CX				; CX = 16KB RAM blocks
 	DEC	CX					;  after first 16K block
 			ELSE
-
+				IF ARCH_TYPE EQ ARCH_UM82
 ;----------------------------------------------------------------------------;
 ; UM82C088: get RAM status register
 ;
-				IF ARCH_TYPE EQ ARCH_UM82
 	CALL	UM82_MEM_SIZE			; CX = 16KB RAM blocks - 1
 
+				ELSE
 ;----------------------------------------------------------------------------;
 ; Otherwise, use default for MAX_RAM and detect
 ;
-				ELSE
 	MOV	CX, (MAX_RAM SHR 4) - 1		; Max number of 16KB RAM blocks
 							; (ex: 640K / 16K = 40)
 				ENDIF
@@ -4612,16 +4614,18 @@ MEM_ADDR_TEST ENDP
 ;
 ; Input:
 ; 	ES = segment to test
+; Output:
+;	ZF and AX = 0 if pass, NZ if fail
 ;
-; Clobbers AX, CX, DI
+; Clobbers: AX, CX, DI
 ;
-; ZF and AX = 0 if pass, NZ if fail
-; Size: 22 bytes
+; Size: 26 bytes
 ;----------------------------------------------------------------------------;
 MEM_TEST PROC
 	MOV	AX, RAM_TEST			; test pattern
-	CALL	MEM_CHECK
-	NOT	AX					; invert pattern
+	CALL	MEM_CHECK				; write and verify pattern
+	JNZ	MEM_ADDR_ERR			; return if error
+	MOV	AX, NOT RAM_TEST			; inverted test pattern
 
 ;----------------------------------------------------------------------------;
 ; Write and verify a 16KB block of Memory at ES:0000
@@ -4629,8 +4633,10 @@ MEM_TEST PROC
 ; Input:
 ;	AX = pattern to write
 ; 	ES = segment for test
+; Output:
+;	ZF and AX = 0 if pass, NZ if fail
 ;
-; ZF and AX = 0 if pass, NZ if fail
+; Clobbers: AX, CX, DI
 ;----------------------------------------------------------------------------;	
 MEM_CHECK PROC
 	MOV	CX, 16 * 1024 / 2			; loop 16KB in WORDs
@@ -4649,7 +4655,7 @@ MEM_TEST ENDP
 ;----------------------------------------------------------------------------;
 ; Display "WARM" or "COLD" boot
 ;----------------------------------------------------------------------------;
-; Size: 39 bytes
+; Size: 38 bytes
 ;----------------------------------------------------------------------------;
 POST_BOOT_TYPE PROC
 	MOV	SI, OFFSET POST_BOOT		; BOOT string
@@ -4661,8 +4667,7 @@ POST_BOOT_TYPE PROC
 	MOV	SI, OFFSET POST_COLD		; COLD string
 POST_BOOT_TYPE_OUT:
 	CALL	OUT_SZ_ATTR				; write string with attribute
-	POST_COL_END_NL				; end of column end NL
-	RET
+	JMP	POST_END_COL_NL			; end of column with NL and RET
 
 POST_BOOT	DB	'Boot', 0
 POST_WARM	DB	'WARM', 0
@@ -4675,7 +4680,7 @@ POST_BOOT_TYPE ENDP
 ;----------------------------------------------------------------------------;
 ; Display Video Type
 ;----------------------------------------------------------------------------;
-; Size: 109 bytes
+; Size: 108 bytes (including relocated strings)
 ;----------------------------------------------------------------------------;
 POST_SYS_VIDEO PROC
 	POST_COL_2	POST_VIDEO, POST_CLR_VAL1 ; display "Video" left column
@@ -4736,14 +4741,13 @@ CHECK_EGA:
 
 POST_SYS_VIDEO_DONE:
 	CALL	OUT_SZ				; display detected video adapter
-	POST_COL_END_NL
-	RET
+	JMP	POST_END_COL_NL			; end of column with NL and RET
 
 POST_SYS_VIDEO ENDP
 				ENDIF
 
 ;
-; 0 BYTES HERE
+; 6 BYTES HERE
 ;
 BYTES_HERE	INT_19
 
@@ -5134,25 +5138,19 @@ PORT_TEST_DONE:
 	RET
 PORT_TEST ENDP
 
+			IF POST_VIDEO_TYPE EQ 1
 ;----------------------------------------------------------------------------;
-; Reset NMI enable flags
-;----------------------------------------------------------------------------;
-; Output:
-;	AL = current PPI B flags
+; POST Video Adapter Type Strings
+; 17 bytes
 ;
-; Size: 11 bytes
-;----------------------------------------------------------------------------;
-NMI_RESET PROC
-	IN	AL, PPI_B				; read current flags
-	OR	AL, MASK PBIO OR MASK PBPC	; parity, I/O flags high (disable)
-	OUT	PPI_B, AL				; write to PPI
-	XOR	AL, MASK PBIO OR MASK PBPC	; flags low (enable)
-	OUT	PPI_B, AL				; write to PPI
-	RET
-NMI_RESET ENDP
+POST_VGA		DB	'VGA', 0
+POST_EGA		DB	'EGA', 0
+POST_CGA		DB	'CGA', 0
+POST_MDA		DB	'Mono', 0
+			ENDIF
 
 ;
-; 6 BYTES HERE
+; 0 BYTES HERE
 ;
 BYTES_HERE	INT_16
 
@@ -7645,8 +7643,8 @@ INT_10_0_1:
 ; Determine video adapter type and new mode and re-program 6845
 ;
 	MOV	AL, BYTE PTR EQUIP_FLAGS	; get BDA equipment flags
-	XOR	AL, MASK VIDM			; isolate video switches
-	AND	AL, 11B SHL VIDM			; is switch MDA (ON-ON)?
+	XOR	AL, MASK VID			; isolate video switches
+	AND	AL, VID_MDA				; is switch MDA (ON-ON)?
 	MOV	AL, 0					; 0 = CGA disable video signal
 	MOV	SI, O_INT_1D_80			; SI = CGA 80 CRTD offset
 	MOV	BH, VID_DEF_COLS			; default 80 columns
@@ -9608,19 +9606,28 @@ IO_DELAY_TICK ENDP
 IO_DELAY_MS ENDP
 IO_WAIT_MS_125 ENDP
 
-			IF POST_VIDEO_TYPE EQ 1
 ;----------------------------------------------------------------------------;
-; POST Video Adapter Type Strings
-; 17 bytes
+; Reset NMI enable flags
+;----------------------------------------------------------------------------;
+; Output:
+;	AL = current PPI B flags
 ;
-POST_VGA		DB	'VGA', 0
-POST_EGA		DB	'EGA', 0
-POST_CGA		DB	'CGA', 0
-POST_MDA		DB	'Mono', 0
-			ENDIF
+; Size: 11 bytes
+;----------------------------------------------------------------------------;
+NMI_RESET PROC
+	IN	AL, PPI_B				; read current flags
+	OR	AL, MASK PBIO OR MASK PBPC	; parity, I/O flags high (disable)
+	OUT	PPI_B, AL				; write to PPI
+	XOR	AL, MASK PBIO OR MASK PBPC	; flags low (enable)
+	OUT	PPI_B, AL				; write to PPI
+	RET
+NMI_RESET ENDP
+
+NMI_ERR_IO	DB	'IO'				; NMI I/O Error string
+NMI_ERR_PAR	DB	' PARITY', 0		; NMI Parity Error
 
 ;
-; 8 BYTES HERE
+; 4 BYTES HERE
 ;
 BYTES_HERE	INT_12
 
@@ -11011,8 +11018,9 @@ POST_VIDEO		DB	'Video', 0
 				ENDIF
 POST_NONE		DB	'None', 0	; must be after POST_VIDEO
 
+;
 ; 1 BYTE HERE
-
+;
 BYTES_HERE	INT_RET
 
 ;----------------------------------------------------------------------------;
