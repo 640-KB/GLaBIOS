@@ -451,6 +451,10 @@ POST_HD_PARMS	=	0			; disable HD PARM display also
 POST_WARM_COLD	=	0			; disable show boot WARM or COLD
 	ENDIF
 
+	IF FDC_ENABLE EQ 0
+POST_TEST_SEEK	=	0			; remove test seek code if no floppy
+	ENDIF
+
 ;----------------------------------------------------------------------------;
 ; Enable 186 instructions if V20
 ;
@@ -2363,7 +2367,7 @@ _MDA_MEM	ENDS
 _CGA_MEM	SEGMENT AT 0B800H
 CGA_MEM_TOP		DB	0800H DUP(?)	; page 1 of CGA 40 column
 CGA_MEM_40		DB	0800H DUP(?)	; page 1 of CGA 80 column
-CGA_MEM_80		DB	3000H DUP(?)
+CGA_MEM_80		DB	3000H DUP(?)	; pages 2-4
 CGA_MEM_GFX	LABEL BYTE
 CGA_MEM	LABEL BYTE				; End of CGA memory offset
 CGA_MEM_SZ		= CGA_MEM - CGA_MEM_TOP	; 16 KiB (4000H) total CGA memory
@@ -2480,7 +2484,7 @@ BYTES_HERE	BOOT
 ; http://philipstorr.id.au/pcbook/book1/post.htm
 ;----------------------------------------------------------------------------;
 		ORG	0E05BH
-BOOT 	PROC NEAR
+BOOT 	PROC	NEAR
 	CLI 					; disable CPU interrupts
 	CLD					; clear direction flag
 
@@ -4048,7 +4052,6 @@ HDD_POST PROC
 	CALL	GET_DISK_PARAMS			; return # HD's in DX
 	JC	HDD_POST_NONE
 
-HDD_POST_COUNT PROC
 ;----------------------------------------------------------------------------;
 ; Display HDD POST drive count column
 ;
@@ -4060,8 +4063,6 @@ HDD_POST_COUNT PROC
 	POST_COL_END_NL				; end column
 	POP	CX					; CX = drive count
 	JCXZ	HDD_POST_DONE			; reset passed but 0 drives
-
-HDD_POST_COUNT ENDP
 
 			IF POST_HD_PARMS EQ 1
 ;----------------------------------------------------------------------------;
@@ -4120,7 +4121,7 @@ POST_ERROR:
 
 			IF POST_ERR_WAIT GT 0
 ;----------------------------------------------------------------------------;
-; Wait for Any Key if there was an error
+; Wait for the Any Key if there was an error
 ;
 	CALL	MEEPMEEP				; alert that there was an error, CX=0
 	PRINT_SZ  NL_ANY_KEY			; "Any key" string
@@ -4680,7 +4681,7 @@ POST_BOOT_TYPE ENDP
 ;----------------------------------------------------------------------------;
 ; Display Video Type
 ;----------------------------------------------------------------------------;
-; Size: 108 bytes (including relocated strings)
+; Size: 106 bytes (including relocated strings)
 ;----------------------------------------------------------------------------;
 POST_SYS_VIDEO PROC
 	POST_COL_2	POST_VIDEO, POST_CLR_VAL1 ; display "Video" left column
@@ -4688,8 +4689,6 @@ POST_SYS_VIDEO PROC
 
 ;----------------------------------------------------------------------------;
 ; Check if INT 10 is using the BIOS. If so, must be CGA or MDA.
-;
-; Necessary to check both segment and offset? (would save a few bytes if not)
 ;
 	PUSH	DS
 	XOR	AX, AX				; AX = SEG _IVT
@@ -4747,7 +4746,7 @@ POST_SYS_VIDEO ENDP
 				ENDIF
 
 ;
-; 6 BYTES HERE
+; 9 BYTES HERE
 ;
 BYTES_HERE	INT_19
 
@@ -5258,6 +5257,8 @@ KB_SHIFT_STATUS ENDP
 
 INT_16 ENDP
 
+BEEP_PROC PROC
+
 ;----------------------------------------------------------------------------;
 ; Repeats LONG_BEEPs then SHORT_BEEPs indefinetly
 ;----------------------------------------------------------------------------;
@@ -5383,14 +5384,17 @@ BEEP_OFF_P PROC
 	RET
 BEEP_OFF_P ENDP
 
+BEEP_PROC ENDP
+
 ;----------------------------------------------------------------------------;
 ; Display all POST messages
 ;----------------------------------------------------------------------------;
 ; See PFLAGS
 ; Output: BP (high byte) = 0
 ; Clobbers: AX, CX, SI
-; Size: 22 bytes
+; Size: 63 bytes
 ;----------------------------------------------------------------------------;
+POST_ERR_MSG PROC
 
 ;----------------------------------------------------------------------------;
 ; POST Error Strings
@@ -5436,6 +5440,8 @@ POST_ERROR_MSG_NEXT:
 POST_ERROR_MSG_EXIT:
 	RET
 POST_ERROR_MSG ENDP
+
+POST_ERR_MSG ENDP
 
 ;----------------------------------------------------------------------------;
 ; Additional INT 9h - Keyboard Code
@@ -6770,29 +6776,37 @@ FDC_SEEK_RECAL_ERR:
 FDC_SEEK ENDP
 
 ;-------------------------------------------------------------------------
+; FDC_RECAL: recalibrate drive, if necessary
+;-------------------------------------------------------------------------
+; Input:
+;	DL = drive to recalibrate
+; Output:
+;	CF if error
+;
+; Clobbers: AX
+;-------------------------------------------------------------------------
+FDC_RECAL PROC
+	PUSH	CX
+
+;-------------------------------------------------------------------------
 ; FDC_MOTOR_ON: Turn on motor
 ;-------------------------------------------------------------------------
 ; Input:
 ; 	DL = drive number
-; Clobbers: CX
 ;-------------------------------------------------------------------------
 ; Things you must do:
 ;	- is motor already on? Skip wait for spin up
 ;	- wait only for writes?
 ;	- check if recalibration is necessary
-;
-; Things you should do:
-;	- check if drive is valid in BDA?
 ;-------------------------------------------------------------------------
 FDC_MOTOR_ON PROC
-	PUSH	AX
 	PUSH	DX
+	MOV	CL, DL 				; move to CL for shift
+	AND	CL, MASK FDSEL			; isolate selected drive number in CL
 
 ;-------------------------------------------------------------------------
 ; Convert drive number to motor run format
 ;
-	MOV	CL, DL 				; move to CL for shift
-	AND	CL, MASK FDSEL			; isolate selected drive number in CL
 	MOV	AX, 110H 				; AH -> RUN_ST, AL -> FDC byte
 	SHL	AX, CL 				; shift drive flags
 	CLI 						; disable interrupts
@@ -6826,9 +6840,34 @@ FDC_DRV_ALREADY_ON:
 	STI
 FDC_DRIVE_STARTED:
 	POP	DX
-	POP	AX
-	RET
 FDC_MOTOR_ON ENDP
+
+;-------------------------------------------------------------------------
+; Convert drive number to recal format
+;
+	MOV	AL, 0001B 				; AL shift to FDC drive # bit
+	SHL	AL, CL 				; shift drive flags
+	TEST	AL, _FD_CAL_ST 			; 0 means drive is uncalibrated
+	JNZ	FDC_RECAL_DONE 			; if drive is calibrated, exit
+	MOV	CH, AL 				; CH = drive bits
+	MOV	AL, FDC_CMD_RECAL 		; recalibrate command (07H)
+	CALL	FDC_SEND 				; send command, CF if error
+	JC	FDC_RECAL_ERR
+	MOV	AL, CL 				; AL = drive number
+	CALL	FDC_SEND 				; send command, CF if error
+	JC	FDC_RECAL_ERR			; (necessary?)
+	CALL	FDC_WAIT_SENSE 			; wait for WIF, sense and get status in AL
+	JC	FDC_RECAL_ERR
+	XOR 	AL, FDC_ST0 <01B, 1>		; select abnormal term, seek complete
+	AND	AL, FDC_ST0 <01B, 1>		; ZF = abnormal term AND seek complete
+	STC						; presume failure
+	JZ	FDC_RECAL_ERR			; jump if error
+	OR	_FD_CAL_ST, CH 			; mark drive as calibrated and CLC
+FDC_RECAL_ERR:
+FDC_RECAL_DONE:
+	POP	CX
+	RET
+FDC_RECAL ENDP
 
 ;----------------------------------------------------------------------------;
 ; FDC_RECV: Wait for FDC ready to send and read next FDC Status byte into AL
@@ -7096,32 +7135,8 @@ FDC_ERR1_MAP LABEL BYTE
 FDC_WAIT_STATUS_ERR ENDP
 FDC_WAIT_STATUS ENDP
 
-;----------------------------------------------------------------------------;
-; Retrieve a parameter value from the DBT by index
-;----------------------------------------------------------------------------;
-; Input:
-;	AL = parameter index (bounds not checked)
-; Output:
-;	AL = byte
 ;
-; Size: 14 bytes
-;----------------------------------------------------------------------------;
-INT_1E_PARAM PROC
-	PUSH	DS
-	PUSH	BX
-	XOR	BX, BX 				; BX = IVT
-	MOV	DS, BX 				; DS = IVT
-			ASSUME DS:_IVT
-	LDS	BX, IVT_1E				; DS:BX = INT 1EH in IVT
-	XLAT 						; AL = byte
-	POP	BX
-	POP	DS
-			ASSUME DS:NOTHING
-	RET
-INT_1E_PARAM ENDP
-
-;
-; 33 BYTES HERE
+; 7 BYTES HERE
 ;
 BYTES_HERE	INT_0E
 
@@ -7150,7 +7165,7 @@ INT_0E ENDP
 ;----------------------------------------------------------------------------;
 ; FDC_WAIT_INT: Wait for BDA Working Interrupt Flag from FDC
 ;----------------------------------------------------------------------------;
-; Input: DS = BDA
+; Input: DS = BDA, DI = FD_LAST_OP
 ; Output: CF if timeout
 ;----------------------------------------------------------------------------;
 FDC_WAIT_INT PROC
@@ -7161,7 +7176,7 @@ FDC_WAIT_INT PROC
 FDC_WAIT_INT_LOOP1:
 	MOV	AX, TIMER.LW			; AX = time ticks
 FDC_WAIT_INT_LOOP2:
-	TEST	FD_CAL_ST, MASK FWIF 		; check for WIF in FD_CAL_ST (3EH)
+	TEST	_FD_CAL_ST, MASK FWIF 		; check for WIF in FD_CAL_ST (3EH)
 	JNZ	FDC_WAIT_INT_OK			; if so, exit
 			IF FDC_HLT_WAIT GT 0
 	HLT						; wait for any INT
@@ -7175,56 +7190,88 @@ FDC_WAIT_INT_LOOP2:
 	STC
 	JMP	SHORT FDC_WAIT_INT_DONE
 FDC_WAIT_INT_OK:
-	AND	FD_CAL_ST, NOT MASK FWIF 	; clear working interrupt flag
+	AND	_FD_CAL_ST, NOT MASK FWIF 	; clear working interrupt flag
 FDC_WAIT_INT_DONE:
 	POP	CX
 	POP	AX
 	RET
 FDC_WAIT_INT ENDP
 
-;-------------------------------------------------------------------------
-; FDC_RECAL: recalibrate drive, if necessary
-;-------------------------------------------------------------------------
+;----------------------------------------------------------------------------;
+; Retrieve a parameter value from the DBT by index
+;----------------------------------------------------------------------------;
 ; Input:
-;	DL = drive to recalibrate
+;	AL = parameter index (bounds not checked)
 ; Output:
-;	CF if error
+;	AL = byte
 ;
-; AX clobbered
-;-------------------------------------------------------------------------
-FDC_RECAL PROC
-	PUSH	CX
-	CALL	FDC_MOTOR_ON			; ensure motor is on
-	MOV	CL, DL 				; move to CL for shift
-	AND	CL, 0011B 				; mask just drive number in CL
-	MOV	AL, 0001B 				; AL shift to FDC drive # bit
-	SHL	AL, CL 				; shift drive flags
-	TEST	AL, FD_CAL_ST 			; 0 means drive is uncalibrated
-	JNZ	FDC_RECAL_DONE 			; if drive is calibrated, exit
-	MOV	CH, AL 				; CH = drive bits
-	MOV	AL, FDC_CMD_RECAL 		; recalibrate command (07H)
-	CALL	FDC_SEND 				; send command, CF if error
-	JC	FDC_RECAL_ERR
-	MOV	AL, CL 				; AL = drive number
-	CALL	FDC_SEND 				; send command, CF if error
-	;JC	FDC_RECAL_ERR			; (necessary?)
-	CALL	FDC_WAIT_SENSE 			; wait for WIF, sense and get status in AL
-	JC	FDC_RECAL_ERR
-	XOR 	AL, FDC_ST0 <01B, 1>		; select abnormal term, seek complete
-	AND	AL, FDC_ST0 <01B, 1>		; ZF = abnormal term AND seek complete
-	STC						; presume failure
-	JZ	FDC_RECAL_ERR			; jump if error
-	OR	FD_CAL_ST, CH 			; mark drive as calibrated and CLC
-FDC_RECAL_ERR:
-FDC_RECAL_DONE:
-	POP	CX
+; Size: 14 bytes
+;----------------------------------------------------------------------------;
+INT_1E_PARAM PROC
+	PUSH	DS
+	PUSH	BX
+	XOR	BX, BX 				; BX = IVT
+	MOV	DS, BX 				; DS = IVT
+			ASSUME DS:_IVT
+	LDS	BX, IVT_1E				; DS:BX = INT 1EH in IVT
+	XLAT 						; AL = byte
+	POP	BX
+	POP	DS
+			ASSUME DS:NOTHING
 	RET
-FDC_RECAL ENDP
+INT_1E_PARAM ENDP
 
 INT_13 ENDP
 
+			IF POST_TEST_SEEK EQ 1
+;-------------------------------------------------------------------------
+; FDC_RECAL_SEEK_TEST: Reset, Recalibrate and Seek test a floppy drive at POST
+;-------------------------------------------------------------------------
+; Input:
+;	DL = drive # to test (0 = A:, 1 = B:, etc)
+; Output:
+;	CF if error
+; Clobbers: DI, SI, AX
 ;
-; 2 BYTES HERE
+; Size: 41 bytes
+;-------------------------------------------------------------------------
+FDC_RECAL_SEEK_TEST PROC
+	PUSH	CX
+	MOV	DI, OFFSET FD_LAST_OP		; DI = FD_LAST_OP to use INT 13h PROCs
+	CALL	FDC_RECAL				; Motor on, recal, DL = drive
+	JC	FDC_TEST_DRIVE_EXIT		; exit if error
+	JWB	FDC_TEST_DRIVE_DONE		; skip seek tests on warm boot
+	IO_DELAY					; short pause before seek, CX=0
+	MOV	SI, OFFSET FDC_SEEK_TRACKS
+FDC_TEST_DRIVE_SEEK:
+	LODS	BYTE PTR CS:[SI]			; next track to seek
+	MOV	CH, AL				; CH = track
+	PUSH	CX					; CX clobbered by FDC_SEEK
+	CALL	FDC_SEEK				; CH = track, DL = drive
+	POP	CX					; restore CX
+	JCXZ	FDC_TEST_DRIVE_DONE		; exit if track = 0
+	JNC	FDC_TEST_DRIVE_SEEK		; loop unless error
+FDC_TEST_DRIVE_DONE:
+			IF IS_TURBO
+	MOV	CH, 80H				; longer delay for faster PCs
+			ELSE
+	MOV	CH, 40H
+			ENDIF
+	IO_DELAY					; delay between drives
+FDC_TEST_DRIVE_EXIT:
+	POP	CX
+	RET
+
+;----------------------------------------------------------------------------;
+; Track seek pattern for POST seek test
+;
+FDC_SEEK_TRACKS	DB	38, 2, 19, 0		; tracks (0 is end)
+
+FDC_RECAL_SEEK_TEST ENDP
+			ENDIF
+
+;
+; 0 BYTES HERE
 ;
 BYTES_HERE	INT_1E
 
@@ -7436,10 +7483,13 @@ HIDE_CURSOR PROC
 	MOV	CX, 2000H			; hide cursor
 
 ;----------------------------------------------------------------------------;
-; Set Video Cursor
+; Set Video Cursor type
+;----------------------------------------------------------------------------;
+; Input:
+;	CX = cursor type
 ;----------------------------------------------------------------------------;
 SET_CURSOR PROC
-	PUSH	AX
+	PUSH	AX				; (not necessary)
 	MOV	AH, 1
 	INT	10H
 	POP	AX
@@ -10458,52 +10508,6 @@ SHOW_DISK_PARAMS ENDP
 
 			ENDIF
 
-			IF POST_TEST_SEEK EQ 1
-;-------------------------------------------------------------------------
-; FDC_RECAL_SEEK_TEST: Reset, Recalibrate and Seek test a floppy drive at POST
-;-------------------------------------------------------------------------
-; Input:
-;	DL = drive # to test (0 = A:, 1 = B:, etc)
-; Output:
-;	CF if error
-;	Clobbers SI, AX
-;
-; Size: 38 bytes
-;-------------------------------------------------------------------------
-FDC_RECAL_SEEK_TEST PROC
-	PUSH	CX
-	CALL	FDC_RECAL				; Motor on, recal, DL = drive
-	JC	FDC_TEST_DRIVE_EXIT		; exit if error
-	JWB	FDC_TEST_DRIVE_DONE		; skip seek tests on warm boot
-	IO_DELAY					; short pause before seek, CX=0
-	MOV	SI, OFFSET FDC_SEEK_TRACKS
-FDC_TEST_DRIVE_SEEK:
-	LODS	BYTE PTR CS:[SI]			; next track to seek
-	MOV	CH, AL				; CH = track
-	PUSH	CX					; CX clobbered by FDC_SEEK
-	CALL	FDC_SEEK				; CH = track, DL = drive
-	POP	CX					; restore CX
-	JCXZ	FDC_TEST_DRIVE_DONE		; exit if track = 0
-	JNC	FDC_TEST_DRIVE_SEEK		; loop unless error
-FDC_TEST_DRIVE_DONE:
-			IF IS_TURBO
-	MOV	CH, 80H				; longer delay for faster PCs
-			ELSE
-	MOV	CH, 40H
-			ENDIF
-	IO_DELAY					; delay between drives
-FDC_TEST_DRIVE_EXIT:
-	POP	CX
-	RET
-
-;----------------------------------------------------------------------------;
-; Track seek pattern for POST seek test
-;
-FDC_SEEK_TRACKS	DB	38, 2, 19, 0		; tracks (0 is end)
-
-FDC_RECAL_SEEK_TEST ENDP
-			ENDIF
-
 		IF RANDOM_TAGLINE EQ 1
 ;----------------------------------------------------------------------------;
 ; Display BIOS name and random tagline
@@ -10515,7 +10519,7 @@ HELLO_RAND_TAGLINE PROC
 	PRINT_SZ  TOP_BANNER		; display main banner
 	MOV	AX, BP			; get random bits from BP
 	POST_FLAG_CLR  GRND		; clear random bits from BP
-	AND	AX, MASK GRND		; mask only low 2 bits
+	AND	AX, MASK GRND		; only low 2 bits
 	XCHG	AX, SI			; SI = string offset table
 	SHL	SI, 1				; word align
 	MOV	SI, CS:TAGS[SI]		; SI = chosen tagline offset
@@ -10550,7 +10554,10 @@ HELLO_RAND_TAGLINE ENDP
 ;	AX = BIOS size in bytes
 ;	DI = Option ROM scan end segment
 ;	DL = ROM checksum value
+;
 ; Clobbers: BX, DX
+;
+; Size: 105 bytes
 ;----------------------------------------------------------------------------;
 ROM_SCAN_POST PROC
 	PUSH	AX						; must call-preserve these
@@ -10558,8 +10565,8 @@ ROM_SCAN_POST PROC
 	PUSHF
 
 ;----------------------------------------------------------------------------;
-; Ensure this is not scanning a display option ROM - could crash if ISR not
-; installed
+; Ensure this is not scanning a display option ROM - could crash if video
+; ISR not is installed
 ;
 	CMP	DI, 0C800H					; is video ROM scan?
 	JBE	ROM_SCAN_POST_EXIT			; exit if so
@@ -10575,7 +10582,7 @@ ROM_SCAN_POST PROC
 	POP	AX
 
 ;----------------------------------------------------------------------------;
-; Display Size or Checksum column
+; Display Size or Checksum error column
 ;
 	POPF							; restore checksum flag
 	PUSHF							; re-save flag
@@ -10590,10 +10597,10 @@ ROM_SCAN_POST PROC
 	PRINT_SZ	S_OPT_K				; display KB unit
 
 ROM_SCAN_POST_DONE:
-	POST_COL_END_NL					; end column
+	POST_COL_END_NL					; end column 2
 
 ROM_SCAN_POST_EXIT:
-	POPF
+	POPF							; restore checksum result flag
 	POP	SI
 	POP	AX
 	RET
@@ -10610,14 +10617,14 @@ ROM_SCAN_POST_CHK:
 
 S_OPT_ROM	DB	'ROM', 0
 S_OPT_SIZE	DB	'Size', 0
-S_OPT_CHK	DB	'Chk ', 0				; Checksum
+S_OPT_CHK	DB	'Chksum ', 0			; Checksum
 S_OPT_K	DB	' ', POST_K_UNIT, 0
 
 ROM_SCAN_POST ENDP
 		ENDIF
 
 ;
-; 274 BYTES HERE / (16 BYTES HERE 5150)
+; 312 BYTES HERE / (54 BYTES HERE 5150)
 ;
 BYTES_HERE	GFX_CHARSET
 
