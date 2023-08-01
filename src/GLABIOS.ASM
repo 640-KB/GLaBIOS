@@ -125,7 +125,7 @@ VER_NAME		EQU	'GLaBIOS'
 VER_NUM		EQU	'0.2.5'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'07/23/23' 		; must be MM/DD/YY format
+VER_DATE		EQU	'07/31/23' 		; must be MM/DD/YY format
 	ENDIF
 COPY_YEAR		EQU	'2022-23'		; Copyright year range
 
@@ -155,7 +155,7 @@ ARCH_TYPE		EQU	ARCH_TURBO		; Standard Turbo
 ;ARCH_SUB_TYPE	EQU	ARCH_M88		; micro_8088/NuXT (TYPE ARCH_FE2010)
 ;ARCH_SUB_TYPE	EQU	ARCH_MIST		; PCXT_MiSTer (TYPE ARCH_EMU)
 ;ARCH_SUB_TYPE	EQU	ARCH_MARTY		; MartyPC Emulator (TYPE ARCH_TURBO)
-;ARCH_SUB_TYPE	EQU	ARCH_VEN888		; Vendex 888-XT
+;ARCH_SUB_TYPE	EQU	ARCH_VEN888		; Vendex 888-XT (TYPE ARCH_TURBO)
 	ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -193,7 +193,7 @@ CGA_SNOW_REMOVE	=	3		; 0: Snow, Normal Flashing, Fastest
 POST_CLS		=	0		; clear screen after POST
 POST_GLADOS		=	0		; say "Starting GLaDOS..." on boot
 POST_HD_PARMS	=	1		; show hard drive parameters on POST
-POST_OPT_ROM	=	0		; show option ROM address and loading info
+POST_OPT_ROM	=	1		; show option ROM address and loading info
 POST_THEME		=	1		; color theme for POST screen (see below)
 POST_VIDEO_TYPE	=	1		; show the video adapter type on POST
 POST_WARM_COLD	=	1		; show boot WARM or COLD
@@ -230,6 +230,7 @@ RAM_TEST_LONG	=	1		; Long RAM test on cold boot
 BASIC_ROM		=	1		; BASIC ROM support at 0F600h
 OPT_ROM_END		=	0FE00H	; Option ROM scan ending address
 FDC_ENABLE		=	1		; Enable INT 13h floppy support
+FDC_IPL_SW		=	0		; Use IPL switch to enable/disable floppy
 FDC_HLT_WAIT	=	1		; Halt CPU during FD access
 						;   Some chipsets (TD3300A known affected)
 						;   hang during floppy access if this is
@@ -281,6 +282,7 @@ ARCH_SUB_TYPE	EQU	0			; make sure this is defined
 ARCH_ID		=	0FFH			; 0xFF=5150
 CASSETTE		=	1			; enable INT 13h cassette
 MBR_CHECK		=	0			; disable MBR check for DOS 1.x
+;FDC_IPL_SW		=	1			; Use IPL SW1 to floppy installed
 TURBO_TYPE		=	TURBO_NONE
 	ENDIF
 
@@ -293,6 +295,7 @@ TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
 	ENDIF
 	IF ARCH_TYPE EQ ARCH_5160
 TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
+FDC_IPL_SW		=	1			; Use IPL SW1 to floppy installed
 	ENDIF
 
 	IF ARCH_TYPE EQ ARCH_TD3300
@@ -360,7 +363,7 @@ POST_TEST_DMA	=	0			; disable DMA Register Test (no DMA)
 POST_TEST_KB	=	0			; disable PKEY and PKI errors
 POST_TEST_PIT_1	=	0			; disable Timer 1 Test (no DRAM)
 POST_TEST_PIC_REG	=	0			; disable PIC Register Test
-SW1_VID		=	VID_ROM		; SW1 5/6 Video Type
+SW1_VID		=	00b			; SW1 5/6 Video Type (EGA/VGA)
 			IF FDC_ENABLE EQ 1
 SW1_FLP		=	01b			; SW1 7/8 Max # of floppy drives (0-3)
 FD_AUTO_DETECT	=	1			; auto-detect number of floppy drives
@@ -390,7 +393,7 @@ POST_TEST_FD	=	0			; disable Floppy Drive Seek Test
 							; disable Floppy Head Settle Delay
 RAM_TEST_LONG	=	0			; disable long RAM test
 TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
-MAX_RAM_AUTO	=	1			; select max RAM from video setting
+MAX_RAM_AUTO	=	1			; select max RAM from video switch
 
 	IF ARCH_SUB_TYPE EQ ARCH_MIST
 ;----------------------------------------------------------------------------;
@@ -406,9 +409,10 @@ TURBO_TYPE		=	TURBO_STD		; enable Turbo features
 ; Additional Configuration for MartyPC emulator
 ;
 MAX_RAM 		=	MAX_RAM_CGA		; 736 KB Max detectable low RAM
+MAX_RAM_AUTO	=	1			; select max RAM from video switch
 CASSETTE		=	0			; use all features on 5150
 CGA_SNOW_REMOVE	=	0			; disable CGA snow removal
-;RAM_TEST_LONG	=	0			; disable long RAM test
+RAM_TEST_LONG	=	0			; disable long RAM test
 	ENDIF
 
 	IF ARCH_SUB_TYPE EQ ARCH_VEN888
@@ -3979,6 +3983,10 @@ DMA_STATUS_OK:
 FDC_POST PROC
 	XOR	AX, AX 				; AH = reset (0)
 	CWD						; DL = start at drive 0
+			IF FDC_IPL_SW EQ 1
+	TEST_EFLAG	IPL				; IPL switch (floppy installed) set?
+	JZ	FDC_POST_TESTS_COL		; if not, skip floppy init/test
+			ENDIF
 	INT	13H					; Reset the controller
 	JC	FDC_POST_CT_ERR			; jump if controller reset failed
 	GET_EFLAG  FLP				; AX = # of floppy drives (0 based)
@@ -10530,11 +10538,10 @@ HELLO_RAND_TAGLINE PROC
 ;----------------------------------------------------------------------------;
 ; Three additional random taglines
 ;
-TAG1		DB	'An Energy Star Foe', 0
+TAG1		DB	'Ready to believe you', 0
 TAG2		DB	'Abort, Retry, Succeed', 0
 TAG3		DB	'When life gives you lemonade', 0
-;		DB	'Smoke Edition'
-;		DB	'Reimagined without Ray Tracing', 0
+;		DB	'An Energy Star Foe', 0
 ;		DB	'Now 97% asbestos-free', 0
 ;		DB	'Ought to be enough for anybody', 0
 
