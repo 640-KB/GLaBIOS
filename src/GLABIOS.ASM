@@ -125,7 +125,7 @@ VER_NAME		EQU	'GLaBIOS'
 VER_NUM		EQU	'0.2.5'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'07/31/23' 		; must be MM/DD/YY format
+VER_DATE		EQU	'08/23/23' 		; must be MM/DD/YY format
 	ENDIF
 COPY_YEAR		EQU	'2022-23'		; Copyright year range
 
@@ -227,6 +227,7 @@ DRAM_REFRESH	=	1		; 1=Use standard DMA DRAM refresh
 						; 0=Disable refresh (use only with SRAM!)
 RAM_PARITY		=	1		; Enable RAM parity checking
 RAM_TEST_LONG	=	1		; Long RAM test on cold boot
+RAM_DIGITS		=	3		; Number of zero-padded digits for RAM (3 or 4)
 BASIC_ROM		=	1		; BASIC ROM support at 0F600h
 OPT_ROM_END		=	0FE00H	; Option ROM scan ending address
 FDC_ENABLE		=	1		; Enable INT 13h floppy support
@@ -303,9 +304,14 @@ FDC_IPL_SW		=	1			; Use IPL SW1 to floppy installed
 ; Configuration for TD3300A
 ;
 BASIC_ROM		= 	0			; disable to free code space
-FDC_HLT_WAIT	=	0			; seems to cause issues on TD3300A
+FDC_HLT_WAIT	=	0			; halting CPU on FDC and KB wait
+KB_HLT_WAIT		=	0			;  seems to cause issues on TD3300A
 TURBO_TYPE		=	TURBO_STD		; always use Standard
 TURBO_SWITCH	=	1			; boot under hardware Turbo control
+TD_HIMEM		=	1			; clear and display upper memory bank
+		IF TD_HIMEM EQ 1
+RAM_DIGITS		=	4			; display RAM as four digits
+		ENDIF
 	ENDIF
 
 	IF ARCH_TYPE EQ ARCH_UM82
@@ -646,7 +652,7 @@ POST_CARD_PORT	EQU	80H			; can be 60H, 80H, 300H, 313H
 ; TD3300A (ST-xx/UNIQUE/Auva) Control Registers (90h)
 TD_WS			EQU	70H			; RAM, I/O wait state control
 TD_TURBO		EQU	90H			; Write 2 for Turbo, 3 for Normal
-TD_UMA		EQU	0E0H			; Upper Memory bank switch
+TD_MEM		EQU	0E0H			; Memory bank switch
 
 ; UM82C088 Speed / Status registers
 UM82_SPEED		EQU	0C0H			; write any value to toggle speed mode
@@ -1396,17 +1402,19 @@ MDA_CH_ATTR	RECORD	MDBK:1,MDBG:3,MDIN:1,MDFG:3=111B
 ;----------------------------------------------------------------------------;
 PPI_CR RECORD	PPEN:1=1,PPAM:2=00b,PPAD:1=1,PPCU:1=1,PPBM:1,PPBD:1,PPCL:1=1
 
+			IF ARCH_TYPE EQ ARCH_TD3300
 ;----------------------------------------------------------------------------;
 ; TD3300A Wait State Config Register (70H)
 ;----------------------------------------------------------------------------;
 ; 84218421
 ; 76 	    |			- TDWSI	Slot I/O  (# of wait states 0-3)
-;   54    |			- TDWSR	Slot RAM
-;     32  |			- TDWIO	Board I/O
+;   54    |			- TDWSR	Slot RAM  (# of wait states 0-3)
+;     32  |			- TDWIO	Board I/O (# of wait states 0-3)
 ;       1 |			- TDWRA	Board RAM (# of wait states 0-1)
-;        0| 		- TDWRO	Board ROM
+;        0| 		- TDWRO	Board ROM (# of wait states 0-1)
 ;----------------------------------------------------------------------------;
-TD_WS_CR	RECORD	TDWSI:2,TDWSR:2,TDWIO:2,TDWRA:1,TDWRO:1
+TD_WS_CR	RECORD	TDWSI:2=3,TDWSR:2=3,TDWIO:2=1,TDWRA:1=0,TDWRO:1=1
+;TD_WS_CR	RECORD	TDWSI:2=2,TDWSR:2=1,TDWIO:2=0,TDWRA:1=0,TDWRO:1=1
 
 ;----------------------------------------------------------------------------;
 ; TD3300A Speed (Turbo/Normal) Register (90H)
@@ -1415,7 +1423,6 @@ TD_WS_CR	RECORD	TDWSI:2,TDWSR:2,TDWIO:2,TDWRA:1,TDWRO:1
 ;       1 |			- TDSH	0=use hardware switch, 1=use bit 0 (TDSS)
 ;        0| 		- TDSS	if TDSH=1: 1=4.77, 0=turbo
 ;----------------------------------------------------------------------------;
-			IF ARCH_TYPE EQ ARCH_TD3300
 			IF TURBO_SWITCH EQ 1
 TD_TURBO_CR	RECORD	TDSX:6,TDSH:1=0,TDSS:1	; hardware switch enabled
 			ELSE
@@ -1429,7 +1436,7 @@ TD_TURBO_CR	RECORD	TDSX:6,TDSH:1=1,TDSS:1	; hardware switch disabled
 ; 7654321 |			- TDUX	Unused
 ;        0| 		- TDUB	map 2000h-F000h: 0=lower bank,1=upper bank
 ;----------------------------------------------------------------------------;
-TD_UMA_CR	RECORD	TDUX:7,TDUB:1
+TD_MEM_CR	RECORD	TDUX:7,TDUB:1
 
 			IF ARCH_TYPE EQ ARCH_UM82
 ;----------------------------------------------------------------------------;
@@ -1699,6 +1706,50 @@ _DONE:
 	IO_DELAY_SHORT
 		ENDIF
 	LOOP	_DONE					; long delay for I/O
+		ENDM
+
+;----------------------------------------------------------------------------;
+; Compare an equipment flag
+;----------------------------------------------------------------------------;
+; Input:
+;	FLAG = field name from EQUIP_FLAGS RECORD
+;	FVAL = value to compare
+;	SET_BDA = if defined, saves CX and sets DS = BDA
+;		otherwise assumes DS = BDA and clobbers CX
+; Output: AX = flag value
+;
+; Note: flags must not cross byte boundary (which they don't)
+;----------------------------------------------------------------------------;
+CMP_EFLAG	MACRO	FLAG, FVAL, SET_BDA
+		LOCAL FLAG_MASK, FLAG_BIT, FLAG_MEM
+			IFNB <SET_BDA>
+	PUSH	CX					; save CX
+	PUSH	DS
+	MOV	CX, SEG _BDA			; DS = BDA
+	MOV	DS, CX
+			ENDIF
+
+;----------------------------------------------------------------------------;
+; Shift if flag is in high byte to low for byte operations
+;
+			IF FLAG LT 8		; is in low byte?
+FLAG_MASK	= MASK FLAG
+FLAG_BIT	= FLAG AND 0111B
+FLAG_MEM	= EQUIP_FLAGS[0]			; low BDA flags byte
+			ELSE				; is in high byte
+FLAG_MASK	= HIGH MASK FLAG
+FLAG_BIT	= (FLAG - 8) AND 0111B
+FLAG_MEM	= EQUIP_FLAGS[1]			; high BDA flags byte
+			ENDIF
+
+	MOV	AL, BYTE PTR FLAG_MEM
+	AND	AL, FLAG_MASK
+	CMP	AL, FVAL SHL FLAG_BIT
+
+			IFNB <SET_BDA>
+	POP	DS
+	POP	CX
+			ENDIF
 		ENDM
 
 ;----------------------------------------------------------------------------;
@@ -2319,13 +2370,13 @@ EKB_FLAGS2		KBFLAGS4 <>			; 97H  Keyboard LED flags (Enhanced)
 		ORG	0A0H
 RTC_WAIT		DB	?			; A0H  RTC wait function flag
 		ORG	0ACH				; ACH-B3H "Reserved" (can be used?)
-		ORG	0B0H
-RTC_DATA		DW	?			; B0H  GLaTICK address and RTC type
+		ORG	0B0H				; B0H-B1H (used by Tandy for keyboard)
 		ORG	0E8H				; E8H-EFH "Reserved" (can be used?)
 CURSOR_DEFAULT	DW	?			; E8H  Power on cursor bottom:top scan line (for Turbo)
 VID_MEM_SEG		DW	?			; EAH	 Video mem segment (MDA = B000, CGA = B800)
 FE2010_CONF_REG	DB	?			; ECH  FE2010A Config Reg (63H) (alternate)
-;			DB	2 DUP(?)
+			DB	?			; EDH
+RTC_DATA		DW	?			; EEH  GLaTICK address and RTC type
 _BDA		ENDS
 
 ;----------------------------------------------------------------------------;
@@ -2341,12 +2392,6 @@ PTRSCN_ST		DB 	?			; 00H  Print screen status
 DOS_FD_PARAM	DB	14 DUP(?)		; 22H  Floppy drive parameter table
 	 		DB	4  DUP(?)		; 30H  Mode command
 _DOS_DAT	ENDS
-
-;----------------------------------------------------------------------------;
-; 0070:0000 - "Kernel" of PC-DOS
-;----------------------------------------------------------------------------;
-_DOS_SEG	SEGMENT AT 70H
-_DOS_SEG	ENDS
 
 ;----------------------------------------------------------------------------;
 ; 0000:7C00 - IPL / MBR / Boot Block Segment
@@ -2488,7 +2533,7 @@ BYTES_HERE	BOOT
 ; http://philipstorr.id.au/pcbook/book1/post.htm
 ;----------------------------------------------------------------------------;
 		ORG	0E05BH
-BOOT 	PROC	NEAR
+BOOT	PROC	NEAR
 	CLI 					; disable CPU interrupts
 	CLD					; clear direction flag
 
@@ -2626,7 +2671,29 @@ RESET_PPI:
 	OUT	PPI_B, AL			; send to 8255 Port B
 
 			IF ARCH_TYPE EQ ARCH_TD3300
-	IN	AL, TD_TURBO		; read current register
+;----------------------------------------------------------------------------;
+; Set up TD3300 Turbo, wait states and bank switching. If TD_HIMEM, it will
+; be set later.
+;
+				IF TD_HIMEM EQ 0
+	XCHG	AX, SI			; AX = 0
+	OUT	TD_MEM, AL			; set TD3300 memory bank 0
+				ENDIF
+
+;----------------------------------------------------------------------------;
+; This sequence is the "magic incantation" to set the TD3300 wait state. It is
+; probably not a good idea to turn on interrupts here, nor is it to set this
+; in the BIOS. Code left in for reference.
+;
+;	CLI					; set up wait states
+;	IN	AL, TD_WS			; read and throw away
+;	MOV	AL, TD_WS_CR		; set new default wait states
+;	OUT	TD_WS, AL			; write to register
+;	STI					; write two STIs for TD3300 to accept
+;	STI
+;	CLI
+
+	IN	AL, TD_TURBO		; read current turbo register
 				IF BOOT_SPEED EQ BOOT_TURBO
 	MOV	AL, TD_TURBO_CR<,,0>	; switch to turbo
 				ELSE
@@ -3523,6 +3590,50 @@ TOGGLE_TURBO_DONE:
 TOGGLE_TURBO ENDP
 			ENDIF				; IF IS_TURBO
 
+			IF ARCH_TYPE EQ ARCH_TD3300
+			IF TD_HIMEM EQ 1
+;----------------------------------------------------------------------------;
+; TD3300A: Set up, check and clear upper memory bank
+;----------------------------------------------------------------------------;
+; This is called twice from DETECT_MEMORY. Once after completion of the
+; low memory, and once after the completion of the TD3300A upper bank.
+; SI is used to determine which call is being made, so it must be preserved
+; between calls.
+;
+; Input: (required)
+;	AX = 0
+;	SI = on first call: sign bit set (from POST_MEMORY string offset)
+; Size: 32 bytes
+;----------------------------------------------------------------------------;
+TD3300_MEM_CLEAR PROC NEAR
+	OUT	TD_MEM, AL				; switch to lower bank (AL=0)
+	TEST	SI, SI				; done clearing TD high memory?
+	JS	TD3300_MEM_CLEAR_HI		; if SI sign bit, clear high bank
+TD_DONE_ZERO_ALL_RAM:
+	JMP	NEAR PTR TD_MEM_CLEAR_DONE	; return, RAM test complete
+
+;----------------------------------------------------------------------------;
+; Only clear RAM if DIP switches set for 1 MB
+;
+TD3300_MEM_CLEAR_HI:
+	XCHG	AX, SI				; save AX
+	CMP_EFLAG  MBRAM, 11B			; ZF if DIP set for 1MB
+	CBW						; AH = 0 (clear SI sign bit)
+	XCHG	AX, SI				; restore AX, SI high bit = 0
+	JNE	TD_DONE_ZERO_ALL_RAM		; if not, skip
+
+;----------------------------------------------------------------------------;
+; Enable bank 1, reset start address to 2000H and end address to 8000H
+;
+	INC	AX					; TD_MEM_CR <,1>
+	OUT	TD_MEM, AL				; switch to upper bank
+	MOV	AX, 128 SHL 6			; restart at segment 2000H (128K)
+	MOV	DH, HIGH 512 SHL 6		; end at segment 8000H (512K)
+	JMP	NEAR PTR ZERO_ALL_RAM_1		; continue RAM test
+TD3300_MEM_CLEAR ENDP
+			ENDIF
+			ENDIF
+
 			IF ARCH_TYPE EQ ARCH_FE2010
 ;----------------------------------------------------------------------------;
 ; Initial Set up Memory
@@ -3692,7 +3803,8 @@ INT_02_NMI_PAR:
 	MOV	SI, OFFSET NMI_ERR_PAR 		; Parity error string
 	TEST	AL, MASK PCPE			; parity error?
 	JNZ	INT_02_NMI_HALT
-	MOV	SI, OFFSET NMI_ERR_IO 		; otherwise is I/O error
+	DEC	SI					; otherwise is I/O error
+	DEC	SI					; decrement to NMI_ERR_IO
 INT_02_NMI_HALT:
 	XOR	AX, AX				; reset video, clear screen
 	OUT	NMI_R0, AL				; mask the unmaskable
@@ -3702,7 +3814,9 @@ INT_02_NMI_HALT:
 INT_02_LOOP:
 	CLI						; ensure interrupts off
 	HLT						; halt CPU
-	JMP	SHORT INT_02_LOOP
+			IF ARCH_TYPE EQ ARCH_TD3300
+	JMP	SHORT INT_02_LOOP			; TD3300A seems to have a
+			ENDIF				;  "halting problem"
 INT_02 ENDP
 
 INT_02_AFTER:
@@ -4215,8 +4329,6 @@ INT_18 PROC
 		ASSUME DS:_BDA_ABS
 	PRINT_SZ  BOOT_FAIL			; print boot failure string
 	XOR	AX, AX				; AH = 0 (wait for key)
-	MOV	DS, AX				; DS = 0000
-	MOV	WARM_FLAG_ABS, AX			; do a cold boot
 	INT	16H					; wait for key press
 	JMP	BOOT					; reboot
 INT_18 ENDP
@@ -4262,8 +4374,11 @@ POST_HD		DB	':',    0			; HD size letter display
 			DB	' ', POST_M_UNIT		;  MB or MiB units display
 			DB	0				;  *must be after POST_HD
 POST_MEMORY		DB	'RAM',  0			; RAM Memory test
+					IF RAM_DIGITS GT 3
+			DB	'0'				; add extra 0 to RAM count
+					ENDIF
 			DB	'000 ', POST_K_UNIT	;  and KB or KiB
-			DB	' OK',  0			;  *must be after POST_MEMORY
+			DB	' OK',  0
 POST_V20		DB	'V20'
 					IF ARCH_TYPE EQ ARCH_EHB
 			DB	'/V40'			; could be a V40 on EHB
@@ -4449,7 +4564,7 @@ DETECT_MEMORY PROC
 BLOCK_LOOP:
 	CALL	MEM_ADDR_TEST			; address test on 16KB RAM block at ES
 	JNZ	BLOCK_LOOP_DONE			; exit loop if test failed
-	ADD	DH, 4					; add 400h paras (4000h bytes)
+	ADD	DH, HIGH 400H			; add 400h paras (4000h bytes)
 	MOV	ES, DX
 	LOOP	BLOCK_LOOP				; loop until MAX_RAM
 BLOCK_LOOP_DONE:
@@ -4488,6 +4603,10 @@ ZERO_ALL_RAM:
 	ADD	BX, 16				; increment Memory count value
 	CMP	BX, 100				; CF if two digit number
 	ADC	AL, POST_COL_VT			; space inner column for 2 or 3 digits
+			IF RAM_DIGITS GT 3
+	CMP	BX, 1000				; CF if three digit number
+	ADC	AL, 0					; space inner column for 3 or 4 digits
+			ENDIF
 	CALL	MOVE_COL				; move to start of inner column
 	MOV	AX, BX				; move RAM size to AX for display
 	PUSH	BX					; save RAM size
@@ -4497,6 +4616,7 @@ ZERO_ALL_RAM:
 	ADD	AX, 16 * 1024 SHR 4		; move to next 16K segment/block
 	CMP	AX, DX				; is last segment of RAM?
 	JNB	DONE_ZERO_ALL_RAM			; exit if end
+ZERO_ALL_RAM_1:
 	MOV	ES, AX				; ES = last segment tested
 
 			IF RAM_TEST_LONG EQ 1
@@ -4529,6 +4649,20 @@ ZERO_ALL_START:
 	REP	STOSW 				; write zero to next 16KB
 	JMP	SHORT ZERO_ALL_RAM
 DONE_ZERO_ALL_RAM:
+
+			IF ARCH_TYPE EQ ARCH_TD3300
+			IF TD_HIMEM EQ 1
+;----------------------------------------------------------------------------;
+; TD3300A: Check and clear upper memory bank
+;----------------------------------------------------------------------------;
+	JMP	TD3300_MEM_CLEAR			; handle bank clearing
+TD_MEM_CLEAR_DONE:
+			ENDIF
+			ENDIF
+
+;----------------------------------------------------------------------------;
+; Done with DETECT_MEMORY
+;
 	POP	DS
 	POP	ES
 	RET
@@ -4707,10 +4841,10 @@ POST_SYS_VIDEO PROC
 	MOV	AX, DS				; save for next compare
 	POP	DS					; restore DS
 			ASSUME DS:_BDA
-	JNE	CHECK_VGA				; jump to VGA check if not
+	JNE	CHECK_VGA				; if not, jump to VGA check
 	MOV	BX, CS				; AX = BIOS code segment
-	CMP	AX, BX				; is segment BIOS?
-	JNE	CHECK_VGA
+	CMP	AX, BX				; is BIOS segment?
+	JNE	CHECK_VGA				; if not, jump to VGA check
 
 ;----------------------------------------------------------------------------;
 ; Read BDA for video type
@@ -9681,6 +9815,9 @@ NMI_RESET PROC
 	RET
 NMI_RESET ENDP
 
+;----------------------------------------------------------------------------;
+; NMI strings - these must be contiguous
+;
 NMI_ERR_IO	DB	'IO'				; NMI I/O Error string
 NMI_ERR_PAR	DB	' PARITY', 0		; NMI Parity Error
 
