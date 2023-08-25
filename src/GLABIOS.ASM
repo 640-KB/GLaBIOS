@@ -681,7 +681,7 @@ CGA_IDX		EQU	03D4H			; CGA Mode Select Register
 CGA_DATA		EQU	03D5H			; CGA Mode Data Register
 CGA_CTRL		EQU	03D8H			; CGA Mode Control Register
 CGA_STAT		EQU	03DAH			; CGA Status Register (R)
-CGA_PENRST		EQU	03DBH			; CGA light pen strobe reset (W)
+CGA_PEN_RST		EQU	03DBH			; CGA light pen strobe reset (W)
 
 ; Serial (COM) ports
 COM1_DATA		EQU	03F8H 		; 03F8H: TX/RX Buffer, Divisor LSB (RW)
@@ -10790,7 +10790,7 @@ ROM_SCAN_POST ENDP
 ;	DH = row (0-24)
 ;	DL = column (0-79 or 0-79 mode dependent)
 ;
-; Size: 127 bytes
+; Size: 128 bytes
 ;
 ; Thx to @Raffzahn for "clean room" specs.
 ;----------------------------------------------------------------------------;
@@ -10803,7 +10803,7 @@ INT_10_4 PROC
 	MOV	DX, VID_PORT		; 6845 I/O port address (3x4h)
 	ADD	DX, CGA_STAT-CGA_IDX	; DX = 3xAh status port
 	IN	AL, DX			; read Status Register
-	CBW					; AH = 0 (switch not triggered)
+	XOR	AH, AH			; AH = 0 (switch not triggered)
 	TEST	AL, MASK VSPE		; light pen on? (/0100b) (0=on, 1=off)
 	JNZ	INT_10_4_RESET		; if light pen off, reset latch and exit
 	TEST	AL, MASK VSPT		; light pen trigger set? (0010b)
@@ -10817,10 +10817,10 @@ INT_10_4 PROC
 	MOV	AL, 10h			; light pen index (MSB)
 	OUT	DX, AL			; select index
 	INC	DX				; DX = 3x5h data port
-	IN	AL, DX			; read LSB
+	IN	AL, DX			; read MSB
 	MOV	AH, AL			; save MSB
 	DEC	DX				; DX = 3x4h index port
-	MOV	AL, 11h			; light pen index (MSB)
+	MOV	AL, 11h			; light pen index (LSB)
 	OUT	DX, AL			; select index
 	INC	DX				; DX = 3x5h data port
 	IN	AL, DX			; read LSB
@@ -10835,9 +10835,9 @@ INT_10_4 PROC
 ;
 	MOV	BX, VID_SEG			; BX = start offset of video memory
 	SHR	BX, 1				; byte align index
-	ADD	BX, 3				; BX = default adjusted offset
+	ADD	BX, 3				; BX = minimum calibration factor
 	XCHG	AX, CX			; save AX
-	CALL	INT_10_IS_TXT		; ZF=1 if text, ZF=0 if gfx, CF if MDA
+	CALL	INT_10_IS_TXT		; ZF=1 if text, ZF=0 if gfx, CF=1 if MDA
 	LAHF					; save video type flags for later
 	JNZ	INT_10_4_CAL_2		; skip if modes 4,5,6
 	JC	INT_10_4_CAL_1		; +1 if MDA mode 7
@@ -10849,7 +10849,7 @@ INT_10_4_CAL_1:
 INT_10_4_CAL_2:
 	SUB	CX, BX			; CX = calibrated memory regen offset
 	JAE	INT_10_4_CAL_DONE		; is result < 0?
-	XOR	CX, CX			; floor is 0
+	XOR	CX, CX			; if so, use base offset 0000
 INT_10_4_CAL_DONE:
 	SAHF					; ZF=1 if text, ZF=0 if gfx
 	XCHG	AX, CX			; restore AX, CL = video mode
@@ -10859,28 +10859,27 @@ INT_10_4_CAL_DONE:
 ; Calculate output for Text mode
 ;
 ; Input:
-;	AX = adjusted memory offset
+;	AX = calibrated memory offset
 ; Output:
 ;	BX = pixel column (0-319 or 0-639)
 ;	CH = raster line (0-199)
 ;	DI = (value for DX) DH = row (0-24), DL = column (0-79)
 ;----------------------------------------------------------------------------;
 ; Formula:
-;	DX = adjusted memory offset (AX) DIV video columns (DH = row, DL = col)
+;	DX = calibrated memory offset (AX) DIV video columns (DH=row, DL=col)
 ;	BX = col (DL) * 8
 ;	CH = row (DH) * 8
 ;----------------------------------------------------------------------------;
 INT_10_4_TXT:
 	MOV	CL, 3				; shift counter 3 (for * 8)
 	DIV	BYTE PTR VID_COLS		; divide value by char/line
-						; AL = row, AH = col/8
-	XCHG	AH, AL			; swap bytes for ease of use
+	XCHG	AH, AL			; AH = row, AL = col
 	MOV	DI, AX			; DH = row, DL = col
 	MOV	CH, AH			; CH = row
 	SHL	CH, CL			; CH = raster line (col * 8)
 	CBW					; AH = 0, AL = col
 	SHL	AX, CL			; AX = col * 8
-	XCHG	AX, BX			; BX = pixel col
+	XCHG	AX, BX			; BX = pixel column
 
 ;----------------------------------------------------------------------------;
 ; DONE: Clear latch and return with AH = 1
@@ -10892,7 +10891,7 @@ INT_10_4_DONE:
 ; Light pen strobe reset
 ;
 INT_10_4_RESET:
-	ADD	DX, CGA_PENRST-CGA_DATA	; pen latch register
+	ADD	DX, CGA_PEN_RST-CGA_DATA	; pen latch register
 	OUT	DX, AL			; reset light pen latch
 
 INT_10_4_EXIT:
@@ -10903,7 +10902,7 @@ INT_10_4_EXIT:
 ; Calculate output for GFX mode
 ;
 ; Input:
-;	AX = adjusted memory offset
+;	AX = calibrated memory offset
 ;	CL = video mode
 ; Output:
 ;	BX = pixel column (0-319 or 0-639)
@@ -10911,7 +10910,7 @@ INT_10_4_EXIT:
 ;	DI = (value for DX) DH = row (0-24), DL = column (0-79)
 ;----------------------------------------------------------------------------;
 ; Formula:
-; 	DX = adjusted memory offset (AX) DIV 40 (DH = row, DL = col)
+; 	DX = calibrated memory offset (AX) DIV 40 (DH=row, DL=col)
 ;	CH = row (DH) * 2
 ;	DH = row (DH) / 4
 ;	if ( high res ):
