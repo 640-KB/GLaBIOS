@@ -4,7 +4,7 @@
 ;----------------------------------------------------------------------------;
 ; GLaBIOS (General Libraries and Basic Input Output System)
 ;
-; An scratch-built, open-source 8088 PC/clone BIOS alternative.
+; A scratch-built, open-source 8088 PC/clone BIOS alternative.
 ;
 ; Copyright (c) 2022-2023, 640KB and contributors
 ;
@@ -254,6 +254,7 @@ INT_19_BOOT_HD	=	0		; Try IPL to floppy then hard drive (80h)
 SW1_FLP		=	MASK FLP	; Default max number of floppy drives
 MDA_ATTR		=	1		; Display MDA character attributes
 						; 2=all, 1=intensity only, 0=filter all
+LIGHT_PEN		=	1		; INT 10h,4 light pen support
 
 ;----------------------------------------------------------------------------;
 ; END Configurable Build Options
@@ -451,6 +452,7 @@ BOOT_SPEED		EQU	BOOT_NORMAL
 POST_HD_PARMS	=	0			; disable HD size display
 RANDOM_TAGLINE	=	0			; disable random tagline
 POST_OPT_ROM	=	0			; display POST option ROM display
+LIGHT_PEN		=	0			; disable light pen
 	ENDIF
 
 	IF POST_HD_CHECK EQ 0
@@ -674,8 +676,12 @@ HDC_STAT		EQU	0324H			; disk attention/status
 ; Video 6845 CRT Controller
 MDA_CTRL		EQU	03B8H			; MDA CRT Control Port 1
 MDA_STAT		EQU	03BAH			; MDA Status Register
-CGA_CTRL		EQU	03D8H			; CGA Mode Select Register
-CGA_STAT		EQU	03DAH			; CGA Status Register
+MDA_PEN_RST		EQU	03BBH			; CGA light pen strobe reset
+CGA_IDX		EQU	03D4H			; CGA Mode Select Register
+CGA_DATA		EQU	03D5H			; CGA Mode Data Register
+CGA_CTRL		EQU	03D8H			; CGA Mode Control Register
+CGA_STAT		EQU	03DAH			; CGA Status Register (R)
+CGA_PENRST		EQU	03DBH			; CGA light pen strobe reset (W)
 
 ; Serial (COM) ports
 COM1_DATA		EQU	03F8H 		; 03F8H: TX/RX Buffer, Divisor LSB (RW)
@@ -7656,7 +7662,11 @@ INT_10_JMP LABEL WORD
 	DW	OFFSET INT_10_1		; AH = 1 - Set cursor type
 	DW	OFFSET INT_10_2		; AH = 2 - Set cursor position
 	DW	OFFSET INT_10_3		; AH = 3 - Read cursor position
+			IF LIGHT_PEN EQ 1
+	DW	OFFSET INT_10_4		; AH = 4 - Read light pen
+			ELSE
 	DW	OFFSET INT_10_RET		; AH = 4 - Read light pen (not supported)
+			ENDIF
 	DW	OFFSET INT_10_5		; AH = 5 - Select active display page
 	DW	OFFSET INT_10_6		; AH = 6 - Scroll active page up
 	DW	OFFSET INT_10_7		; AH = 7 - Scroll active page down
@@ -10669,8 +10679,8 @@ HELLO_RAND_TAGLINE PROC
 	SHL	SI, 1				; word align
 	MOV	SI, CS:TAGS[SI]		; SI = chosen tagline offset
 	PRINT_SZ  SI			; display tagline
-	PRINTLN_SZ  COPYRIGHT		; display copyright message
-	RET
+	MOV	SI, OFFSET COPYRIGHT	; display copyright message
+	JMP	OUTLN_SZ			; write and RET
 
 ;----------------------------------------------------------------------------;
 ; Three additional random taglines
@@ -10765,6 +10775,174 @@ S_OPT_CHK	DB	'Chksum ', 0			; Checksum
 S_OPT_K	DB	' ', POST_K_UNIT, 0
 
 ROM_SCAN_POST ENDP
+		ENDIF
+
+		IF LIGHT_PEN EQ 1
+;----------------------------------------------------------------------------;
+; INT 10,4 - Read Light Pen Position
+;----------------------------------------------------------------------------;
+; Return:
+;	AH = 0 light pen switch not triggered
+;	   = 1 light pen triggered
+;	BX = pixel column (0-319 or 0-639, mode dependent)
+;	CH = raster line (0-199) (CGA and EGA modes 4, 5 and 6)
+;	CX = raster line (EGA modes except 4, 5 and 6)
+;	DH = row (0-24)
+;	DL = column (0-79 or 0-79 mode dependent)
+;
+; Size: 127 bytes
+;
+; Thx to @Raffzahn for "clean room" specs.
+;----------------------------------------------------------------------------;
+; https://nerdlypleasures.blogspot.com/2016/05/ibms-cga-hardware-explained.html
+; https://www.reenigne.org/blog/cga-reading-the-current-beam-position-with-the-lightpen-latch/
+; https://scalibq.wordpress.com/2015/04/19/8088-mph-sprites-where-were-going-we-dont-need-sprites/
+;----------------------------------------------------------------------------;
+INT_10_4 PROC
+	MOV	DI, DX			; save caller DX
+	MOV	DX, VID_PORT		; 6845 I/O port address (3x4h)
+	ADD	DX, CGA_STAT-CGA_IDX	; DX = 3xAh status port
+	IN	AL, DX			; read Status Register
+	CBW					; AH = 0 (switch not triggered)
+	TEST	AL, MASK VSPE		; light pen on? (/0100b) (0=on, 1=off)
+	JNZ	INT_10_4_RESET		; if light pen off, reset latch and exit
+	TEST	AL, MASK VSPT		; light pen trigger set? (0010b)
+	JZ	INT_10_4_EXIT		; if not set, just exit
+
+;----------------------------------------------------------------------------;
+; Trigger is set, read light pen word from 6845. Address Register is latched
+; into light pen register when LPSTB pulses high.
+;
+	SUB	DX, CGA_STAT-CGA_IDX	; DX = 3x4h index port
+	MOV	AL, 10h			; light pen index (MSB)
+	OUT	DX, AL			; select index
+	INC	DX				; DX = 3x5h data port
+	IN	AL, DX			; read LSB
+	MOV	AH, AL			; save MSB
+	DEC	DX				; DX = 3x4h index port
+	MOV	AL, 11h			; light pen index (MSB)
+	OUT	DX, AL			; select index
+	INC	DX				; DX = 3x5h data port
+	IN	AL, DX			; read LSB
+
+;----------------------------------------------------------------------------;
+; Calculate screen location from latched address. Address needs a
+; "calibration factor" applied due to "slow light pen response".
+;
+; -3: 0,1,4,5,6 (CGA low-res text/gfx)
+; -5: 2,3 (CGA hi-res text)
+; -4: 7 (MDA text)
+;
+	MOV	BX, VID_SEG			; BX = start offset of video memory
+	SHR	BX, 1				; byte align index
+	ADD	BX, 3				; BX = default adjusted offset
+	XCHG	AX, CX			; save AX
+	CALL	INT_10_IS_TXT		; ZF=1 if text, ZF=0 if gfx, CF if MDA
+	LAHF					; save video type flags for later
+	JNZ	INT_10_4_CAL_2		; skip if modes 4,5,6
+	JC	INT_10_4_CAL_1		; +1 if MDA mode 7
+	CMP	AL, 2				; AL < 2?
+	JL	INT_10_4_CAL_2		; skip if modes 0,1 (+0)
+	INC	BX				; +1 for modes 2,3
+INT_10_4_CAL_1:
+	INC	BX				; +1 for modes 2,3,7
+INT_10_4_CAL_2:
+	SUB	CX, BX			; CX = calibrated memory regen offset
+	JAE	INT_10_4_CAL_DONE		; is result < 0?
+	XOR	CX, CX			; floor is 0
+INT_10_4_CAL_DONE:
+	SAHF					; ZF=1 if text, ZF=0 if gfx
+	XCHG	AX, CX			; restore AX, CL = video mode
+	JNZ	INT_10_4_GFX		; jump if graphics mode
+
+;----------------------------------------------------------------------------;
+; Calculate output for Text mode
+;
+; Input:
+;	AX = adjusted memory offset
+; Output:
+;	BX = pixel column (0-319 or 0-639)
+;	CH = raster line (0-199)
+;	DI = (value for DX) DH = row (0-24), DL = column (0-79)
+;----------------------------------------------------------------------------;
+; Formula:
+;	DX = adjusted memory offset (AX) DIV video columns (DH = row, DL = col)
+;	BX = col (DL) * 8
+;	CH = row (DH) * 8
+;----------------------------------------------------------------------------;
+INT_10_4_TXT:
+	MOV	CL, 3				; shift counter 3 (for * 8)
+	DIV	BYTE PTR VID_COLS		; divide value by char/line
+						; AL = row, AH = col/8
+	XCHG	AH, AL			; swap bytes for ease of use
+	MOV	DI, AX			; DH = row, DL = col
+	MOV	CH, AH			; CH = row
+	SHL	CH, CL			; CH = raster line (col * 8)
+	CBW					; AH = 0, AL = col
+	SHL	AX, CL			; AX = col * 8
+	XCHG	AX, BX			; BX = pixel col
+
+;----------------------------------------------------------------------------;
+; DONE: Clear latch and return with AH = 1
+;
+INT_10_4_DONE:
+	MOV	AH, 1				; light pen triggered
+
+;----------------------------------------------------------------------------;
+; Light pen strobe reset
+;
+INT_10_4_RESET:
+	ADD	DX, CGA_PENRST-CGA_DATA	; pen latch register
+	OUT	DX, AL			; reset light pen latch
+
+INT_10_4_EXIT:
+	MOV	DX, DI			; restore/output DX
+	RET
+
+;----------------------------------------------------------------------------;
+; Calculate output for GFX mode
+;
+; Input:
+;	AX = adjusted memory offset
+;	CL = video mode
+; Output:
+;	BX = pixel column (0-319 or 0-639)
+;	CH = raster line (0-199)
+;	DI = (value for DX) DH = row (0-24), DL = column (0-79)
+;----------------------------------------------------------------------------;
+; Formula:
+; 	DX = adjusted memory offset (AX) DIV 40 (DH = row, DL = col)
+;	CH = row (DH) * 2
+;	DH = row (DH) / 4
+;	if ( high res ):
+; 		DL = col (DL) * 2
+;	BX = DL * 8
+; (output registers used as variable names)
+;----------------------------------------------------------------------------;
+INT_10_4_GFX:
+	MOV	CH, 40			; divide value by 40
+	DIV	CH				; AL = row, AH = col
+	XCHG	AH, AL			; AH = row, AL = col
+	MOV	CH, AH			; CH = row (DH) * 2
+	SHL	CH, 1				; adjust for odd/even fields
+
+;----------------------------------------------------------------------------;
+; Multiply column according to graphics mode
+;
+	CMP	CL, 6				; is 640x200 mode?
+	JNE	INT_10_4_LOW		; if not, jump
+	SHL	AL, 1				; DL = col (DL) * 2
+INT_10_4_LOW:
+	MOV	CL, 3				; shift counter 3
+	MOV	BX, AX			; save BL = DL
+	CBW					; zero extend DL
+	SHL	AX, CL			; BX = DL * 8
+	XCHG	AX, BX			; return as BX
+	DEC	CX				; shift counter 2
+	SHR	AH, CL			; DH = row / 4
+	XCHG	AX, DI			; return as DX
+	JMP	SHORT INT_10_4_DONE	; clear latch and return with AH=1
+INT_10_4 ENDP
 		ENDIF
 
 ;
