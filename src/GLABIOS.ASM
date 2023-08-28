@@ -312,6 +312,7 @@ TURBO_SWITCH	=	1			; boot under hardware Turbo control
 TD_HIMEM		=	1			; clear and display upper memory bank
 		IF TD_HIMEM EQ 1
 RAM_DIGITS		=	4			; display RAM as four digits
+POST_TEST_PIC_REG	=	0			; disable PIC reg test (code space)
 		ENDIF
 	ENDIF
 
@@ -3051,7 +3052,7 @@ PIC_INT_TEST:
 	XOR	DI, DI			; DI = beginning to IVT
 PIC_VECT_TMP_LOOP:
 	MOV	AX, OFFSET INT_IRQ	; offset for handler
-	STOSW					; write to IVT
+	STOSW					; write to IVT (ES=0000 from CPU_REG_TEST)
 	MOV	AX, CS			; segment for hanlder (BIOS)
 	STOSW					; write to IVT
 	LOOP	PIC_VECT_TMP_LOOP
@@ -3113,6 +3114,7 @@ PIC_INT_PASS:
 ; All segments are set to BIOS (CS) segment by default.
 ; INT 1Fh is skipped and left as 0000:0000.
 ; Exceptions (such as ROM BASIC) are reset below.
+; Input: ES = 0000 from CPU_REG_TEST
 ;----------------------------------------------------------------------------;
 			ASSUME DS:BIOS, ES:_IVT
 INIT_SW_INT_VECTORS:
@@ -3471,7 +3473,7 @@ HELLO_WORLD:
 ;----------------------------------------------------------------------------;
 ; Jump over INT 02h fixed ORG to continue...
 ;
-			IF (ARCH_TYPE EQ ARCH_EMU) OR (ARCH_TYPE EQ ARCH_EHB) OR (ARCH_TYPE EQ ARCH_FE2010)
+			IF (ARCH_TYPE EQ ARCH_EMU) OR (ARCH_TYPE EQ ARCH_EHB)
 	JMP	 NEAR PTR INT_02_AFTER			; (jump hack)
 			ELSE
 	JMP	 SHORT INT_02_AFTER
@@ -3481,14 +3483,11 @@ HELLO_WORLD:
 ;----------------------------------------------------------------------------;
 ; Toggle Turbo mode on/off
 ;----------------------------------------------------------------------------;
-; Note: some references state that flipping both bit 2 and 3 (0Ch) are
-; required, and some only bit 2 (04h). Flipping only bit 2 seems to work fine.
-;
-; Size: 25 bytes
+; Note: for standard PPI-based systems, some references state that flipping
+; both bit 2 and 3 (0Ch) are required, and some only bit 2 (04h). Flipping 
+; only bit 2 seems to work fine however.
 ;
 ; Clobbers AX, CX, DX
-;----------------------------------------------------------------------------;
-; NOTE: ORG located here to fill the space taken up by additional 5150 code
 ;----------------------------------------------------------------------------;
 TOGGLE_TURBO PROC
 			ASSUME DS:_BDA
@@ -3502,7 +3501,9 @@ TOGGLE_TURBO PROC
 ;
 	IN	AL, TD_TURBO			; read current state
 	CMP	AL, MASK TDSS			; is 1 or 0?
+			IF (TD_HIMEM EQ 0) OR (CPU_TYPE EQ CPU_8088); (HACK for code space)
 	JA	TOGGLE_TURBO_DONE			; exit if register not valid
+			ENDIF
 	JZ	TOGGLE_TURBO_TD_1			; jump if 1 (currently Turbo)
 	OR	AL, MASK TDSH			; set software speed bit
 TOGGLE_TURBO_TD_1:
@@ -3510,7 +3511,7 @@ TOGGLE_TURBO_TD_1:
 	OUT	TD_TURBO, AL			; write to board
 	CMP	AL, MASK TDSH OR MASK TDSS	; turbo on? (NZ = turbo)
 
-			ELSE				; NOT ARCH_TD3300
+		ELSE					; NOT ARCH_TD3300
 ;----------------------------------------------------------------------------;
 ; Standard PPI B Turbo switch
 ;
@@ -3582,6 +3583,7 @@ VEN888_TURBO:
 			ELSE				; NOT ARCH_MIST AND NOT ARCH_TD3300
 	TEST	AL, MASK PBTB			; standard turbo bit set?
 			ENDIF				; ARCH_MIST
+
 		ENDIF					; ARCH_TD3300
 
 	MOV	CX, CURSOR_DEFAULT		; original power-on cursor (fast)
@@ -3599,17 +3601,29 @@ TOGGLE_TURBO ENDP
 			IF ARCH_TYPE EQ ARCH_TD3300
 			IF TD_HIMEM EQ 1
 ;----------------------------------------------------------------------------;
-; TD3300A: Set up, check and clear upper memory bank
+; TD3300A: Set up, check and clear upper memory bank on cold boot
 ;----------------------------------------------------------------------------;
-; This is called twice from DETECT_MEMORY. Once after completion of the
-; low memory, and once after the completion of the TD3300A upper bank.
+; On cold boot, if DIP switches select 1024K of installed RAM, the upper bank
+; is written to clear parity bits. This is normally not necessary since
+; software utilizing that RAM must do that before using it.
+;
+; The RAM between 128k-512k is bank switched to the upper bank and then
+; cleared by resetting the currently tested and end address offsets.
+;
+; Note: whether the the bank was actually switched is not checked so as long
+; as the RAM check passes and DIP switches are set for 1024K (on-on), it will
+; appear to count up to 1024K. It is left to the software to verify that the
+; bank switching is functioning.
+;
+; Note 2: this is called twice from DETECT_MEMORY. Once after completion of
+; the low memory, and once after the completion of the TD3300A upper bank.
 ; SI is used to determine which call is being made, so it must be preserved
 ; between calls.
 ;
 ; Input: (required)
 ;	AX = 0
 ;	SI = on first call: sign bit set (from POST_MEMORY string offset)
-; Size: 32 bytes
+; Size: 41 bytes
 ;----------------------------------------------------------------------------;
 TD3300_MEM_CLEAR PROC NEAR
 	OUT	TD_MEM, AL				; switch to lower bank (AL=0)
@@ -3626,7 +3640,8 @@ TD3300_MEM_CLEAR_HI:
 	CMP_EFLAG  MBRAM, 11B			; ZF if DIP set for 1MB
 	CBW						; AH = 0 (clear SI sign bit)
 	XCHG	AX, SI				; restore AX, SI high bit = 0
-	JNE	TD_DONE_ZERO_ALL_RAM		; if not, skip
+	JNE	TD_DONE_ZERO_ALL_RAM		; if not 1MB, RAM test complete
+	JWB	TD3300_NO_CLEAR			; if warm boot, count but don't clear
 
 ;----------------------------------------------------------------------------;
 ; Enable bank 1, reset start address to 2000H and end address to 8000H
@@ -3635,7 +3650,15 @@ TD3300_MEM_CLEAR_HI:
 	OUT	TD_MEM, AL				; switch to upper bank
 	MOV	AX, 128 SHL 6			; restart at segment 2000H (128K)
 	MOV	DH, HIGH 512 SHL 6		; end at segment 8000H (512K)
+TD3300_MEM_CLEAR_DONE:
 	JMP	NEAR PTR ZERO_ALL_RAM_1		; continue RAM test
+
+;----------------------------------------------------------------------------;
+; Don't clear RAM on warm boot if DIP switches set for 1024K.
+;
+TD3300_NO_CLEAR:
+	MOV	BX, 1024 - 16			; fake 1024K display count
+	JMP	SHORT TD3300_MEM_CLEAR_DONE	; (save 1 byte with short jump)
 TD3300_MEM_CLEAR ENDP
 			ENDIF
 			ENDIF
