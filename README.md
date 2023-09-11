@@ -34,6 +34,7 @@ Copyright &copy; 2022-2023, [640KB](mailto:640kb@glabios.org) and contributors.
 - [EMM Homebrew 8088](https://www.homebrew8088.com/) with 8088, V20 or V40
 - Vendex 888-XT/PB88/Samsung
 - Emulator-optmized [MartyPC](https://github.com/dbalsom/martypc), [86Box](https://86box.net/) and others
+- [VirtualXT](https://virtualxt.org)
 
 ### Companion ROMs
 
