@@ -58,7 +58,12 @@ If you aren't familiar with the reference, ask a gamer.
 
 ### How can I try it?
 
-[Click here](https://github.com/640-KB/GLaBIOS/wiki/How-to-try-GLaBIOS) to learn more!
+[Click here](https://github.com/640-KB/GLaBIOS/wiki/How-to-try-GLaBIOS) for how to make the BIOS ROMs.
+
+**OR try it LIVE!**
+
+- [MartyPC](https://dbalsom.github.io/martypc/web/player.html?title=freedos)
+- [VirtualXT](https://phix.itch.io/virtualxt)
 
 ### More questions?
 
