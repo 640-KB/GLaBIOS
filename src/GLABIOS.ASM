@@ -97,6 +97,7 @@ ARCH_MIST		EQU	'I'			; PCXT_MiSTer
 ARCH_UM82		EQU	'U'			; UMC UM82C088 / ALi M1101
 ARCH_MARTY		EQU	'C'			; MartyPC Emulator
 ARCH_VEN888		EQU	'V'			; Vendex 888-XT
+ARCH_LASER		EQU	'L'			; VTech Laser Turbo XT
 
 ;
 ; CPU Instruction Set Target
@@ -386,6 +387,18 @@ POST_ERR_WAIT	=	0			; only warn POST errors (since DMA
 INT_19_BOOT_HD	=	1			; Try IPL to floppy then HD
 	ENDIF
 
+	IF ARCH_TYPE EQ ARCH_LASER
+;----------------------------------------------------------------------------;
+; Configuration for VTech Laser Turbo XT
+;
+;BASIC_ROM		= 	0			; can be disabled to free code space
+		IF BASIC_ROM EQ 1			; if BASIC enabled, disable PIC tests
+POST_TEST_PIC_REG	=	0			;  to free code space since PIC is
+POST_TEST_PIC_INT	=	0			;  intergrated to Gate Array A1
+		ENDIF
+
+	ENDIF
+
 	IF ARCH_TYPE EQ ARCH_EMU
 ;----------------------------------------------------------------------------;
 ; Configuration for 86Box/Emulators
@@ -660,6 +673,10 @@ TD_MEM		EQU	0E0H			; Memory bank switch
 ; UM82C088 Speed / Status registers
 UM82_SPEED		EQU	0C0H			; write any value to toggle speed mode
 UM82_STATUS		EQU	0E0H			; read memory size, speed mode
+
+; VTech Laser Turbo XT
+LASER_TURBO		EQU	1F0H			; CPU speed control port: only bit 7 used
+LASER_MASK		EQU	80H			; mask to toggle correct bit
 
 ; NMI flip/flop
 NMI_R0		EQU	0A0H			; NMI Mask Register
@@ -2709,6 +2726,20 @@ RESET_PPI:
 	OUT	TD_TURBO, AL		; write new register
 			ENDIF			; ENDIF ARCH_TD3300
 
+			IF ARCH_TYPE EQ ARCH_LASER
+;----------------------------------------------------------------------------;
+; Set up the initial boot speed. Real hardware boots at normal speed.
+
+	MOV	DX, LASER_TURBO		; store speed control port
+				IF BOOT_SPEED EQ BOOT_TURBO
+	MOV	AL, 80H			; switch to turbo
+				ELSE
+	MOV	AL, 00H			; switch to normal
+				ENDIF
+	OUT	DX, AL			; write to speed control port
+	MOV	DX, SS			; restore DX
+			ENDIF			; ENDIF ARCH_LASER
+
 ;			IF (ARCH_TYPE EQ ARCH_EMU) AND (ARCH_SUB_TYPE EQ ARCH_MIST)
 ;----------------------------------------------------------------------------;
 ; Set up Turbo mode for PCXT_MiSTer
@@ -3511,7 +3542,20 @@ TOGGLE_TURBO_TD_1:
 	OUT	TD_TURBO, AL			; write to board
 	CMP	AL, MASK TDSH OR MASK TDSS	; turbo on? (NZ = turbo)
 
-		ELSE					; NOT ARCH_TD3300
+		ENDIF					; ARCH_TD3300
+
+;----------------------------------------------------------------------------;
+; VTech Laser Turbo XT switch
+; Only bit 7 is used, 0 for standard speed and 1 for turbo speed
+;
+		IF ARCH_TYPE EQ ARCH_LASER
+
+	MOV	DX, LASER_TURBO			; store speed control port
+	IN	AL, DX				; read current state
+	XOR	AL, LASER_MASK			; flip turbo bit
+	OUT	DX, AL				; write to speed control port
+
+		ELSE					; NOT ARCH_TD3300 OR ARCH_LASER
 ;----------------------------------------------------------------------------;
 ; Standard PPI B Turbo switch
 ;
