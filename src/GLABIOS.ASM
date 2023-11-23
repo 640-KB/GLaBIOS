@@ -48,7 +48,7 @@
 ;----------------------------------------------------------------------------;
 ; Build Instructions:
 ;
-; Build using MASM 5 or later.
+; Build using MASM 5.0 or MASM 6.
 ;
 ;  MAKE.BAT
 ;
@@ -115,18 +115,18 @@ BOOT_NORMAL		EQU	'N'
 ; Turbo Switch Behavior
 ;
 TURBO_NONE		EQU	0			; fixed clock no turbo switching
-TURBO_STD		EQU	1			; standard PPI B (bit 3)
-TURBO_REV		EQU	2			; reversed PPI B (bit 3)
+TURBO_STD		EQU	1			; standard PPI (1=turbo, 0=normal)
+TURBO_REV		EQU	2			; reversed PPI (0=turbo, 1=normal)
 
 ;----------------------------------------------------------------------------;
 ; BIOS Product Info
 ;
 VER_NAME		EQU	'GLaBIOS'
 	IFNDEF VER_NUM
-VER_NUM		EQU	'0.2.5'		; (max 5 chars)
+VER_NUM		EQU	'0.2.6'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'08/23/23' 		; must be MM/DD/YY format
+VER_DATE		EQU	'11/23/23' 		; must be MM/DD/YY format
 	ENDIF
 COPY_YEAR		EQU	'2022-23'		; Copyright year range
 
@@ -147,6 +147,7 @@ ARCH_TYPE		EQU	ARCH_TURBO		; Standard Turbo
 ;ARCH_TYPE		EQU	ARCH_UM82		; UMC UM82C088 / ALi M1101
 ;ARCH_TYPE		EQU	ARCH_EHB		; EMM Computers/Homebrew 8088
 ;ARCH_TYPE		EQU	ARCH_EMU		; 86Box/Emulators (not for real hardware)
+;ARCH_TYPE		EQU	ARCH_BOOK88		; Book 8088
 	ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -273,8 +274,10 @@ INIT_V40		=	0		; Init V40 config registers
 
 ;----------------------------------------------------------------------------;
 ; UNSAFE_FLOPPY: Reduce floppy drive head settling time for possibly faster
-; seek access and burst transfer reads. 
-; Specify as percentage of DBT configured head settling time.
+; seek access and burst transfer reads. Warning: this may result in drive
+; read errors on some hardware.
+; Specify UNSAFE_FLP_DIV as percentage of head settling time, as configured
+; in DBT.
 ;
 UNSAFE_FLOPPY	=	0		; Use % of specified disk head settle time
 ;UNSAFE_FLP_DIV	EQU	<1/3>		; 33%
@@ -282,14 +285,13 @@ UNSAFE_FLP_DIV	EQU	<3/10>	; 30%
 ;UNSAFE_FLP_DIV	EQU	<1/4>		; 25%
 
 ;----------------------------------------------------------------------------;
-; UNSAFE_REFRESH: Lower the amount of time spent in DMA/DRAM refresh state
+; UNSAFE_REFRESH: Lower the amount of time spent in DMA/DRAM refresh state.
 ; Depending on hardware configuration, this may result in significant speed
-; and performance gains, or could result in instability and parity errors.
+; and performance gains, or it may result in instability and parity errors.
 ;
-; The program "FASTV20" lowers this from the normal 1/18 (65K/s) to 
-; 1/655 (1.8K/s), which should by logic cause extreme instability. However,
-; many have reported standard hardware this to be perfectly stable with a
-; potential speed gain of up to 10%.
+; This is equivalent to the program "FASTV20", which lowers this from the normal
+; 1/18 (65K/s) to 1/655 (1.8K/s). It has been reported that even on standard
+; hardware this can be stable with a potential for speed gain of up to 10%.
 ;
 ; https://forum.vcfed.org/index.php?threads/fastv20-com.24005/
 ; https://www.reenigne.org/blog/how-to-get-away-with-disabling-dram-refresh/
@@ -311,8 +313,6 @@ DRAM_REFRESH	=	655		; DRAM divisor: 1.193 MHz / 655 = 1,821.65 Hz
 ; Defaults / BIOS ID Byte
 ;
 ; https://stanislavs.org/helppc/id_bytes.html
-; NOTE: DOS may re-vector some interrupts or attempt bug workarounds 
-; depending on this byte.
 ;
 ARCH_ID		=	0FEH			; 0xFE=XT v1/clone (default)
 CASSETTE		=	0			; disable cassette (default)
@@ -356,8 +356,8 @@ FDC_HLT_WAIT	=	0			; halting CPU on FDC and KB wait
 KB_HLT_WAIT		=	0			;  seems to cause issues on TD3300A
 TURBO_TYPE		=	TURBO_STD		; always use Standard
 TURBO_SWITCH	=	1			; boot under hardware Turbo control
-TD_HIMEM		=	1			; clear and display upper memory bank
-		IF TD_HIMEM EQ 1
+TD_UPMEM		=	1			; clear and display upper memory bank
+		IF TD_UPMEM EQ 1
 RAM_DIGITS		=	4			; display RAM as four digits
 POST_TEST_PIC_REG	=	0			; disable PIC reg test (code space)
 		ENDIF
@@ -442,13 +442,13 @@ INT_19_BOOT_HD	=	1			; Try IPL to floppy then HD
 		IF ARCH_TYPE EQ ARCH_BOOK88
 CGA_SNOW_REMOVE	=	0			; disable snow removal
 DRAM_REFRESH	=	0			; disable refresh (no DRAM)
-RAM_PARITY		=	0			; disable memory parity check
+RAM_PARITY		=	0			; disable memory parity/IO check
 FDC_ENABLE		=	0			; no floppy
 ;POST_TEST_KB	=	0			; disable PKEY and PKI errors
 INT_19_BOOT_HD	=	0			; Try IPL to floppy then HD
 INIT_AT_KBC		=	1			; init AT type KB controller
 KB_FILTER_SC	=	1			; Filter KB make/break code >= 70h
-SW1_VID		=	10b			; SW1 5/6 Video Type (CGA 80)
+SW1_VID		=	10b			; SW1 5/6 ON/OFF Video Type CGA 80
 TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
 			IF FDC_ENABLE EQ 1
 SW1_FLP		=	01b			; SW1 7/8 Max # of floppy drives (0-3)
@@ -1567,9 +1567,9 @@ TD_MEM_CR	RECORD	TDUX:7,TDUB:1
 ;       10|			- U8FLP	Floppy drives
 ;----------------------------------------------------------------------------;
 UM82_ST	RECORD	U8SPD:1,U8X1:1,U8MEM:2,U8VID:2,U8FLP:2
-UM82_256K	EQU		UM82_ST <0,0,11b>		; 256K RAM
-UM82_512K	EQU		UM82_ST <0,0,01b>		; 512K RAM
-UM82_640K	EQU		UM82_ST <0,0,10b>		; 640K RAM
+UM82_256K	EQU		UM82_ST <,,11b>		; 256K RAM
+UM82_512K	EQU		UM82_ST <,,01b>		; 512K RAM
+UM82_640K	EQU		UM82_ST <,,10b>		; 640K RAM
 			ENDIF
 
 			IF ARCH_TYPE EQ ARCH_FE2010
@@ -2220,9 +2220,13 @@ BYTES_HERE_&NEXT_LBL = NEXT_LBL-$
 		ENDM
 
 ;----------------------------------------------------------------------------;
+; x86/V20 Instruction MACROs
+;----------------------------------------------------------------------------;
+
+;----------------------------------------------------------------------------;
 ; General Purpose Register operands
 ;
-_AL	EQU	000b
+_AL	EQU	000b				; reg8
 _CL	EQU	001b
 _DL	EQU	010b
 _BL	EQU	011b
@@ -2230,6 +2234,15 @@ _AH	EQU	_AL OR 100b
 _CH	EQU	_CL OR 100b
 _DH	EQU	_DL OR 100b
 _BH	EQU	_BL OR 100b
+
+_AX	EQU	_AL				; reg16
+_CX	EQU	_CL
+_DX	EQU	_DL
+_BX	EQU	_BL
+_SP	EQU	_AH
+_BP	EQU	_CH
+_SI	EQU	_DH
+_DI	EQU	_BH
 
 ;----------------------------------------------------------------------------;
 ; AAM, AAD with immediate other than 0AH
@@ -2248,8 +2261,17 @@ AAD_I		MACRO	IMM
 ; Polyfill for V20 instruction mnemonics not supported by MASM.
 ; Not comprehensive of course.
 ;
+
+TEST1_R8	MACRO R8, IMM4
+	DB	0FH, 18H OR 0, 0C0H OR (R8 AND 111B), IMM4	; TEST1 reg8, IMM4
+		ENDM
+
+TEST1_R16	MACRO R16, IMM4
+	DB	0FH, 18H OR 1, 0C0H OR (R16 AND 111B), IMM4	; TEST1 reg16, IMM4
+		ENDM
+
 TEST1_BP	MACRO IMM4
-	DB	0FH, 19H, 0C5H, IMM4	; TEST1 BP, IMM4
+	TEST1_R16	_BP, IMM4		; TEST1 BP, IMM4
 		ENDM
 
 SET1_BP	MACRO IMM4
@@ -2435,18 +2457,19 @@ _IVT 		ENDS
 ;----------------------------------------------------------------------------;
 ; 0000:0400 - BIOS data area (BDA) - Zero Page Segment Addressing
 ;----------------------------------------------------------------------------;
+_BDA_SEG	=	40H SHL 4			; BDA Seg 40H
 _BDA_ABS	SEGMENT AT 0H
-		ORG 400H + 1AH
+		ORG _BDA_SEG + 1AH
 KB_BUF_HD_ABS	DW	?			; 40:1AH Keyboard buffer head ptr
-		ORG 400H + 3EH
+		ORG _BDA_SEG + 3EH
 FD_CAL_ST_ABS	FDC_SF <>			; 40:3EH Floppy drive recalibration
-		ORG 400H + 40H
+		ORG _BDA_SEG + 40H
 FD_MOTOR_CT_ABS	DB	?			; 40:40H FD motor shutoff counter
-		ORG 400H + 6BH
+		ORG _BDA_SEG + 6BH
 INT_LAST_ABS	DB	?			; 40:6BH POST / Interrupt happened?
-		ORG 400H + 72H
+		ORG _BDA_SEG + 72H
 WARM_FLAG_ABS	DW	?			; 40:72H Warm Boot Flag
-		ORG 400H + 80H
+		ORG _BDA_SEG + 80H
 KB_BUF_ST_ABS	DW	?			; 40:80H Keyboard buffer start ptr
 _BDA_ABS	ENDS
 
@@ -2835,10 +2858,10 @@ RESET_PPI:
 
 			IF ARCH_TYPE EQ ARCH_TD3300
 ;----------------------------------------------------------------------------;
-; Set up TD3300 Turbo, wait states and bank switching. If TD_HIMEM, it will
+; Set up TD3300 Turbo, wait states and bank switching. If TD_UPMEM, it will
 ; be set later.
 ;
-				IF TD_HIMEM EQ 0
+				IF TD_UPMEM EQ 0
 	XCHG	AX, SI			; AX = 0
 	OUT	TD_MEM, AL			; set TD3300 memory bank 0
 				ENDIF
@@ -2937,11 +2960,12 @@ INIT_DMA1:
 	MOV	AL, PIT_CW <1, 11B, 2>	; Control Word: Counter 1
 						;   Format: R/W low/high byte: 11b
 						;   Mode: 2 Rate Gen, BCD: 0
+	MOV	DX, LOW PIT_CH1		; DX = PIT channel 1
 		ELSE
 	MOV	AL, PIT_CW <0, 11B, 2>	; if no DRAM refresh, test timer 0 instead
+	MOV	DX, LOW PIT_CH0		; DX = PIT channel 0
 		ENDIF
 	OUT	PIT_CTRL, AL		; set Counter mode
-	MOV	DX, LOW PIT_CH1		; DX = PIT channel 1
 	OUT	DX, AL			; set low byte (any value)
 	MOV	SI, 0FFH SHL 3		; flag bits 10-3 for 1 check
 	MOV	DI, NOT 0FFH SHL 3	; flag bits 10-3 for 0 check
@@ -3359,10 +3383,9 @@ INIT_ROM_BASIC_DONE:
 ;----------------------------------------------------------------------------;
 CPU_IS_V20:
 	MOV	AX, DBW <1,1>			; Attempt to pack bytes into nibbles
-	AAD_I	10H					; AAD	10H
-	CMP	AL, 0BH				; result is 0Bh if V20, 11h if x86
-							;   ZF = 1 if V20, ZF = 0 if 8088
-	JNZ	CPU_TYPE_8088			; jump if not V20
+	AAD_I	10H					; result is 11 if V20, 11H if x86
+	CMP	AL, 11				; ZF = 1 if V20, ZF = 0 if 8088
+	JNE	CPU_TYPE_8088			; jump if not V20
 	SET_GFLAG	V20				; set V20 flag
 			IF CPU_TYPE	EQ CPU_V20
 	JMP	SHORT CPU_TYPE_DONE		; continue booting
@@ -3454,7 +3477,7 @@ SETTINGS_5150:
 		IF ARCH_TYPE EQ ARCH_FE2010
 ;----------------------------------------------------------------------------;
 ; Is a FE2010A PC
-; Note: FPU won't be detected if BOOT_NORMAL (too many bytes to fix)
+; TODO: FPU won't be detected if BOOT_NORMAL (too many bytes to fix?)
 ;
 ; Set AL for BDA / switch register
 ; Set AH for system config register
@@ -3776,7 +3799,7 @@ TOGGLE_TURBO ENDP
 			ENDIF				; IF IS_TURBO
 
 			IF ARCH_TYPE EQ ARCH_TD3300
-			IF TD_HIMEM EQ 1
+			IF TD_UPMEM EQ 1
 ;----------------------------------------------------------------------------;
 ; TD3300A: Set up, check and clear upper memory bank on cold boot
 ;----------------------------------------------------------------------------;
@@ -4426,7 +4449,11 @@ HDD_POST PROC
 ;----------------------------------------------------------------------------;
 ; Display HDD POST drive count column
 ;
-	POST_COL_2	POST_HDD, POST_CLR_VAL2	; display HDC column label
+			IF FDC_ENABLE EQ 1
+	POST_COL_2	POST_HDD, POST_CLR_VAL2	; display HDD column label
+			ELSE
+	POST_COL_1	POST_HDD, POST_CLR_VAL2	; no FDC, display HDD in column 1
+			ENDIF
 
 	PUSH	DX					; save drive count
 	XCHG	AX, DX				; AL = drive count
@@ -4912,7 +4939,7 @@ ZERO_ALL_START:
 DONE_ZERO_ALL_RAM:
 
 			IF ARCH_TYPE EQ ARCH_TD3300
-			IF TD_HIMEM EQ 1
+			IF TD_UPMEM EQ 1
 ;----------------------------------------------------------------------------;
 ; TD3300A: Check and clear upper memory bank
 ;----------------------------------------------------------------------------;
@@ -5164,7 +5191,7 @@ IO_DELAY_MS_FDC	EQU IO_DELAY_MS
 		ENDIF
 
 ;
-; 31/12 BYTES HERE
+; 32/13 BYTES HERE
 ;
 BYTES_HERE	INT_19
 
@@ -10828,7 +10855,7 @@ INT_15 ENDP
 ;
 ;----------------------------------------------------------------------------;
 
-			IF POST_HD_PARMS EQ 1
+		IF POST_HD_PARMS EQ 1
 ;----------------------------------------------------------------------------;
 ; Display Hard Drive Parameters
 ;----------------------------------------------------------------------------;
@@ -10894,8 +10921,7 @@ SHOW_DISK_PARAMS_DONE:
 POST_CHS	DB	'CHS', 0			; CHS column 2 label
 
 SHOW_DISK_PARAMS ENDP
-
-			ENDIF
+		ENDIF
 
 		IF RANDOM_TAGLINE EQ 1
 ;----------------------------------------------------------------------------;
