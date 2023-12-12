@@ -437,29 +437,6 @@ POST_ERR_WAIT	=	0			; 0=only warn POST errors (since DMA
 INT_19_BOOT_HD	=	1			; Try IPL to floppy then HD
 	ENDIF
 
-;----------------------------------------------------------------------------;
-; Configuration for Book 8088
-;
-		IF ARCH_TYPE EQ ARCH_BOOK88
-CGA_SNOW_REMOVE	=	0			; disable snow removal
-DRAM_REFRESH	=	0			; disable refresh (no DRAM)
-RAM_PARITY		=	0			; disable memory parity/IO check
-FDC_ENABLE		=	0			; no floppy
-;POST_TEST_KB	=	0			; disable PKEY and PKI errors
-INT_19_BOOT_HD	=	0			; Try IPL to floppy then HD
-INIT_AT_KBC		=	1			; init AT type KB controller
-KB_FILTER_SC	=	1			; Filter KB make/break code >= 70h
-SW1_VID		=	10b			; SW1 5/6 ON/OFF Video Type CGA 80
-TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
-			IF FDC_ENABLE EQ 1
-SW1_FLP		=	01b			; SW1 7/8 Max # of floppy drives (0-3)
-FD_AUTO_DETECT	=	1			; auto-detect number of floppy drives
-			ELSE
-SW1_FLP		=	00b			; SW1 7/8 Max # of floppy drives (0-3)
-			ENDIF
-;POST_ERR_WAIT	=	0			; only warn POST errors
-		ENDIF
-
 	IF ARCH_TYPE EQ ARCH_LASER
 ;----------------------------------------------------------------------------;
 ; Configuration for VTech Laser Turbo XT
