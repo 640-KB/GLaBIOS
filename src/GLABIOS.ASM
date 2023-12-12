@@ -298,7 +298,7 @@ UNSAFE_FLP_DIV	EQU	<3/10>	; 30%
 ; https://www.reenigne.org/blog/how-to-get-away-with-disabling-dram-refresh/
 ; https://en.wikipedia.org/wiki/Memory_refresh
 ;
-UNSAFE_REFRESH	=	0		; Use "FASTV20" DRAM refresh timing 
+UNSAFE_REFRESH	=	0		; Use "FASTV20" DRAM refresh timing
 	IF UNSAFE_REFRESH EQ 1
 DRAM_REFRESH	=	655		; DRAM divisor: 1.193 MHz / 655 = 1,821.65 Hz
 	ENDIF
@@ -436,6 +436,29 @@ POST_ERR_WAIT	=	0			; 0=only warn POST errors (since DMA
 							;   and FDC are optional)
 INT_19_BOOT_HD	=	1			; Try IPL to floppy then HD
 	ENDIF
+
+;----------------------------------------------------------------------------;
+; Configuration for Book 8088
+;
+		IF ARCH_TYPE EQ ARCH_BOOK88
+CGA_SNOW_REMOVE	=	0			; disable snow removal
+DRAM_REFRESH	=	0			; disable refresh (no DRAM)
+RAM_PARITY		=	0			; disable memory parity/IO check
+FDC_ENABLE		=	0			; no floppy
+;POST_TEST_KB	=	0			; disable PKEY and PKI errors
+INT_19_BOOT_HD	=	0			; Try IPL to floppy then HD
+INIT_AT_KBC		=	1			; init AT type KB controller
+KB_FILTER_SC	=	1			; Filter KB make/break code >= 70h
+SW1_VID		=	10b			; SW1 5/6 ON/OFF Video Type CGA 80
+TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
+			IF FDC_ENABLE EQ 1
+SW1_FLP		=	01b			; SW1 7/8 Max # of floppy drives (0-3)
+FD_AUTO_DETECT	=	1			; auto-detect number of floppy drives
+			ELSE
+SW1_FLP		=	00b			; SW1 7/8 Max # of floppy drives (0-3)
+			ENDIF
+;POST_ERR_WAIT	=	0			; only warn POST errors
+		ENDIF
 
 	IF ARCH_TYPE EQ ARCH_LASER
 ;----------------------------------------------------------------------------;
@@ -2273,6 +2296,42 @@ AAD_I		MACRO	IMM
 		ENDM
 
 ;----------------------------------------------------------------------------;
+; x86/V20 Instruction MACROs
+;----------------------------------------------------------------------------;
+
+;----------------------------------------------------------------------------;
+; General Purpose Register operands
+;
+_AL	EQU	000b				; reg8
+_CL	EQU	001b
+_DL	EQU	010b
+_BL	EQU	011b
+_AH	EQU	_AL OR 100b
+_CH	EQU	_CL OR 100b
+_DH	EQU	_DL OR 100b
+_BH	EQU	_BL OR 100b
+
+_AX	EQU	_AL				; reg16
+_CX	EQU	_CL
+_DX	EQU	_DL
+_BX	EQU	_BL
+_SP	EQU	_AH
+_BP	EQU	_CH
+_SI	EQU	_DH
+_DI	EQU	_BH
+
+;----------------------------------------------------------------------------;
+; AAM, AAD with immediate other than 0AH
+;
+AAM_I		MACRO	IMM
+	DB	0D4H, IMM			; AAM	imm
+		ENDM
+
+AAD_I		MACRO	IMM
+	DB	0D5H, IMM			; AAD	imm
+		ENDM
+
+;----------------------------------------------------------------------------;
 ; V20 MACROs
 ;
 ; Polyfill for V20 instruction mnemonics not supported by MASM.
@@ -2302,6 +2361,14 @@ NOT1_BP	MACRO IMM4
 CLR1_BP	MACRO IMM4
 	DB	0FH, 1BH, 0C5H, IMM4	; CLR1  BP, IMM4
 		ENDM
+
+ROL4		MACRO R8
+	DB	0FH, 28H, 0C0H OR (R8 AND 111B)	; ROL4
+            ENDM
+
+ROR4		MACRO R8
+	DB	0FH, 2AH, 0C0H OR (R8 AND 111B)	; ROR4
+            ENDM
 
 ROL4		MACRO R8
 	DB	0FH, 28H, 0C0H OR (R8 AND 111B)	; ROL4
@@ -3094,10 +3161,10 @@ DMA_PASS:
 ; [13B] 8253 Timer set channel #1 for DMA/DRAM refresh
 ;----------------------------------------------------------------------------;
 	MOV	AL, LOW DRAM_REFRESH	; set low byte of divisor
-	OUT	PIT_CH1, AL			; 
+	OUT	PIT_CH1, AL			;
 				IF DRAM_REFRESH GT 0FFH
 	MOV	AL, HIGH DRAM_REFRESH	; set high byte of divisor
-	OUT	PIT_CH1, AL			; 
+	OUT	PIT_CH1, AL			;
 				ENDIF
 			ENDIF
 
@@ -4362,7 +4429,7 @@ POST_BOOT_TYPE ENDP
 	CALL	DETECT_MEMORY			; detect and display memory count
 			ASSUME ES:NOTHING		; ES clobbered by DETECT_MEMORY
 
-			IF POST_TEST_DMA_TC0 EQ 1 
+			IF POST_TEST_DMA_TC0 EQ 1
 ;----------------------------------------------------------------------------;
 ; [27B] Verify that the 8237 DMA Channel 0 Terminal Count (TC 0) status bit 
 ; is on. This test is only done on a cold boot.
@@ -5972,7 +6039,7 @@ INT_09_POST ENDP
 ; Size: 16 bytes
 ;----------------------------------------------------------------------------;
 KB_BUF_CLEAR PROC
-		ASSUME ES:_BDA_ABS		
+		ASSUME ES:_BDA_ABS
 	PUSH	ES 					; save ES
 	XOR	AX, AX
 	MOV	ES, AX
