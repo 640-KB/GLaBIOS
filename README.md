@@ -33,6 +33,7 @@ Copyright &copy; 2022-2023, [640KB](mailto:640kb@glabios.org) and contributors.
 - [micro_8088](https://github.com/skiselev/micro_8088) / [NuXT](https://monotech.fwscart.com/)
 - [EMM Homebrew 8088](https://www.homebrew8088.com/) with 8088, V20 or V40
 - Vendex 888-XT/PB88/Samsung
+- [VTech Laser Turbo XT](https://www.minuszerodegrees.net/manuals/VTech/VTech%20-%20Laser%20Turbo%20XT%20Series%20-%20Technical%20Reference%20Manual.pdf)
 - Emulator-optmized [MartyPC](https://github.com/dbalsom/martypc), [86Box](https://86box.net/) and others
 - [VirtualXT](https://virtualxt.org)
 
