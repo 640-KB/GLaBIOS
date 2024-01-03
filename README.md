@@ -65,6 +65,10 @@ If you aren't familiar with the reference, ask a gamer.
 - [MartyPC](https://dbalsom.github.io/martypc/web/player.html?title=freedos)
 - [VirtualXT](https://phix.itch.io/virtualxt)
 
+### Building GLaBIOS
+
+[How to Build Wiki page](https://github.com/640-KB/GLaBIOS/wiki/How-to-build)
+
 ### More questions?
 
 [Check out the Wiki](https://github.com/640-KB/GLaBIOS/wiki)!
@@ -100,23 +104,6 @@ Bad RAM detected! Use standard [address and bit indicator](http://minuszerodegre
 Flight Simulator 1.0
 
 ![Screenshot FS1 08-01-22](https://raw.githubusercontent.com/640-KB/GLaBIOS/main/images/ss_gb_fs1_1.png)
-
-## BUILD NOTES:
-
-### Assembler Version
-
-Build using MASM 5 or later.
-
-### Build Process:
-
-1. `MASM GLABIOS;`
-2. `LINK GLABIOS;`  Will create GLABIOS.EXE.
-3. Run `GLA2ROM GLABIOS` to convert to an 8 KiB ROM file.
-
-OR
-
-1. Convert EXE manually by removing the EXE header (the first 512 bytes of the EXE file) and extracting the last 8 KiB
-2. Calculate 8-bit checksum byte and insert into relative file offset `1FFF` in GLABIOS.ROM.
 
 ### Contact
 
