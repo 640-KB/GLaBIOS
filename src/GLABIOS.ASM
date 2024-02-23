@@ -6,7 +6,7 @@
 ;
 ; A scratch-built, open-source 8088 PC/clone BIOS alternative.
 ;
-; Copyright (c) 2022-2023, 640KB and contributors
+; Copyright (c) 2022-2024, 640KB and contributors
 ;
 ;----------------------------------------------------------------------------;
 ;
@@ -48,7 +48,7 @@
 ;----------------------------------------------------------------------------;
 ; Build Instructions:
 ;
-; Build using MASM 5.0 or MASM 6.
+; Build with MASM 5.0 or MASM 6.
 ;
 ;  MAKE.BAT
 ;
@@ -99,6 +99,7 @@ ARCH_MARTY		EQU	'C'			; MartyPC Emulator
 ARCH_VEN888		EQU	'V'			; Vendex 888-XT
 ARCH_LASER		EQU	'L'			; VTech Laser Turbo XT
 ARCH_BOOK88		EQU	'B'			; Book 8088
+ARCH_CPQ		EQU	'Q'			; Compaq Portable XT
 
 ;
 ; CPU Instruction Set Target
@@ -111,6 +112,7 @@ CPU_V20		EQU	'V'			; V20 only
 ;
 BOOT_TURBO		EQU	'T'
 BOOT_NORMAL		EQU	'N'
+BOOT_MEDIUM		EQU	'M'			; used by FE2010A
 
 ;
 ; Turbo Switch Behavior
@@ -127,12 +129,21 @@ VER_NAME		EQU	'GLaBIOS'
 VER_NUM		EQU	'0.2.6'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'11/23/23' 		; must be MM/DD/YY format
+VER_DATE		EQU	'02/22/24' 		; must be MM/DD/YY format
 	ENDIF
-COPY_YEAR		EQU	'2022-23'		; Copyright year range
+COPY_YEAR		EQU	'2022-24'		; Copyright year range
 
 ;----------------------------------------------------------------------------;
 ; BEGIN Configurable Build Options
+;----------------------------------------------------------------------------;
+; Very important note on custom configuration:
+;
+; Not all options can be combined due to very limited ROM code space of 8K,
+; and fitting withing fixed compatibility ORGs.
+;
+; For experimenting with build options, it's highly recommended to use
+; MASM 5.0 as it will not build if code space is exceeded. Due to differences
+; in MASM 6, this does not work and can produce a totally broken build.
 ;----------------------------------------------------------------------------;
 
 ;----------------------------------------------------------------------------;
@@ -267,6 +278,7 @@ EXP_UNIT		=	0		; Init 5161 I/O Expansion Unit
 KB_FILTER_SC	=	0		; Filter KB make/break code >= 70h
 INIT_AT_KBC		=	0		; Init AT type KB controller
 INIT_V40		=	0		; Init V40 config registers
+OEM_FONT		=	0		; 1=use OEM style font, 0=clone style
 
 ;----------------------------------------------------------------------------;
 ; Hardware hacks!
@@ -288,19 +300,21 @@ UNSAFE_FLP_DIV	EQU	<3/10>	; 30%
 ;----------------------------------------------------------------------------;
 ; UNSAFE_REFRESH: Lower the amount of time spent in DMA/DRAM refresh state.
 ; Depending on hardware configuration, this may result in significant speed
-; and performance gains, or it may result in instability and parity errors.
+; and performance gains of up to 5 to 10%, or it may result in instability
+; and parity errors.
 ;
-; This is equivalent to the program "FASTV20", which lowers this from the normal
-; 1/18 (65K/s) to 1/655 (1.8K/s). It has been reported that even on standard
-; hardware this can be stable with a potential for speed gain of up to 10%.
+; This is similar to programs such as "SPEEDER" or "FASTV20", which lowers
+; refresh from 1/18 (65K/s) to 1/64 (18K/s) and 1/655 (1.8K/s) respectively.
 ;
 ; https://forum.vcfed.org/index.php?threads/fastv20-com.24005/
+; https://www.pcorner.com/list/UTILITY/SPEEDER.ZIP/INFO/
 ; https://www.reenigne.org/blog/how-to-get-away-with-disabling-dram-refresh/
 ; https://en.wikipedia.org/wiki/Memory_refresh
 ;
-UNSAFE_REFRESH	=	0		; Use "FASTV20" DRAM refresh timing
+UNSAFE_REFRESH	=	0		; Use unsafe DRAM refresh timing
 	IF UNSAFE_REFRESH EQ 1
-DRAM_REFRESH	=	655		; DRAM divisor: 1.193 MHz / 655 = 1,821.65 Hz
+DRAM_REFRESH	=	655		; "FASTV20" DRAM divisor: 1,821.65 Hz
+;DRAM_REFRESH	=	64		; "SPEEDER" DRAM divisor: 18,640 Hz
 	ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -329,9 +343,10 @@ ARCH_SUB_TYPE	EQU	0			; make sure this is defined
 ARCH_ID		=	0FFH			; 0xFF=5150
 CASSETTE		=	1			; enable INT 13h cassette
 MBR_CHECK		=	0			; disable MBR check for DOS 1.x
-;FDC_IPL_SW		=	1			; Use IPL SW1 to floppy installed
+;FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
 TURBO_TYPE		=	TURBO_NONE
 EXP_UNIT		=	1			; enable Expansion Unit
+OEM_FONT		=	1			; use OEM style font
 	ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -341,11 +356,13 @@ EXP_UNIT		=	1			; enable Expansion Unit
 ARCH_ID		=	0FBH			; 0xFB=XT v2/v3
 TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
 EXP_UNIT		=	1			; enable Expansion Unit
+OEM_FONT		=	1			; use OEM style font
 	ENDIF
 	IF ARCH_TYPE EQ ARCH_5160
 TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
-FDC_IPL_SW		=	1			; Use IPL SW1 to floppy installed
+FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
 EXP_UNIT		=	1			; enable Expansion Unit
+OEM_FONT		=	1			; use OEM style font
 	ENDIF
 
 	IF ARCH_TYPE EQ ARCH_TD3300
@@ -379,7 +396,7 @@ POST_TEST_PIC_INT	=	0			;  space since PIC is integrated
 ;----------------------------------------------------------------------------;
 ; Configuration for FE2010A
 ;
-;BASIC_ROM		= 	0			; can be disabled to free code space
+;BASIC_ROM		=	0			; can be disabled to free code space
 FD_AUTO_DETECT	=	1			; auto-detect number of floppy drives
 ;FE_CPU_CFG		=	110b			; boot to 9.54 MHz, 2 RAM WS
 FE_CPU_CFG		=	100b			; boot to 9.54 MHz, 4 RAM WS (safest)
@@ -389,8 +406,8 @@ POST_TEST_PIT_1	=	0			; FE2010A chipset cannot read timer 1
 SW1_FLP		=	01b			; SW1 5/6 Max # of floppy drives (0-1)
 TURBO_TYPE		=	TURBO_REV		; always use reverse
 	IF BASIC_ROM EQ 1				; if BASIC enabled, PIC tests are
-POST_TEST_PIC_REG	=	0			;  disabled to fit available code space
-POST_TEST_PIC_INT	=	0			; Since PIC is integrated on FE2010A
+POST_TEST_PIC_REG =	0			;  disabled to fit available code space
+POST_TEST_PIC_INT =	0			; Since PIC is integrated on FE2010A
 	ENDIF						;  these tests may be unnecessary
 
 	IF ARCH_SUB_TYPE EQ ARCH_M88
@@ -452,7 +469,7 @@ POST_TEST_PIC_INT	=	0			;  intergrated to Gate Array A1
 ;----------------------------------------------------------------------------;
 ; Configuration for Book 8088
 ;
-		IF ARCH_TYPE EQ ARCH_BOOK88
+	IF ARCH_TYPE EQ ARCH_BOOK88
 CGA_SNOW_REMOVE	=	0			; disable snow removal
 DRAM_REFRESH	=	0			; disable refresh (no DRAM)
 RAM_PARITY		=	0			; disable memory parity/IO check
@@ -470,7 +487,17 @@ FD_AUTO_DETECT	=	1			; auto-detect number of floppy drives
 SW1_FLP		=	00b			; SW1 7/8 Max # of floppy drives (0-3)
 			ENDIF
 ;POST_ERR_WAIT	=	0			; only warn POST errors
-		ENDIF
+	ENDIF
+
+;----------------------------------------------------------------------------;
+; Configuration for Compaq XT (incomplete)
+;
+	IF ARCH_TYPE EQ ARCH_CPQ
+TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
+SW1_VID		=	10b			; SW1 5/6 ON/OFF Video Type CGA 80
+SW1_FLP		=	1			; SW1 7/8 Max # of floppy drives (0-3)
+							;  0-based: 0=1 drive, 1=2 drives, etc
+	ENDIF
 
 	IF ARCH_TYPE EQ ARCH_EMU
 ;----------------------------------------------------------------------------;
@@ -486,6 +513,8 @@ POST_TEST_PIT_1	=	0			; disable Timer Channel 1 Test
 POST_TEST_FD	=	0			; disable Floppy Drive Seek Test
 							; disable Floppy Head Settle Delay
 RAM_TEST_LONG	=	0			; disable long RAM test
+RAM_PARITY		=	0			; disable memory parity/IO check
+
 TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
 MAX_RAM_AUTO	=	1			; select max RAM from video switch
 
@@ -507,6 +536,11 @@ MAX_RAM_AUTO	=	1			; select max RAM from video switch
 CASSETTE		=	0			; use all features on 5150
 CGA_SNOW_REMOVE	=	0			; disable CGA snow removal
 RAM_TEST_LONG	=	0			; disable long RAM test
+OEM_FONT		=	1			; use OEM style font
+TURBO_TYPE		=	TURBO_STD		; use high = turbo
+		IF MAX_RAM_AUTO EQ 1		; select max RAM from video switch
+POST_TEST_PIT_1	=	00			; disable to free code space
+		ENDIF
 	ENDIF
 
 	IF ARCH_SUB_TYPE EQ ARCH_VEN888
@@ -532,14 +566,20 @@ BOOT_SPEED		EQU	BOOT_NORMAL
 ;----------------------------------------------------------------------------;
 ; Reconfigure features as needed
 ;----------------------------------------------------------------------------;
-; If Cassette enabled, the following features must be disabled to 
-; free code space.
+; If Cassette enabled, some of the following features must be disabled due to
+; code space limitations.
+;
+CAS_RELOCATE	=	0			; keep CAS code in contiguous block
+
+;----------------------------------------------------------------------------;
+; Choose (by commenting out below) one feature to included along with cassette
 ;
 	IF CASSETTE EQ 1
-POST_HD_PARMS	=	0			; disable HD size display
+;POST_HD_PARMS	=	0			; disable HD size display
 RANDOM_TAGLINE	=	0			; disable random tagline
 POST_OPT_ROM	=	0			; display POST option ROM display
-LIGHT_PEN		=	0			; disable light pen
+LIGHT_PEN		=	0			; disable light pen (8 more bytes needed)
+CAS_RELOCATE	=	1			; relocate cassette code
 	ENDIF
 
 	IF POST_HD_CHECK EQ 0
@@ -776,7 +816,6 @@ UM82_STATUS		EQU	0E0H			; read memory size, speed mode
 
 ; VTech Laser Turbo XT
 LASER_TURBO		EQU	1F0H			; CPU speed control port: only bit 7 used
-LASER_MASK		EQU	80H			; mask to toggle correct bit
 
 ; NMI flip/flop
 NMI_R0		EQU	0A0H			; NMI Mask Register
@@ -867,6 +906,7 @@ FDC_ST_ERR_WP	EQU	03H			; Write Protect Error
 FDC_ST_ERR_SEC	EQU	04H			; Sector not found
 FDC_ST_DMA_OVR	EQU	08H			; DMA overrun
 FDC_ST_DMA_64K	EQU 	09H			; DMA access across 64k boundary
+FDC_ST_ERR_MED	EQU	0CH			; Invalid media type
 FDC_ST_ERR_CRC	EQU	10H			; ECC/CRC error on disk read
 FDC_ST_ERR_FDC	EQU	20H			; Controller error
 FDC_ST_ERR_SEEK	EQU	40H			; Seek failure
@@ -981,6 +1021,26 @@ DNB	RECORD	HBN:4, LBN:4
 ; Convert two bytes to word (big endian)
 ;----------------------------------------------------------------------------;
 DBW	RECORD	HWB:8, LWB:8
+
+;----------------------------------------------------------------------------;
+; Convert KiB to Bytes ( K * 1024 )
+;----------------------------------------------------------------------------;
+KB	RECORD	KBK:6, KBS:10
+
+;----------------------------------------------------------------------------;
+; Convert KiB to Words ( K * 1024 / 2 )
+;----------------------------------------------------------------------------;
+KBW	RECORD	KBWK:7, KBWS:9
+
+;----------------------------------------------------------------------------;
+; Convert KiB to Paragraphs ( K * 1024 / 16 )
+;----------------------------------------------------------------------------;
+KBP	RECORD	KBPK:10, KBPS:6
+
+;----------------------------------------------------------------------------;
+; Convert Word to Paragraphs ( K SHL 4 )
+;----------------------------------------------------------------------------;
+KP	RECORD	KPWP:12, KPWPX:4
 
 ;----------------------------------------------------------------------------;
 ; x86 EFLAGS
@@ -1589,32 +1649,42 @@ UM82_512K	EQU		UM82_ST <,,01b>		; 512K RAM
 UM82_640K	EQU		UM82_ST <,,10b>		; 640K RAM
 			ENDIF
 
+			IF ARCH_TYPE EQ ARCH_LASER
+;----------------------------------------------------------------------------;
+; VTech Laser XT control register (1F0H)
+;----------------------------------------------------------------------------;
+; 7       |			- LASER_SPD	Speed: 0=Low, 1=High
+;  654321 | 		- LASER_X1	Unused
+;----------------------------------------------------------------------------;
+LASER_CR	RECORD	LASER_SPD:1=1,LASER_X1:7
+			ENDIF
+
 			IF ARCH_TYPE EQ ARCH_FE2010
 ;----------------------------------------------------------------------------;
 ; FE2010A Configuration Register (Port 63h) Flags
 ;----------------------------------------------------------------------------;
 ; 84218421
-; 100	    |			- FSPD	CPU Clock Frequency and Wait States
-;         |						00x = 4.77, 1 IOWS, 0 MBWS *
-;         |						010 = 7.15, 4 IOWS, 2 MBWS
-;         |						011 = 7.15, 4 IOWS, 0 MBWS *
-;         |						100 = 9.54, 6 IOWS, 4 MBWS * default
-;         |						110 = 9.54, 6 IOWS, 2 MBWS
-;         |						101 = 9.54, 6 IOWS, 0 MBWS
-;         |						111 = 9.54, 6 IOWS, 0 MBWS
-;    0    |			- FME1	RAM size high bit
-;     0   |			- FLCK	1=lock bits 0-4 until next restart
-;      0  |			- FME2	RAM size low bit
-;         |						00  = 640K
-;         |						01  = 256K
-;         |						10  = 512K
-;       0 |			- FFPU	0=No FPU/NMI, 1=enable FPU/NMI
-;        1|			- FPAR	0=Parity check enabled, 1=Parity disabled
+; 100     |             - FSPD      CPU Clock Frequency and Wait States
+;         |                               00x = 4.77, 1 IOWS, 0 MBWS *
+;         |                               010 = 7.15, 4 IOWS, 2 MBWS
+;         |                               011 = 7.15, 4 IOWS, 0 MBWS *
+;         |                               100 = 9.54, 6 IOWS, 4 MBWS * default
+;         |                               110 = 9.54, 6 IOWS, 2 MBWS
+;         |                               101 = 9.54, 6 IOWS, 0 MBWS
+;         |                               111 = 9.54, 6 IOWS, 0 MBWS
+;    0    |             - FME1      RAM size high bit
+;     0   |             - FLCK      1=lock bits 0-4 until next restart
+;      0  |             - FME2      RAM size low bit
+;         |                               00  = 640K
+;         |                               01  = 256K
+;         |                               10  = 512K
+;       0 |             - FFPU      0=No FPU/NMI, 1=enable FPU/NMI
+;        1|             - FPAR      0=Parity check enabled, 1=Parity disabled
 ;----------------------------------------------------------------------------;
 				IF RAM_PARITY EQ 1
-FE_CR RECORD	FSPD:3=FE_CPU_CFG,FME1:1,FLCK:1,FME2:1,FFPU:1,FPAR:1
+FE_CR RECORD      FSPD:3=FE_CPU_CFG,FME1:1,FLCK:1,FME2:1,FFPU:1,FPAR:1
 				ELSE
-FE_CR RECORD	FSPD:3=FE_CPU_CFG,FME1:1,FLCK:1,FME2:1,FFPU:1,FPAR:1=1
+FE_CR RECORD      FSPD:3=FE_CPU_CFG,FME1:1,FLCK:1,FME2:1,FFPU:1,FPAR:1=1
 				ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -1703,7 +1773,7 @@ PPI_C_X_H RECORD	PC2PE:1,PC2IE:1,PC2T2:1,PC2CI:1,PCDRV:2,PCVID:2
 
 			IF ARCH_TYPE EQ ARCH_5150
 ;----------------------------------------------------------------------------;
-; 5150 Power-On: KB hold low+disable, NMI on, spkr data off, cassette off
+; 5150 Power-On: KB hold low+disable, NMI on, spkr data off, cass off, PIT on
 ;
 PPI_B_BOOT	= MASK PBKB OR MASK PBIO OR MASK PBSW OR MASK PBST OR MASK PBCM
 
@@ -1712,13 +1782,13 @@ PPI_B_BOOT	= MASK PBKB OR MASK PBIO OR MASK PBSW OR MASK PBST OR MASK PBCM
 ;----------------------------------------------------------------------------;
 ; Turbo Std Power-On: KB hold low+disable, NMI on, spkr data off, turbo ON/OFF
 ;
-PPI_B_BOOT	= MASK PBKB OR MASK PBIO OR MASK PBSW OR MASK PBST
+PPI_B_BOOT	= MASK PBKB OR MASK PBIO OR MASK PBSW
 
 				ELSE			; BOOT_SPEED NE BOOT_TURBO
 ;----------------------------------------------------------------------------;
 ; Default Power-On: KB hold low+disable, NMI on, spkr data off, turbo OFF/ON
 ;
-PPI_B_BOOT	= MASK PBKB OR MASK PBIO OR MASK PBSW OR MASK PBST OR MASK PBTB
+PPI_B_BOOT	= MASK PBKB OR MASK PBIO OR MASK PBSW OR MASK PBTB
 
 				ENDIF			; /BOOT_SPEED EQ BOOT_TURBO
 
@@ -1920,8 +1990,8 @@ FLAG_BIT	= (FLAG - 8) AND 0111B
 FLAG_MEM	= EQUIP_FLAGS[1]			; high BDA flags byte
 			ENDIF
 
-	MOV	AL, BYTE PTR FLAG_MEM
-	AND	AX, FLAG_MASK			; clear AH
+	MOV	AL, BYTE PTR FLAG_MEM		; AL = equipment flag byte
+	AND	AX, FLAG_MASK			; isolate bits, clear AH
 
 ;----------------------------------------------------------------------------;
 ; Determine optimal number of shifts based on bit position and shift
@@ -2188,19 +2258,13 @@ POST_COL_END_NL	MACRO SAVE_REGS
 ;----------------------------------------------------------------------------;
 ; Beep on Man
 ;----------------------------------------------------------------------------;
-BEEP_ON MACRO 	TONE, NO_SAVE_REGS
+BEEP_ON MACRO 	TONE
 		IFNB	<TONE>
 	MOV	AX, TONE 				; custom tone
 		ELSE
 	MOV	AX, BEEP_DEFAULT
 		ENDIF
-		IFB	<NO_SAVE_REGS>
-	PUSH	BX
-		ENDIF
 	CALL	BEEP_ON_P
-		IFB	<NO_SAVE_REGS>
-	POP	BX
-		ENDIF
 		ENDM
 
 ;----------------------------------------------------------------------------;
@@ -2241,27 +2305,6 @@ BYTES_HERE_&NEXT_LBL = NEXT_LBL-$
 ;----------------------------------------------------------------------------;
 
 ;----------------------------------------------------------------------------;
-; General Purpose Register operands
-;
-_AL	EQU	000b				; reg8
-_CL	EQU	001b
-_DL	EQU	010b
-_BL	EQU	011b
-_AH	EQU	_AL OR 100b
-_CH	EQU	_CL OR 100b
-_DH	EQU	_DL OR 100b
-_BH	EQU	_BL OR 100b
-
-_AX	EQU	_AL				; reg16
-_CX	EQU	_CL
-_DX	EQU	_DL
-_BX	EQU	_BL
-_SP	EQU	_AH
-_BP	EQU	_CH
-_SI	EQU	_DH
-_DI	EQU	_BH
-
-;----------------------------------------------------------------------------;
 ; AAM, AAD with immediate other than 0AH
 ;
 AAM_I		MACRO	IMM
@@ -2273,127 +2316,131 @@ AAD_I		MACRO	IMM
 		ENDM
 
 ;----------------------------------------------------------------------------;
-; x86/V20 Instruction MACROs
+; V20 MACROs for instruction mnemonics not supported by MASM
 ;----------------------------------------------------------------------------;
 
 ;----------------------------------------------------------------------------;
-; General Purpose Register operands
+; V20_R General Purpose Register operands
 ;
-_AL	EQU	000b				; reg8
-_CL	EQU	001b
-_DL	EQU	010b
-_BL	EQU	011b
-_AH	EQU	_AL OR 100b
-_CH	EQU	_CL OR 100b
-_DH	EQU	_DL OR 100b
-_BH	EQU	_BL OR 100b
-
-_AX	EQU	_AL				; reg16
-_CX	EQU	_CL
-_DX	EQU	_DL
-_BX	EQU	_BL
-_SP	EQU	_AH
-_BP	EQU	_CH
-_SI	EQU	_DH
-_DI	EQU	_BH
+V20_R		RECORD	VRW:5, ROPC:3
 
 ;----------------------------------------------------------------------------;
-; AAM, AAD with immediate other than 0AH
+; Format 3 - Single Register OPC, Variant 1
 ;
-AAM_I		MACRO	IMM
-	DB	0D4H, IMM			; AAM	imm
+V20_F3	RECORD	VF3_OPC:5=11000b, VF3_SRC:3
+
+;----------------------------------------------------------------------------;
+; Registers used as operands for V20 MACROs
+;
+_AL	EQU	V20_R	<, 000b>		; reg8
+_CL	EQU	V20_R <, 001b>
+_DL	EQU	V20_R <, 010b>
+_BL	EQU	V20_R <, 011b>
+_AH	EQU	V20_R <, _AL OR 100b>
+_CH	EQU	V20_R <, _CL OR 100b>
+_DH	EQU	V20_R <, _DL OR 100b>
+_BH	EQU	V20_R <, _BL OR 100b>
+_AX	EQU	V20_R <1, _AL>		; reg16
+_CX	EQU	V20_R <1, _CL>
+_DX	EQU	V20_R <1, _DL>
+_BX	EQU	V20_R <1, _BL>
+_SP	EQU	V20_R <1, _AH>
+_BP	EQU	V20_R <1, _CH>
+_SI	EQU	V20_R <1, _DH>
+_DI	EQU	V20_R <1, _BH>
+
+;----------------------------------------------------------------------------;
+; Format 1 - Opcode with Size (Byte/Word)
+;
+V20_OP1	MACRO OP, R, IMM
+		LOCAL W
+	W	= (R AND MASK VRW) SHR VRW		; W=1 if 16, 0 if 8
+	DB	0FH, OP OR W				; register Width
+	V20_F3 <, R AND MASK ROPC >			; dest register
+			IFNB <IMM>
+	DB	IMM
+			ENDIF
 		ENDM
 
-AAD_I		MACRO	IMM
-	DB	0D5H, IMM			; AAD	imm
+TEST1		MACRO R, IMM
+	V20_OP1	18H, R, IMM
+		ENDM
+
+SET1		MACRO R, IMM
+	V20_OP1	1CH, R, IMM
+		ENDM
+
+CLR1		MACRO R, IMM
+	V20_OP1	1AH, R, IMM
+		ENDM
+
+NOT1		MACRO R, IMM
+	V20_OP1	1EH, R, IMM
 		ENDM
 
 ;----------------------------------------------------------------------------;
-; V20 MACROs
-;
-; Polyfill for V20 instruction mnemonics not supported by MASM.
-; Not comprehensive of course.
-;
-
-TEST1_R8	MACRO R8, IMM4
-	DB	0FH, 18H OR 0, 0C0H OR (R8 AND 111B), IMM4	; TEST1 reg8, IMM4
-		ENDM
-
-TEST1_R16	MACRO R16, IMM4
-	DB	0FH, 18H OR 1, 0C0H OR (R16 AND 111B), IMM4	; TEST1 reg16, IMM4
-		ENDM
-
-TEST1_BP	MACRO IMM4
-	TEST1_R16	_BP, IMM4		; TEST1 BP, IMM4
-		ENDM
-
-SET1_BP	MACRO IMM4
-	DB	0FH, 1DH, 0C5H, IMM4	; SET1  BP, IMM4
-		ENDM
-
-NOT1_BP	MACRO IMM4
-	DB	0FH, 1FH, 0C5H, IMM4	; NOT1  BP, IMM4
-		ENDM
-
-CLR1_BP	MACRO IMM4
-	DB	0FH, 1BH, 0C5H, IMM4	; CLR1  BP, IMM4
-		ENDM
-
+; ROL4: roll nibbles left in AL through R8
+;----------------------------------------------------------------------------;
+; R8(low nibble)  = AL(low nibble)
+; R8(high nibble) = R8(low nibble)
+; AL(low nibble)  = R8(high nibble)
+; AL(high nibble) clobbered
+;----------------------------------------------------------------------------;
 ROL4		MACRO R8
-	DB	0FH, 28H, 0C0H OR (R8 AND 111B)	; ROL4
-            ENDM
+	V20_OP1	28H, R8					; ROL4
+		ENDM
 
+;----------------------------------------------------------------------------;
+; ROR4: roll nibbles right in AL through R8
+;----------------------------------------------------------------------------;
+; R8(high nibble) = AL(low nibble)
+; R8(low nibble)  = R8(high nibble)
+; AL(low nibble)  = R8(low nibble)
+; AL(high nibble) clobbered
+;----------------------------------------------------------------------------;
 ROR4		MACRO R8
-	DB	0FH, 2AH, 0C0H OR (R8 AND 111B)	; ROR4
-            ENDM
-
-ROL4		MACRO R8
-	DB	0FH, 28H, 0C0H OR (R8 AND 111B)	; ROL4
-            ENDM
-
-ROR4		MACRO R8
-	DB	0FH, 2AH, 0C0H OR (R8 AND 111B)	; ROR4
-            ENDM
+	V20_OP1	2AH, R8					; ROR4
+		ENDM
 
 ;----------------------------------------------------------------------------;
 ; Operations on POST test FLAGs
 ;----------------------------------------------------------------------------;
 POST_FLAG_TEST MACRO	FLAG
 			IF CPU_TYPE	EQ CPU_V20 AND (WIDTH FLAG) EQ 1
-	TEST1_BP  FLAG				; V20 only: TEST1 BP, FLAG
+	TEST1		_BP, FLAG			; V20: is FLAG set?
 			ELSE
-	TEST	BP, MASK FLAG			; Is flag set?
+	TEST	BP, MASK FLAG			; Is FLAG set?
 			ENDIF
 		ENDM
 
 POST_FLAG_SET MACRO	FLAG
 			IF CPU_TYPE	EQ CPU_V20 AND (WIDTH FLAG) EQ 1
-	SET1_BP   FLAG				; V20 only: SET1 BP, FLAG
+	SET1		_BP, FLAG			; V20: Set FLAG
 			ELSE
-	OR	BP, MASK FLAG			; Set flag
+	OR	BP, MASK FLAG			; Set FLAG
 			ENDIF
 		ENDM
 
 POST_FLAG_FLIP MACRO	FLAG
 			IF CPU_TYPE	EQ CPU_V20 AND (WIDTH FLAG) EQ 1
-	NOT1_BP   FLAG				; V20 only: NOT1 BP, FLAG
+	NOT1		_BP, FLAG			; V20: Invert FLAG
 			ELSE
 	XOR	BP, MASK FLAG			; Invert flag
 			ENDIF
 		ENDM
 
 ;----------------------------------------------------------------------------;
-; If ZF is needed, use NO_V20 for 808x AND instruction instead
+; If ZF is needed, set NEED_ZF to use 808x 'AND' instruction instead
 ;----------------------------------------------------------------------------;
-POST_FLAG_CLR MACRO	FLAG, NO_V20
+POST_FLAG_CLR MACRO	FLAG, NEED_ZF
 				LOCAL USE_V20
-			IFNB <NO_V20>
+			IFNB <NEED_ZF>
 USE_V20	EQU	0				; use AND instruction instead
 			ELSE
-USE_V20	EQU	1				; use CLR1 (doesn't affect ZF)
+USE_V20	EQU	1				; use CLR1 (ZF unaffected)
 			ENDIF
 			IF CPU_TYPE	EQ CPU_V20 AND (WIDTH FLAG) EQ 1 AND USE_V20
-	CLR1_BP   FLAG				; V20 only: CLR1 BP, FLAG
+	CLR1		_BP, FLAG			; V20: Clear FLAG
 			ELSE
 	AND	BP, NOT MASK FLAG			; Clear flag
 			ENDIF
@@ -2518,19 +2565,19 @@ _IVT 		ENDS
 ;----------------------------------------------------------------------------;
 ; 0000:0400 - BIOS data area (BDA) - Zero Page Segment Addressing
 ;----------------------------------------------------------------------------;
-_BDA_SEG	=	40H SHL 4			; BDA Seg 40H
+_BDA_SEG	=	KP < 40H >			; BDA Seg 40H
 _BDA_ABS	SEGMENT AT 0H
-		ORG _BDA_SEG + 1AH
+		ORG	1AH + _BDA_SEG
 KB_BUF_HD_ABS	DW	?			; 40:1AH Keyboard buffer head ptr
-		ORG _BDA_SEG + 3EH
+		ORG	3EH + _BDA_SEG
 FD_CAL_ST_ABS	FDC_SF <>			; 40:3EH Floppy drive recalibration
-		ORG _BDA_SEG + 40H
+		ORG	40H + _BDA_SEG
 FD_MOTOR_CT_ABS	DB	?			; 40:40H FD motor shutoff counter
-		ORG _BDA_SEG + 6BH
+		ORG	6BH + _BDA_SEG
 INT_LAST_ABS	DB	?			; 40:6BH POST / Interrupt happened?
-		ORG _BDA_SEG + 72H
+		ORG	72H + _BDA_SEG
 WARM_FLAG_ABS	DW	?			; 40:72H Warm Boot Flag
-		ORG _BDA_SEG + 80H
+		ORG	80H + _BDA_SEG
 KB_BUF_ST_ABS	DW	?			; 40:80H Keyboard buffer start ptr
 _BDA_ABS	ENDS
 
@@ -2538,8 +2585,8 @@ _BDA_ABS	ENDS
 ; 0030:0000 - Bootstrap temporary stack
 ;----------------------------------------------------------------------------;
 _BOOT_STACK	SEGMENT AT 30H
-			DW 	80H DUP(?)
-STACK_TOP		DW 	?
+			DW 	80H DUP(?)		; temporary stack
+STACK_TOP		LABEL WORD			; top of stack
 _BOOT_STACK	ENDS
 
 ;----------------------------------------------------------------------------;
@@ -2638,7 +2685,7 @@ PTRSCN_ST		DB 	?			; 00H  Print screen status
 			DB	10 DUP(?)		; 05H  POST work area
 			DB	19 DUP(?)		
 DOS_FD_PARAM	DB	14 DUP(?)		; 22H  Floppy drive parameter table
-	 		DB	4  DUP(?)		; 30H  Mode command
+			DB	4  DUP(?)		; 30H  Mode command
 _DOS_DAT	ENDS
 
 ;----------------------------------------------------------------------------;
@@ -2827,12 +2874,6 @@ CPU_REG_TEST:
 CPU_REG_PASS:
 
 ;----------------------------------------------------------------------------;
-; Disable non-maskable interrupts (NMIs)
-;----------------------------------------------------------------------------;
-DISABLE_NMI:
-	OUT	NMI_R0, AL			; write AL = 0 to NMI register port
-
-;----------------------------------------------------------------------------;
 ; [1B] A brief test of flags and CPU instructions
 ;----------------------------------------------------------------------------;
 ; On Failure: 2 short and 1 long beep
@@ -2854,6 +2895,12 @@ CPU_INST_TEST:
 	JNZ	HALT_ERROR			; AX = 0
 CPU_TEST_PASS:
 			ENDIF
+
+;----------------------------------------------------------------------------;
+; [2] Disable non-maskable interrupts (NMIs)
+;----------------------------------------------------------------------------;
+DISABLE_NMI:
+	OUT	NMI_R0, AL			; write AL = 0 to NMI register port
 
 ;----------------------------------------------------------------------------;
 ; [3] Set Zero Page Register for DMA channels 0 and 1
@@ -2942,9 +2989,9 @@ RESET_PPI:
 
 	IN	AL, TD_TURBO		; read current turbo register
 				IF BOOT_SPEED EQ BOOT_TURBO
-	MOV	AL, TD_TURBO_CR<,,0>	; switch to turbo
+	MOV	AL, TD_TURBO_CR <,,0>	; switch to turbo
 				ELSE
-	MOV	AL, TD_TURBO_CR<,,1>	; switch to normal (4.77)
+	MOV	AL, TD_TURBO_CR <,,1>	; switch to normal (4.77)
 				ENDIF
 	OUT	TD_TURBO, AL		; write new register
 			ENDIF			; ENDIF ARCH_TD3300
@@ -2955,9 +3002,9 @@ RESET_PPI:
 
 	MOV	DX, LASER_TURBO		; store speed control port
 				IF BOOT_SPEED EQ BOOT_TURBO
-	MOV	AL, 80H			; switch to turbo
+	MOV	AL, LASER_CR <1>		; switch to turbo
 				ELSE
-	MOV	AL, 00H			; switch to normal
+	MOV	AL, LASER_CR <0>		; switch to normal
 				ENDIF
 	OUT	DX, AL			; write to speed control port
 	MOV	DX, SS			; restore DX
@@ -2992,7 +3039,7 @@ CHECKSUM_ROM:
 	INC	BX				; on failure, 2 short and 2 long beeps
 	MOV	DS, DX			; DS to 0F000h BIOS segment
 	MOV	SI, OFFSET BIOS_TOP 	; offset to top of BIOS ROM
-	MOV	CH, HIGH (8 * 1024 / 2)	; checksum 8KB (in 2 byte words)
+	MOV	CH, HIGH KBW < 8 >	; checksum 8KB (in 2 byte words)
 CHECKSUM:
 	LODSW 				; next two bytes into AL and AH
 	ADD	DL, AL			; DL = accumulator for sum
@@ -3077,21 +3124,27 @@ INIT_PIT1_TEST_DONE:
 ; Counter 1 - DRAM Refresh
 ;----------------------------------------------------------------------------;
 INIT_PIT1:
-		IF DRAM_REFRESH GT 0		; is refresh enabled?
-			IF DRAM_REFRESH GT 0FFH	; program PIT with H/L bytes?
-			IF POST_TEST_PIT_1 NE 1	; skip if already programmed
+			IF DRAM_REFRESH GT 0FFH
+;----------------------------------------------------------------------------;
+; Program PIT with H/L bytes
+;
+		IF POST_TEST_PIT_1 NE 1	; skip if already programmed from PIT test
 	MOV	AL, PIT_CW <1, 11B, 2>	; Control Word: Select Counter(SC): 1
 						;   Format(RW): 11b (R/W low/high byte)
 						;   Mode(M): 2 (Rate Gen), BCD: 0 (Binary)
 	OUT	PIT_CTRL, AL		; set Counter mode
-			ENDIF
+		ENDIF
+
 			ELSE
+;----------------------------------------------------------------------------;
+; Program PIT with single byte
+;
 	MOV	AL, PIT_CW <1, 01B, 2>	; Control Word: Select Counter(SC): 1
 						;   Format(RW): 01b (R/W byte LE)
 						;   Mode(M): 2 (Rate Gen), BCD: 0 (Binary)
 	OUT	PIT_CTRL, AL		; set Counter mode
+
 			ENDIF
-		ENDIF
 
 ;----------------------------------------------------------------------------;
 ; [12] Reset, Clear and test DMA Offset and Block Size Registers
@@ -3138,10 +3191,10 @@ DMA_PASS:
 ; [13B] 8253 Timer set channel #1 for DMA/DRAM refresh
 ;----------------------------------------------------------------------------;
 	MOV	AL, LOW DRAM_REFRESH	; set low byte of divisor
-	OUT	PIT_CH1, AL			;
+	OUT	PIT_CH1, AL			; 
 				IF DRAM_REFRESH GT 0FFH
 	MOV	AL, HIGH DRAM_REFRESH	; set high byte of divisor
-	OUT	PIT_CH1, AL			;
+	OUT	PIT_CH1, AL			; 
 				ENDIF
 			ENDIF
 
@@ -3186,12 +3239,14 @@ DMA_SETUP_CH:
 ;----------------------------------------------------------------------------;
 INIT_EXP_CHASSIS:
 	MOV	DX, EXP_UNIT_CTRL		; PC Expansion Chassis
-;	IN	AL, DX
-;	INC	AL 				; Is 213H == 0FFH?
-;	JZ	NO_EXP_CHASSIS 		; if so, no expansion chassis
+			IF 0			; test for card first?
+	IN	AL, DX
+	INC	AL 				; Is 213H == 0FFH?
+	JZ	INIT_EXP_CHASSIS_DONE 	; if so, no expansion chassis
+			ENDIF
 	MOV	AL, 1 			; otherwise, send 1 to enable
 	OUT	DX, AL
-;NO_EXP_CHASSIS:
+INIT_EXP_CHASSIS_DONE:
 			ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -3261,7 +3316,7 @@ BASE_RAM_TEST_DONE:
 ; [18] Setup BOOT R/W stack memory segment
 ;----------------------------------------------------------------------------;
 			ASSUME SS:_BOOT_STACK
-	MOV	AX, SEG STACK_TOP 		; SP to temp boot stack 0030:0100
+	MOV	AX, SEG STACK_TOP 		; SS:SP to temp boot stack 0030:0100
 	MOV	SS, AX
 	MOV	SP, OFFSET STACK_TOP
 
@@ -3426,8 +3481,8 @@ CHECK_BASIC_ROM:
 	XCHG	AX, DI				; save last ROM's header to DI
 	CMP	AX, DI				; is same as last ROM?
 	JE	INIT_ROM_BASIC_DONE		; if so, valid ROM not present
-	MOV	AL, 8 * 1024 / 512 		; 8K ROM size (in 512B blocks)
-	ADD	BH, HIGH (8 * 1024 SHR 4)	; BX = next BASIC 8K ROM segment
+	MOV	AL, KB < 8 > / 512 		; 8K ROM size (in 512B blocks)
+	ADD	BH, HIGH KBP < 8 >		; BX = next BASIC 8K ROM segment
 	CALL	ROM_CHECKSUM 			; checksum ROM at DS:0, size AL
 	LOOPZ	CHECK_BASIC_ROM			; loop 4 ROMs or checksum fail
 	JNZ	INIT_ROM_BASIC_DONE		; if NZ, checksum failed
@@ -3509,21 +3564,37 @@ GET_SW_SETTINGS:
 
 		IF ARCH_TYPE EQ ARCH_5150
 ;----------------------------------------------------------------------------;
-; Is a 5150 build
+; On 5150, memory size is read from SW1 (motherboard RAM) and SW2 (I/O expansion
+; RAM) added together. Note: motherboard RAM is always counted as 16-64K, even
+; on 64-256K revisions, with expansion RAM size (SW2) equalling size of memory
+; above 64K.
 ;
 SETTINGS_5150:
+			IF CPU_TYPE EQ CPU_V20
+	CWD						; DX = 0
+			ENDIF
 	OR	AL, MASK PBKB OR MASK PBSW	; Enable SW1 switches, SW2 1-4
 	OUT	PPI_B, AL
 	XCHG	AX, CX				; save modified settings
 
 ;----------------------------------------------------------------------------;
-; Read 5150 memory size from SW1 3,4 (motherboard) and SW2 1-5 (expansion)
+; Read expansion card memory size from SW2 1-5
 ;
 	IN	AL, PPI_C				; get expansion card memory size
+			IF CPU_TYPE EQ CPU_V20
+	ROR4	_DL					; DL(h) = bits 1-4 from AL
+	XCHG	AX, CX				; AL = switches
+	AND	AL, NOT MASK PBSW			; read SW2 5
+	OUT	PPI_B, AL
+	IN	AL, PPI_C				; read bit 5
+	AND	AL, 0001B				; isolate memory size bit 5
+	ROR4	_DL					; DL(h) = high bit, DL(l) = low 4
+	SHL	DX, 5					; DX = blocks * 32
+			ELSE
 	AND	AL, 1111B				; isolate memory size (in 32KB)
 	MOV	CH, AL				; save low 4 bits
 	XCHG	AX, CX				; AL = switches, AH = low 4 bits
-	AND	AL, NOT MASK PBSW			; Read SW2 5
+	AND	AL, NOT MASK PBSW			; read SW2 5
 	OUT	PPI_B, AL
 	IN	AL, PPI_C				; read bit 5
 	AND	AL, 0001B				; isolate memory size bit 5
@@ -3534,9 +3605,10 @@ SETTINGS_5150:
 	INC	CX					; convert to KB (CL = 5)
 	SHL	AX, CL				; AX = blocks * 32
 	XCHG	AX, DX				; DX = expansion RAM in KB
+			ENDIF
 
 ;----------------------------------------------------------------------------;
-; Get motherboard RAM size
+; Read motherboard RAM size from SW1 3-4
 ;
 	IN	AL, PPI_A				; get drive, MB RAM, video
 	PUSH	AX					; save SW1
@@ -3552,7 +3624,7 @@ SETTINGS_5150:
 		IF ARCH_TYPE EQ ARCH_FE2010
 ;----------------------------------------------------------------------------;
 ; Is a FE2010A PC
-; TODO: FPU won't be detected if BOOT_NORMAL (too many bytes to fix?)
+; Note: FPU won't be detected if BOOT_NORMAL (too many bytes to fix)
 ;
 ; Set AL for BDA / switch register
 ; Set AH for system config register
@@ -3566,7 +3638,7 @@ SETTINGS_FE2010:
 SETTINGS_FE2010_1:
 	OUT	PPI_C, AL				; write 0 to port 62H Switch Register
 	IN	AL, PPI_C				; port 62H Switch Register
-			IF CPU_TYPE	EQ CPU_V20
+			IF CPU_TYPE EQ CPU_V20
 	SHL	AL, 4					; shift drives and video to high nibble
 			ELSE
 	MOV	CL, 4
@@ -3576,12 +3648,14 @@ SETTINGS_FE2010_1:
 	OR	AL, EQFLAGS <,,,,,SW1_FLP AND 1,,,1>; set FPU: 1, defaults and SW1_FLP
 							;   FD: 00b=1 drive, 01b=2 drives
 
-		ELSE					; not ARCH_5150 OR ARCH_FE2010
-		IF ARCH_TYPE EQ ARCH_EHB OR ARCH_TYPE EQ ARCH_BOOK88
+		ELSE                          ; not ARCH_5150 OR ARCH_FE2010
+		IF ARCH_TYPE EQ ARCH_EHB OR ARCH_TYPE EQ ARCH_BOOK88 OR ARCH_TYPE EQ ARCH_CPQ
+		;IF ARCH_TYPE EQ ARCH_EHB OR ARCH_TYPE EQ ARCH_BOOK88
+		; TODO: better way to force DIP switches
 ;----------------------------------------------------------------------------;
 ; System has no DIP switches - use default and specified settings
 ;
-	MOV	AL, EQFLAGS <,,,,,SW1_FLP,SW1_VID>	; use preconfigured values
+	MOV	AL, LOW EQFLAGS <,,,,,SW1_FLP,SW1_VID>	; use preconfigured values
 
 		ELSE
 ;----------------------------------------------------------------------------;
@@ -3589,22 +3663,27 @@ SETTINGS_FE2010_1:
 ;
 SETTINGS_5160:
 	AND	AL, NOT MASK PBSW			; set bit 3 = 0 for low switch select
-	PUSH	AX		 			; save port settings
 	OUT	PPI_B, AL
+	PUSH	AX		 			; save port settings
 	IN	AL, PPI_C 				; get low switches
+			IF CPU_TYPE	EQ CPU_V20
+	ROR4	_CL					; CL(h) = PPI low switches
+			ELSE
 	AND	AL, MASK MBRAM OR MASK FPU OR MASK IPL ; isolate MB RAM and FPU bits
 	MOV	CH, AL				; save to CH
+			ENDIF
 	POP	AX 					; get port settings
 	OR	AL, MASK PBSW 			; set bit 3 = 1 for high switch select
 	OUT	PPI_B, AL
 	IN	AL, PPI_C 				; get high switches
 			IF CPU_TYPE	EQ CPU_V20
-	SHL	AL, 4					; shift drives and video to high nibble
+	ROR4	_CL					; CL(h) = PPI high, CL(l) = PPI low
+	XCHG	AX, CX				; AL = RAM, FPU with drives and vid
 			ELSE
 	MOV	CL, 4
 	SHL	AL, CL				; shift drives and video to high nibble
-			ENDIF
 	OR	AL, CH				; combine RAM, FPU with drives and vid
+			ENDIF
 
 			IF MAX_RAM_AUTO EQ 1
 ;----------------------------------------------------------------------------;
@@ -3639,7 +3718,7 @@ SETTINGS_DONE:
 	CALL	HAS_FPU				; check FPU, ZF=0 if not detected
 	JZ	SETTINGS_SAVE			; if detected, save flags
 			IF ARCH_TYPE EQ ARCH_FE2010
-	AND	AX, NOT DBW <MASK FPU, MASK FPU> ; otherwise clear FPU flags
+	AND	AX, NOT DBW <MASK FFPU, MASK FPU> ; otherwise clear FPU flags
 			ELSE
 	AND	AL, NOT MASK FPU			; otherwise clear FPU flag
 			ENDIF
@@ -3750,11 +3829,7 @@ HELLO_WORLD:
 ;----------------------------------------------------------------------------;
 ; Jump over INT 02h fixed ORG to continue...
 ;
-			IF (ARCH_TYPE EQ ARCH_EMU) OR (ARCH_TYPE EQ ARCH_EHB)
-	JMP	 NEAR PTR POST_DETECT_PORTS	; (jump hack)
-			ELSE
-	JMP	 SHORT POST_DETECT_PORTS
-			ENDIF
+	JMP	 NEAR PTR POST_DETECT_PORTS
 
 			IF IS_TURBO
 ;----------------------------------------------------------------------------;
@@ -3786,20 +3861,19 @@ TOGGLE_TURBO_TD_1:
 	OUT	TD_TURBO, AL			; write to board
 	CMP	AL, MASK TDSH OR MASK TDSS	; turbo on? (NZ = turbo)
 
-		ENDIF					; ARCH_TD3300
+		ELSE					; NOT ARCH_TD3300
 
 ;----------------------------------------------------------------------------;
 ; VTech Laser Turbo XT switch
 ; Only bit 7 is used, 0 for standard speed and 1 for turbo speed
 ;
-		IF ARCH_TYPE EQ ARCH_LASER
-
+			IF ARCH_TYPE EQ ARCH_LASER
 	MOV	DX, LASER_TURBO			; store speed control port
 	IN	AL, DX				; read current state
-	XOR	AL, LASER_MASK			; flip turbo bit
+	XOR	AL, MASK LASER_SPD		; flip turbo bit
 	OUT	DX, AL				; write to speed control port
+			ELSE				; NOT ARCH_TD3300 OR ARCH_LASER
 
-		ELSE					; NOT ARCH_TD3300 OR ARCH_LASER
 ;----------------------------------------------------------------------------;
 ; Standard PPI B Turbo switch
 ;
@@ -3807,25 +3881,25 @@ TOGGLE_TURBO_TD_1:
 	XOR	AL, MASK PBTB			; flip turbo bit
 	OUT	PPI_B, AL
 
-			IF ARCH_TYPE EQ ARCH_FE2010
+				IF ARCH_TYPE EQ ARCH_FE2010
 ;----------------------------------------------------------------------------;
-; FE2010 Turbo switch
+; FE2010 Toggle two speeds
 ;
-	XCHG	AX, CX				; save AX
-	MOV	AL, FE2010_CONF_REG		; get current register
-	XOR	AL, FE_CR <> AND MASK FSPD	; flip speed bit(s)
-	CALL	FE2010_SETUP_SAVE			; write to memory and register
-	XCHG	AX, CX				; restore AX
-			ENDIF				; ARCH_FE2010
+	XCHG  AX, CX                        ; save AX
+	MOV   AL, FE2010_CONF_REG           ; get current register
+	XOR   AL, FE_CR <> AND MASK FSPD    ; flip speed bit(s)
+	CALL  FE2010_SETUP_SAVE             ; write to memory and register
+	XCHG  AX, CX                        ; restore AX
+				ENDIF			; ARCH_FE2010
 
-			IF ARCH_TYPE EQ ARCH_UM82
+				IF ARCH_TYPE EQ ARCH_UM82
 ;----------------------------------------------------------------------------;
 ; UM82C088 speed mode
 ;
 	OUT	UM82_SPEED, AL			; write any value to toggle speed
-			ENDIF				; ARCH_UM82
+				ENDIF			; ARCH_UM82
 
-			IF ARCH_SUB_TYPE EQ ARCH_VEN888
+				IF ARCH_SUB_TYPE EQ ARCH_VEN888
 ;----------------------------------------------------------------------------;
 ; Vendex 888-XT
 ; For turbo: Write 3 then 1 to 0C0H
@@ -3845,9 +3919,9 @@ VEN888_TURBO:
 	MOV	AL, 1					; software select bit
 	OUT	0C0H, AL				; write bit
 	XCHG	AX, CX				; restore original turbo bit
-			ENDIF
+				ENDIF
 
-			IF ARCH_TYPE EQ ARCH_EHB
+				IF ARCH_TYPE EQ ARCH_EHB
 ;----------------------------------------------------------------------------;
 ; EMM Homebrew/V40 - Toggle wait state FF = 3 W/S, 0 = zero W/S
 ;
@@ -3856,9 +3930,9 @@ VEN888_TURBO:
 	NOT	AL					; toggle FF to 0
 	OUT	DX, AL				; write register
 	NOT	AL					; revert since NZ is Turbo
-			ENDIF				; ARCH_EHB
+				ENDIF			; ARCH_EHB
 
-			IF (ARCH_TYPE EQ ARCH_EMU) AND (ARCH_SUB_TYPE EQ ARCH_MIST)
+				IF (ARCH_TYPE EQ ARCH_EMU) AND (ARCH_SUB_TYPE EQ ARCH_MIST)
 ;----------------------------------------------------------------------------;
 ; PCXT_MiSTer - Toggle between 4 MHz AT and 5MHz XT
 ;
@@ -3868,10 +3942,18 @@ VEN888_TURBO:
 	XOR	AL, MCSP_TOG			; toggle speed bits
 	OUT	DX, AL				; set new speed
 	TEST	AL, MASK MCAT4			; high speed bit set?
-			ELSE				; NOT ARCH_MIST AND NOT ARCH_TD3300
-	TEST	AL, MASK PBTB			; standard turbo bit set?
-			ENDIF				; ARCH_MIST
+				ELSE			; NOT ARCH_MIST AND NOT ARCH_TD3300
 
+;----------------------------------------------------------------------------;
+; NZ if turbo bit set, ZF if not turbo
+;
+;					IF ARCH_TYPE EQ ARCH_FE2010
+;	TEST	AL, MASK FSPD			; speed low?
+;					ELSE
+	TEST	AL, MASK PBTB			; standard turbo bit set?
+;					ENDIF
+				ENDIF			; ARCH_MIST
+			ENDIF				; ARCH_LASER
 		ENDIF					; ARCH_TD3300
 
 	MOV	CX, CURSOR_DEFAULT		; original power-on cursor (fast)
@@ -3936,8 +4018,8 @@ TD3300_MEM_CLEAR_HI:
 ;
 	INC	AX					; TD_MEM_CR <,1>
 	OUT	TD_MEM, AL				; switch to upper bank
-	MOV	AX, 128 SHL 6			; restart at segment 2000H (128K)
-	MOV	DH, HIGH 512 SHL 6		; end at segment 8000H (512K)
+	MOV	AX, KBP < 128 >			; restart at segment 2000H (128K)
+	MOV	DH, HIGH KBP < 512 >		; end at segment 8000H (512K)
 TD3300_MEM_CLEAR_DONE:
 	JMP	NEAR PTR ZERO_ALL_RAM_1		; continue RAM test
 
@@ -3953,7 +4035,7 @@ TD3300_MEM_CLEAR ENDP
 
 			IF ARCH_TYPE EQ ARCH_FE2010
 ;----------------------------------------------------------------------------;
-; Initial Set up Memory
+; Initial Set up Memory and lock Configuration Register
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	DX = memory in paragraphs
@@ -3963,7 +4045,8 @@ TD3300_MEM_CLEAR ENDP
 ;----------------------------------------------------------------------------;
 FE2010_SETUP_MEM PROC
 	MOV	AL, FE2010_CONF_REG		; get register
-	CMP	DH, HIGH 8000H			; is memory size 8000H? (512K)
+	;OR	AL, MASK FLCK			; lock config until reboot (TODO: test this)
+	CMP	DH, HIGH KBP < 512 >		; is memory size 8000H? (512K)
 	JA	FE2010_SETUP_OUT			; is > 512K (already set for 640K)
 	MOV	AH, MASK FME1			; set for 512K
 	JE	FE2010_SETUP_SET			; is 512K, set to 512K
@@ -4093,8 +4176,6 @@ SETUP_AT_KBC ENDP
 ;
 	JMP	EARLY_INIT_DONE	; continue POST
 
-
-
 EARLY_INIT ENDP
 			ENDIF
 
@@ -4197,7 +4278,7 @@ NO_GAME_PORT:
 ;	ES, DS = BDA segment
 ;----------------------------------------------------------------------------;
 POST_DETECT_COM:
-	MOV	CX, 4
+	MOV	CX, 4					; four COM ports
 	XOR	DI, DI 				; 00H BDA COM1-4 base addresses
 	MOV	DX, COM1_IIR			; 3FAH: COM1 Interrupt Ident Reg
 COM_DETECT_LOOP:
@@ -4206,15 +4287,15 @@ COM_DETECT_LOOP:
 	IN	AL, DX 				; read IIR to clear DMA flags
 	IN	AL, DX 				; read IIR again
 	DEC	DX
-	DEC	DX					; get base port
+	DEC	DX					; DX = base port
 	TEST	AL, 11110000B 			; check if any high 4 bits are set
-	JNZ	NO_COM_PORT				; if so, not a valid port
 	XCHG	AX, DX				; AX = detected port
+	JNZ	NO_COM_PORT				; if so, not a valid port
 	STOSW 					; write I/O port to COM BDA table
-	XCHG	AX, DX
 	ADD	BYTE PTR[BX], HIGH(1 SHL COM)	; INC COM port count in flags
 NO_COM_PORT:
-	SUB	DX, COM1_DATA-COM2_IIR		; base port to next IIR port
+	SUB	AX, COM1_DATA-COM2_IIR		; base port to next IIR port
+	XCHG	AX, DX				; DX = next IIR port
 	CMP	CL, 3 				; is COM2 (COM3 next)?
 	JNE	NEXT_COM_PORT			; if not, next
 	MOV	DX, COM3_IIR			; restart at 3EAH: COM3 IIR
@@ -4230,9 +4311,9 @@ NEXT_COM_PORT:
 ;	CH = 0
 ;----------------------------------------------------------------------------;
 POST_DETECT_LPT:
+	MOV	CL, 3					; three LPT ports
 	MOV	DI, OFFSET LPT_ADDR		; 08H BDA LPT1-3 base addresses
 	MOV	DX, LPT_MDA				; start with MDA printer base
-	MOV	CL, 3
 LPT_DETECT_LOOP:
 	MOV	AL, MASK LCDR OR MASK LCINI-1	; use init byte - 1 as test data
 	OUT	DX, AL				; send to LPT data port
@@ -4656,6 +4737,7 @@ CLEAR_POST_SCREEN:
 ; Attempt to IPL three times. If failure, call INT 18h / ROM BASIC.
 ; If INT_19_BOOT_HD is 1, BIOS will also attempt to IPL from 80h (C:)
 ;
+
 	CWD						; start IPL from drive 00h (A:)
 BOOT_DEVICE:
 	MOV	CX, 3 				; retry three times
@@ -4754,11 +4836,6 @@ POST_FDD		DB	'FDD',  0
 POST_HDD		DB	'HDD',  0
 POST_LSEP		DB	POST_L, 0
 POST_RSEP		DB	POST_R, 0
-					IF POST_WARM_COLD EQ 1
-POST_BOOT		DB	'Boot', 0
-POST_WARM		DB	'WARM', 0
-POST_COLD		DB	'COLD', 0
-					ENDIF
 
 ;----------------------------------------------------------------------------;
 ; NMI strings - these must be contiguous
@@ -4777,72 +4854,70 @@ STRINGS ENDP
 ;============================================================================;
 
 ;----------------------------------------------------------------------------;
-; Scan, checksum and call BIOS ROMs
+; Scan, checksum and call BIOS ROM init procedures
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	AX = starting segment
 ;	DI = ending segment
 ; Output:
 ;	AX, DI = ending segment
-;
-; Note: ROM init's can clobber any or all registers so important to save
-; any that are used here between calls.
+;	DF = 0
 ;
 ; Clobbers: AX, BX, SI (anything else the ROM might, except for DS, ES and BP)
-; Size: 73 bytes
+; Size: 67 bytes
 ;----------------------------------------------------------------------------;
 BIOS_ROM_SCAN PROC
-			ASSUME ES:_BDA
-	PUSHX	BP, DS, ES				; some option ROMs may clobber BP
-	MOV	DS, AX 				; DS = starting segment
+	PUSHX	BP, DS, ES				; call preserve these registers
 CHECK_ROM:
-	CLD						; direction flag forward
-	MOV	BX, SEG _BDA 			; ES = 0040H (BIOS BDA segment)
-	MOV	ES, BX				; re-set ES for each ROM call
-	PUSH	DS					; save current DS segment
-	MOV	BL, 2048 SHR 4			; next 2K segment boundary length
-	PUSH	BX					; save for use if no ROM found
-	XOR	SI, SI 				; reset offset to 0
-	LODSW 					; AX = first word (should be 0AA55H)
+	MOV	DS, AX 				; DS = starting segment
+	XCHG	AX, BX				; BX = current DS segment
+	MOV	AX, KBP < 2 >			; next 2K segment boundary length
+	PUSH	AX					; save for use if no ROM found
+	XOR	SI, SI 				; ROM offset to 0
+	LODSW 					; AX = first word (must be 0AA55H)
 	CMP	AX, MAGIC_WORD			; is it an extension ROM?
 	JNE	NEXT_ROM 				; if not, check next 2K block
 FOUND_ROM:
 	LODSB						; AL = ROM size in 512B blocks
 	CMP	AL, 0					; is size "reasonable"?
 	JLE	NEXT_ROM				; if not 1-127, skip it
-	CALL	ROM_CHECKSUM 			; checksum ROM at DS:0, size AL
+	CALL	ROM_CHECKSUM 			; checksum ROM at DS:0, AX=bytes read
 			IF POST_OPT_ROM
 	CALL	ROM_SCAN_POST			; show ROM offset, size and errors
 			ENDIF
 	JNZ	NEXT_ROM				; if NZ, checksum failed, skip it
-	POP	BX					; discard previous boundary size
+	POP	BP					; discard previous boundary size
 			IF CPU_TYPE	EQ CPU_V20
 	SHR	AX, 4					; V20: 512 byte blocks to paragraph
 			ELSE
 	MOV	CL, 4					; 8088: 512 byte blocks to paragraph
 	SHR	AX, CL
 			ENDIF
-	PUSH	AX					; replace next boundary size
+	PUSH	AX					; replace next boundary with ROM size
 
 ;----------------------------------------------------------------------------;
 ; Call Option ROM's BIOS init routine
 ;
+; Note: ROM init's can clobber any or all registers so important to save
+; any that are used here between calls.
+;
 	IN	AL, INT_IMR 			; get current OCW1/IMR register
 	PUSH	AX					; save IMR
-	PUSH	DI					; save ending segment
-	MOV	DI, OFFSET ROM_INIT_SS		; BDA = temp location for FAR CALL
-	MOV	ES:[DI], SI				; init vector offset (always 3)
-	MOV	ES:[DI][2], DS			; init vector segment
-	CALL	DWORD PTR ES:[DI]			; CALL Option ROM init
-	CLI						; make sure interrupts are disabled
-	POP	DI					; restore ending segment
+	PUSH	DI					; save ROM scan ending segment
+	PUSH	DS					; ROM init segment
+	PUSH	SI					; ROM init offset (always 03H)
+	MOV	BP, SP				; BP = FAR pointer to ROM init
+	CALL	DWORD PTR [BP]			; FAR CALL to option ROM init
+	CLI						; ensure interrupts are still disabled
+	POP	BX					; rebalance stack
+	POP	BX					; restore current DS segment
+	POP	DI					; restore ROM scan ending segment
 	POP	AX					; restore IMR
 	OUT	INT_IMR, AL				; reset IMR
+	CLD						; ensure direction flag forward
 NEXT_ROM:
-	POP	BX					; restore next boundary size
-	POP	AX					; restore current DS segment
+	POP	AX					; restore next boundary size
 	ADD	AX, BX				; next boundary
-	MOV	DS, AX
 	CMP	AX, DI 				; end of extension ROM regions?
 	JB	CHECK_ROM 				; if not, check next
 ROM_SCAN_DONE:
@@ -4859,12 +4934,12 @@ BIOS_ROM_SCAN ENDP
 ; Output:
 ;	ZF if checksum is valid
 ;	AX = number of bytes read
-;	DX = 8 bit checksum value
+;	DX = 8 bit checksum remainder
 ;
 ; Size: 20 bytes
 ;----------------------------------------------------------------------------;
 ROM_CHECKSUM PROC
-			ASSUME DS:BIOS
+			ASSUME DS:NOTHING
 	PUSH	CX
 	PUSH	SI
 	CBW					; AH = 0
@@ -4935,12 +5010,12 @@ DETECT_MEMORY PROC
 ; Detect RAM size in 16K blocks
 ; Output: ES = highest memory segment "detected"
 ;
-	MOV	DX, 16 * 1024 SHR 4		; Start at second 16KB block
+	MOV	DX, KBP < 16 >			; Start at second 16KB block para
 	MOV	ES, DX				; ES = seg 0400H
 BLOCK_LOOP:
 	CALL	MEM_ADDR_TEST			; address test on 16KB RAM block at ES
 	JNZ	BLOCK_LOOP_DONE			; exit loop if test failed
-	ADD	DH, HIGH 400H			; add 400h paras (4000h bytes)
+	ADD	DH, HIGH KBP < 16 >		; add 400h paras (16 KB)
 	MOV	ES, DX
 	LOOP	BLOCK_LOOP				; loop until MAX_RAM
 BLOCK_LOOP_DONE:
@@ -4972,11 +5047,11 @@ BLOCK_LOOP_DONE:
 							;  as POST_KB_OK (next string)
 	CALL	OUT_SZ				; display '000 KB OK'
 	POST_COL_END				; end post column
-	XOR	BX, BX				; BX = 0, segment and memory test counter
+	XOR	BX, BX				; BX = 0, memory test counter
 	MOV	ES, BX				; start at segment 0000
 ZERO_ALL_RAM:
 	XOR	AX, AX				; zero AX
-	ADD	BX, 16				; increment Memory count value
+	ADD	BX, 16				; increment memory count value
 	CMP	BX, 100				; CF if two digit number
 	ADC	AL, POST_COL_VT			; space inner column for 2 or 3 digits
 			IF RAM_DIGITS GT 3
@@ -4984,12 +5059,12 @@ ZERO_ALL_RAM:
 	ADC	AL, 0					; space inner column for 3 or 4 digits
 			ENDIF
 	CALL	MOVE_COL				; move to start of inner column
-	MOV	AX, BX				; move RAM size to AX for display
 	PUSH	BX					; save RAM size
+	XCHG	AX, BX				; move RAM size to AX for display
 	CALL	OUT_DECU				; display AX as decimal
 	POP	BX					; restore RAM size
 	MOV	AX, ES				; AX = last segment tested
-	ADD	AX, 16 * 1024 SHR 4		; move to next 16K segment/block
+	ADD	AX, KBP < 16 >			; move to next 16K segment/block
 	CMP	AX, DX				; is last segment of RAM?
 	JNB	DONE_ZERO_ALL_RAM			; exit if end
 ZERO_ALL_RAM_1:
@@ -5020,7 +5095,7 @@ TEST_MEM_LONG:
 ;
 ZERO_ALL_START:
 	XOR	AX, AX 				; write zeros
-	MOV	CX, 16 * 1024 / 2			; loop 16KB in WORDs
+	MOV	CX, KBW < 16 >			; loop 16KB in WORDs
 	MOV	DI, AX				; DI = beginning of segment
 	REP	STOSW 				; write zero to next 16KB
 	JMP	SHORT ZERO_ALL_RAM
@@ -5157,11 +5232,11 @@ MEM_TEST PROC
 ; Clobbers: AX, CX, DI
 ;----------------------------------------------------------------------------;	
 MEM_CHECK PROC
-	MOV	CX, 16 * 1024 / 2			; loop 16KB in WORDs
+	MOV	CX, KBW < 16 >			; loop 16KB in WORDs
 	XOR	DI, DI 				; start at offset 0
 	REP	STOSW 				; write test pattern
 MEM_TEST_VERIFY:
-	MOV	CH, HIGH (16 * 1024 / 2)	; restart loop 16KB in WORDs
+	MOV	CH, HIGH KBW < 16 >		; restart loop 16KB in WORDs
 	XOR	DI, DI 				; start at offset 0
 	REPZ	SCASW 				; loop until CX = 0 OR WORD is not AX
 	XCHG	AX, CX				; AX = 0 if success
@@ -5221,19 +5296,20 @@ IO_DELAY_MS PROC
 	PUSH	BX
 	MOV	BX, 1193 * 2		; 1,193,182 / 1000 ms * 2 = 2,386 ticks/ms
 
+;----------------------------------------------------------------------------;
+; Delay using PIT counter DX:AX number of ticks
+;----------------------------------------------------------------------------;
 IO_DELAY_TICK PROC
-	;XCHG	AX, BX			; BX = wait ms
 	PUSH	CX
 	PUSH	DX
 	MUL	BX				; DX:AX = countdown of PIT ticks to wait
 	XCHG	AX, BX			; DX:BX = countdown ticks
 	CALL	IO_WAIT_LATCH		; AX = start read
-	MOV	CX, AX			; CX = last read
 IO_WAIT_MS_LOOP:
+	MOV	CX, AX			; CX = last read
 	CALL	IO_WAIT_LATCH		; AX = current counter reading
 	SUB	CX, AX			; CX = # of ticks elapsed since last reading
 	SUB	BX, CX			; subtract change in ticks from countdown
-	MOV	CX, AX			; CX = save the last read
 	SBB	DX, 0				; borrow out of high word (if necessary)
 	JAE	IO_WAIT_MS_LOOP		; loop while countdown >= 0
 	POP	DX
@@ -5278,8 +5354,79 @@ IO_DELAY_MS_FDC ENDP
 IO_DELAY_MS_FDC	EQU IO_DELAY_MS
 		ENDIF
 
+			IF CAS_RELOCATE EQ 1
+;----------------------------------------------------------------------------;
+; CAS_READ_WORD: read 16 bits, add to working CRC
+;----------------------------------------------------------------------------;
+; Output:
+;	AX = word read (little endian)
+;	CF if error
+;----------------------------------------------------------------------------;
+CAS_READ_WORD PROC
+	CALL	CAS_READ_BYTE
+	JC	CAS_READ_BYTE_RET
+
+;----------------------------------------------------------------------------;
+; CAS_READ_BYTE: read 8 bits, add to working CRC
+;----------------------------------------------------------------------------;
+; Output:
+;	AL = byte read
+;	CF if error
 ;
-; 32/13 BYTES HERE
+; Clobbers: AH, BL, DX
+;----------------------------------------------------------------------------;
+CAS_READ_BYTE PROC
+	PUSH	CX				; save CX
+	MOV	CX, 8				; loop 8 bits
+
+;----------------------------------------------------------------------------;
+; CAS_READ_BIT: read 1 bit (2 cycles)
+;----------------------------------------------------------------------------;
+CAS_READ_BIT PROC
+CAS_READ_BIT_LOOP:
+	CALL	CAS_READ_CYCLE		; DX = read low cycle length
+	STC					; presume failure
+	JZ	CAS_READ_BYTE_EXIT	; exit if unable to read
+	PUSH	DX				; save low length
+	CALL	CAS_READ_CYCLE		; DX = read high cycle length
+	POP	AX				; AX = low length
+	STC					; presume failure
+	JZ	CAS_READ_BYTE_EXIT
+	ADD	AX, DX			; AX = full cycle length
+
+;----------------------------------------------------------------------------;
+; Determine bit value based on full cycle duration with 33% tolerance.
+;
+; 1: 2t * 1193182 (Hz) / 1007 Hz = ~ 2368 ticks
+; 0: 2t * 1193182 (Hz) / 2014 Hz = ~ 1184 ticks
+; (Note: raw timer counter readings are doubled, so must be adjusted by 2x)
+;
+; BEEP_1K7 = 1184 ticks = ~1007 Hz
+; BEEP_2K  = 592 ticks  = ~2014 Hz
+;
+; Use median of values to determine maximum length of a '1' bit cycle:
+; 1184 + 592 -> 1776 / 2 = ~ 1344 Hz = ~ 33% tolerance
+;
+	MOV	DX, BEEP_1K7 + BEEP_2K	; DX = median cycle length
+	CMP	DX, AX			; above or below median freq?
+	CALL	CAS_CRC_ADD			; add bit to working CRC
+	CMP	DX, AX			; above or below median freq?
+	ADC	BL, BL			; add bit to result
+	LOOP	CAS_READ_BIT_LOOP
+	MOV	AL, BL			; AL = result
+CAS_READ_BIT ENDP
+	CLC					; no error
+CAS_READ_BYTE_EXIT:
+	POP	CX
+CAS_READ_BYTE_RET:
+	RET
+
+CAS_READ_BYTE ENDP
+CAS_READ_WORD ENDP
+			ENDIF
+
+;
+; 43/8 BYTES HERE
 ;
 BYTES_HERE	INT_19
 
@@ -5327,6 +5474,7 @@ INT_19_READ_MBR:
 	JMP 	FAR PTR IPL_TOP 			; jump to IPL segment and boot!
 INT_19_IPL_FAIL:
 	IRET
+		ASSUME DS:NOTHING, ES:NOTHING
 INT_19 ENDP
 
 		IF POST_HD_CHECK EQ 1
@@ -5393,17 +5541,16 @@ INT_14 PROC
 	STI 					; enable interrupts
 	PUSH	CX 				; call-preserve CX
 	MOV	CX, 3 			; will use this 3 in multiple places
-	CMP	DX, CX			; is port number less than 4?
-	JA	INT_14_EXIT 		; if not, exit
+	CMP	DX, CX			; is port number valid?
+	JA	INT_14_EXIT 		; exit if port is > 3
 	PUSHX	DI, BX, DX, DS		; call-preserve registers
 	MOV	DI, SEG _BDA 		; DS = BDA
 	MOV	DS, DI
 	MOV	DI, DX 			; DI = COM port index (0-3)
-	SHL	DI, 1 			; convert to word index
-	MOV	DX, [DI] 			; DX = 3F8/2F8 base port address
-	SHR	DI, 1 			; back to byte index
-	TEST	DX, DX 			; is port index valid (detected)?
-	JZ	INT_14_DONE 		; if not, exit
+	MOV	BX, DI			; convert to word index
+	CWD					; DX = 0
+	ADD	DX, [BX][DI]		; DX = 3F8/2F8 base port address
+	JZ	INT_14_DONE 		; is port index valid (detected)?
 	CMP	AH, CL			; check function number (CL = 3)
 	JA	INT_14_DONE			; > 3? Not valid
 	JZ 	INT_14_3	 		; = 3 then status
@@ -5483,7 +5630,7 @@ INT_14_0_SET_PSW:
 ;	AL = modem status
 ;----------------------------------------------------------------------------;
 INT_14_3 PROC
-	ADD	DX, 5 			; DX = 3FD/2FD LSR - Line Status Register
+	ADD	DX, COM1_LSR-COM1_DATA	; DX = 3FD/2FD LSR - Line Status Register
 	PUSH	BX				; delay for I/O
 	IN	AL, DX 			; get line/port status 
 	XCHG	AH, AL 			; save to AH
@@ -5494,10 +5641,10 @@ INT_14_3 ENDP
 
 INT_14_DONE PROC
 	POPX	DS, DX, BX, DI		; restore all registers
-INT_14_EXIT PROC
+
+INT_14_EXIT:
 	POP	CX
 	IRET
-INT_14_EXIT ENDP
 INT_14_DONE ENDP
 
 INT_14_0 ENDP
@@ -5512,7 +5659,7 @@ INT_14_0 ENDP
 INT_14_1 PROC
 	PUSH	DX 					; save base port
 	PUSH	AX
-	ADD	DX, 4 				; DX = 3FC/2FC - Modem Control Register
+	ADD	DX, COM1_MCR-COM1_DATA		; DX = 3FC/2FC - Modem Control Register
 	MOV	AL, MASK RTS OR MASK DTR	; activate DTR & RTS
 	OUT	DX, AL				; set DTR or RTS
 	INC	DX
@@ -5546,7 +5693,7 @@ INT_14_1 ENDP
 ;----------------------------------------------------------------------------;
 INT_14_2 PROC
 	PUSH	DX 					; save base port
-	ADD	DX, 4 				; DX = 3FC/2FC - Modem Control Register
+	ADD	DX, COM1_MCR-COM1_DATA		; DX = 3FC/2FC - Modem Control Register
 	MOV	AL, MASK DTR			; activate DTR
 	OUT	DX, AL				; set DTR
 	INC	DX
@@ -5681,7 +5828,7 @@ POST_MDA		DB	'Mono', 0
 			ENDIF
 
 ;
-; 0 BYTES HERE
+; 3 BYTES HERE
 ;
 BYTES_HERE	INT_16
 
@@ -5700,7 +5847,7 @@ BYTES_HERE	INT_16
 		ORG 0E82EH
 INT_16 PROC
 		ASSUME DS:_BDA
-	STI
+	STI					; necessary?
 	CLD
 	PUSH	DS
 	PUSH	SI
@@ -5726,7 +5873,7 @@ INT_16 PROC
 ;----------------------------------------------------------------------------;
 KB_KEY_STATUS PROC
 	MOV	SI, OFFSET KB_BUF_HD 	; SI = head ptr
-	CLI 					; disable interrupts
+	CLI 					; disable interrupts (already off)
 	LODSW 				; AX = head, SI = tail ptr
 	CMP	AX, [SI]	 		; head == tail?
 	JNE	KB_BUF_HAS_KEY 		; if not, buffer has a key
@@ -5799,6 +5946,7 @@ BEEP_PROC PROC
 ;	BL high nibble = short beeps
 ;
 ; Note: must use LOOP for beep since BEEP could occur if PIT is not working
+;  (then how does the speaker work?)
 ; Note 2: cannot use stack since HALT_BEEP could occur before stack
 ;
 ; Size: 60 bytes
@@ -5840,10 +5988,12 @@ HALT_BEEP ENDP
 ;----------------------------------------------------------------------------;
 BEEP PROC
 	PUSH	AX
+	PUSH	BX
 	BEEP_ON
-	MOV	AX, 250			; 1/4 second pause
-	CALL	IO_DELAY_MS
+	MOV	AL, 2				; 1/4 second pause
+	CALL	IO_WAIT_MS_125
 	BEEP_OFF
+	POP	BX
 	POP	AX
 	RET
 BEEP ENDP
@@ -5872,12 +6022,14 @@ MEEPMEEP PROC
 ;----------------------------------------------------------------------------;
 MEEP PROC
 	PUSH	AX
+	PUSH	BX
 	BEEP_ON
 	MOV	CH, MEEP_DELAY
-	IO_DELAY				; delay while beeping
+	IO_DELAY				; delay while meeping
 	BEEP_OFF
 	MOV	CH, MEEP_DELAY
 	IO_DELAY				; delay between beeps
+	POP	BX
 	POP	AX
 	RET
 MEEP ENDP
@@ -5889,6 +6041,8 @@ MEEPMEEP_Z ENDP
 ;----------------------------------------------------------------------------;
 ; Input:
 ; 	AX = TONE
+; Output:
+;	BL = previous PPI state
 ;
 ; http://www.cs.binghamton.edu/~reckert/220/8254_timer.html
 ;
@@ -5905,7 +6059,8 @@ BEEP_ON_1 PROC
 	MOV	AL, AH 				; select high byte
 	OUT	PIT_CH2, AL				; send high byte to timer
 	IN	AL, PPI_B				; read current PPI port B status
-	OR	AL, MASK PBSP OR MASK PBST	; turn on speaker bits
+	MOV	BL, AL				; save original PPI state
+	OR	AL, MASK PBSP OR MASK PBST	; enable speaker and time gates
 	OUT	PPI_B, AL				; write back to port B
 	RET
 BEEP_ON_1 ENDP
@@ -5913,17 +6068,28 @@ BEEP_ON_P ENDP
 
 ;----------------------------------------------------------------------------;
 ; Turn off speaker
+;----------------------------------------------------------------------------;
+; Input:
+;	BL = original (speaker off) PPI state
 ;
 ; Clobbers: AL
 ;----------------------------------------------------------------------------;
 BEEP_OFF_P PROC
-	IN	AL, PPI_B				; read current PPI port B status
-	AND	AL, NOT (MASK PBSP OR MASK PBST)	; turn off speaker bits
+	MOV	AL, BL				; restore original PPI state
 	OUT	PPI_B, AL				; write back to port B
 	RET
 BEEP_OFF_P ENDP
 
 BEEP_PROC ENDP
+
+;----------------------------------------------------------------------------;
+; Additional POST messages
+;----------------------------------------------------------------------------;
+				IF POST_WARM_COLD EQ 1
+POST_BOOT		DB	'Boot', 0
+POST_WARM		DB	'WARM', 0
+POST_COLD		DB	'COLD', 0
+				ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Display all POST messages
@@ -5941,11 +6107,7 @@ POST_ERR_MSG PROC
 POST_ERR		DB	CR, LF, 'POST '	; POST Error
 POST_ERR_ERR	DB	'Error ', 0		; Error
 POST_ERR_PKI	DB	'KB',   0		; Reset returned non-success "301"
-				IF ARCH_TYPE EQ ARCH_EHB
-POST_ERR_PKEY	EQU	POST_ERR_PKI	; re-use to save bytes
-				ELSE
 POST_ERR_PKEY	DB	'Key',  0		; Reset did not clear KBC
-				ENDIF
 POST_ERR_PFDC	DB	'FDC',  0		; General FD init failure
 POST_ERR_PDMA	DB	'DMA',  0		; DMA TC0 error
 
@@ -6057,7 +6219,7 @@ L_INT_KB_CTRL_ASC_TBL	EQU ($-INT_KB_CTRL_ASC_TBL)/2		; 12 total
 L_INT_KB_CTRL_SCAN_TBL	EQU ($-INT_KB_CTRL_SCAN_TBL)/2-1	; 6
 
 ;
-; 14 BYTES HERE
+; 0 BYTES HERE
 ;
 BYTES_HERE	INT_09
 
@@ -6426,14 +6588,14 @@ INT_KB_CTRL_NO_ALT PROC
 ; a lookup table since they do not follow a predictable pattern.
 ;
 	XCHG	AX, BX					; BH = scan code, BL = ASCII
-	MOV	CX, 12					; length of table (L_INT_KB_CTRL_ASC_TBL)
+	MOV	CX, L_INT_KB_CTRL_ASC_TBL		; length of table
 	MOV	SI, OFFSET INT_KB_CTRL_ASC_TBL
 INT_KB_CTRL_ASC_TBL_LOOP:
 	LODS	WORD PTR CS:[SI]				; AH = scan code, AL = new ASCII
 	CMP	AH, BH					; scan code match?
 	LOOPNE INT_KB_CTRL_ASC_TBL_LOOP		; if not keep looping until end
 	JNZ	INT_KB_CTRL_ASC_TBL_DONE		; no matches, restore AX and continue
-	CMP	CL, 6						; was first list segment? (L_INT_KB_CTRL_SCAN_TBL)
+	CMP	CL, L_INT_KB_CTRL_SCAN_TBL		; was first list segment?
 	JG	INT_KB_CTRL_NO_DONE			; if so, match found and AX is set, exit
 	MOV	AH, 0						; ASCII code 0
 	XCHG	AL, AH					; AH = scan code, AL = 0
@@ -6745,8 +6907,48 @@ L_KEY_SCAN_TBL EQU $-KEY_SCAN_TBL
 
 INT_09 ENDP
 
+			IF CAS_RELOCATE EQ 1
+;----------------------------------------------------------------------------;
+; CAS_CRC_ADD: Add current bit to CRC message
+;----------------------------------------------------------------------------;
+; Input:
+;	CF = bit to add
+;----------------------------------------------------------------------------;
+; This is (effectively) CRC16-CCITT as used by IBM for SDLC/HDLC. It uses a
+; 0FFFFh initial/preset value, 1021h polynomial and has an expected residue
+; value of 01D0Fh.
 ;
-; 22/5 BYTES HERE
+; cf = ( ( crc & 0x8000 ) >> 15 ) ^ CF;
+; if ( cf ) {
+;	crc = crc ^ 0x0810;
+; }
+; crc = crc << 1 | cf;
+; return crc;
+;
+; https://stackoverflow.com/questions/62771192/crc16-ccitt-calculation
+; http://bitsavers.trailing-edge.com/pdf/ibm/datacomm/GA27-3093-3_SDLC_Concepts_Jun86.pdf
+;----------------------------------------------------------------------------;
+CAS_CRC_PRE		EQU	0FFFFh	; Cassette CRC16-CCITT preset value
+CAS_CRC_RES		EQU	01D0Fh	; Cassette CRC16-CCITT residue value
+CAS_CRC_POLY 	EQU 	01021h	; Cassette CRC16-CCITT polynomial
+
+CAS_CRC_ADD PROC
+	XCHG	AX, CAS_CRC			; get working CRC, save AX
+	RCR	AX, 1				; set up for RCL
+	RCL	AX, 1				; OF = MSB(AX) XOR CF
+	CLC					; CF = OF
+	JNO	CAS_CRC_SHIFT		; if OF: AX = AX XOR 0810h
+	XOR	AX, CAS_CRC_POLY SHR 1	; divide by polynomial (already shifted)
+	STC					; CF = OF
+CAS_CRC_SHIFT:
+	ADC	AX, AX			; shift and add bit to working CRC value
+	XCHG	CAS_CRC, AX			; store working CRC, restore AX
+	RET
+CAS_CRC_ADD ENDP
+			ENDIF
+
+;
+; 5 BYTES HERE
 ;
 BYTES_HERE	INT_13
 
@@ -6890,6 +7092,7 @@ INT_13_0 PROC
 INT_13_0_1:
 			IF CPU_TYPE	EQ CPU_V20
 	ROL4	_CH					; CH(h) = FD_MOTOR_ST(l), CH(l) = AL(l)
+							;  = (FD_MOTOR_ST SHL 4) OR (AL AND 0FH)
 	MOV	AL, CH				; AL = CH
 			ELSE
 	MOV	CL, 4 				; move low nibble of FD_MOTOR_ST
@@ -6993,7 +7196,6 @@ FDC_DMA_BOUND:
 ;----------------------------------------------------------------------------;
 INT_13_2_5 PROC
 	CALL	FDC_SEEK 				; Turn on motor, CH = track, DL = drive
-INT_13_0A_DONE:
 	JC	INT_13_DONE				; exit if seek error
 	PUSH	AX					; save function / sector count
 	PUSH	DX					; save head / drive
@@ -7058,12 +7260,11 @@ INT_13_2_5_SETUP_DMA:
 ;-------------------------------------------------------------------------
 FDC_INIT_DMA:
 	PUSH	CX					; save track / sector
-	OUT	DMA_FF, AL				; DMA clear flip-flop (port 0CH) (any value)
 	MOV	DX, ES 				; get and shift ES by one nibble
 			IF CPU_TYPE EQ CPU_V20
 	ROL	DX, 4					; V20 only
 			ELSE
-	MOV	CL, 4					; DL = highest and lowest nibble of ES
+	MOV	CL, 4					; DL = lowest and highest nibble of ES
 	ROL	DX, CL				; DH = middle nibbles
 			ENDIF
 	XCHG	AL, AH				; AL = DMA mode, AH = sectors to read
@@ -7077,23 +7278,24 @@ FDC_INIT_DMA:
 	SHL	AX, CL				; AX = bytes to transfer (AX * 2^CL)
 	DEC	AX					; AX = bytes to transfer - 1
 	XCHG	AX, CX				; CX = bytes to transfer - 1
-	MOV	AL, DL				; AL = highest and lowest nibble of ES
+	MOV	AL, DL				; AL = lowest and highest nibble of ES
 	AND	AL, 0FH				; AL = only high nibble of ES
 	AND	DL, 0F0H				; DX = low three nibbles of ES (shifted left 1 nibble)
-	ADD	DX, BX				; DX = DMA start offset for transfer
+	ADD	BX, DX				; BX = DMA start offset for transfer
 	ADC	AL, 0					; AL = DMA page
-	MOV	BX, DX				; check that buffer offset + length does not exceed segment
-	ADD	BX, CX				; BX = DMA end offset, test for boundary overflow
+	MOV	DX, BX				; check that buffer offset + length does not exceed segment
+	ADD	DX, CX				; DX = DMA end offset, test for boundary overflow
 	JC	FDC_DMA_BOUND			; error if DMA access across 64k boundary
 	CLI						; Disable interrupts
+	OUT	DMA_FF, AL				; DMA clear flip-flop (port 0CH) (any value)
 	OUT	DMA_P_C2, AL 			; set DMA Channel 2 Page Address Register (port 81H)
-	XCHG	AX, DX				; AL = address low byte, AH = high byte (4)
+	XCHG	AX, BX				; AL = address low byte, AH = high byte
 	OUT	DMA_2_A, AL				;
-	XCHG	AL, AH 				; AH = address low byte, AL = high byte (4)
+	XCHG	AL, AH 				; AH = address low byte, AL = high byte
 	OUT	DMA_2_A, AL				;
-	XCHG	AX, CX				; AL = byte/count low byte, AH = high byte (4)
+	XCHG	AX, CX				; AL = byte/count low byte, AH = high byte
 	OUT	DMA_2_C, AL				;
-	XCHG	AL, AH				; AH = byte/count low byte, AL = high byte (4)
+	XCHG	AL, AH				; AH = byte/count low byte, AL = high byte
 	OUT	DMA_2_C, AL
 	STI						; Enable interrupts
 	MOV	AL, DMA_SMR <0, 2>		; DMA clear single channel 2 mask bit
@@ -7593,7 +7795,7 @@ FDC_RECV_DELAY:					; [7+19(AX-1)] clocks
 	AND	AL, MASK FDRW 			; is FDC R/W command in progress flag?
 	LOOPNZ FDC_RECV_ALL_LOOP		; loop until no flag or 7 bytes read
 							; AL = 0 (no command in progress) or CX = 0
-	REP	STOSB 				; zero out rest of results in BDA
+	;REP	STOSB 				; zero out rest of results in BDA
 FDC_RECV_CHECK_ERR:
 	MOV	AL, FDC_LAST_ST.SB0 		; AL = last FDC status byte 0
 	TEST	AL, MASK ST0CS			; check Last Command Status
@@ -7713,7 +7915,7 @@ INT_0E PROC
 	MOV	AL, EOI 				; End of Interrupt OCW
 	OUT	INT_P0, AL				; write EOI to port 0
 	POP	DS
-			ASSUME DS:_BDA
+			ASSUME DS:NOTHING
 	POP	AX
 	IRET
 INT_0E ENDP
@@ -7798,7 +8000,7 @@ FDC_TEST_DRIVE_EXIT:
 ;----------------------------------------------------------------------------;
 ; Track seek pattern for POST seek test
 ;
-FDC_SEEK_TRACKS	DB	38, 2, 19, 0		; tracks (0 is end)
+FDC_SEEK_TRACKS	DB	38, 2, 19, 0	; tracks (0 is end)
 
 FDC_RECAL_SEEK_TEST ENDP
 			ENDIF
@@ -7815,8 +8017,8 @@ BYTES_HERE	INT_1E
 ; replace this table.
 ;
 ;  00  Head Step Rate (SRT) = 0CH = 12ms
-;      Head Unload Time (HUT) = 0FH (16ms increments) = 240ms(?)
-;  01  Head Load Time = 01H (2ms increments) = 2ms
+;      Head Unload Time (HUT) = 15 x (16ms increments) = 240ms(?)
+;  01  Head Load Time = 2 (2ms increments) = 1, DMA flag (0 = use DMA)
 ;  02  timer ticks to wait before disk motor shutoff = 37
 ;  03  512 bytes per sector (0=128, 1=256, 2=512, 3=1024) = 2
 ;  04  sectors per track (last sector number) = 8
@@ -7833,7 +8035,7 @@ BYTES_HERE	INT_1E
 ; https://stanislavs.org/helppc/int_1e.html
 ;----------------------------------------------------------------------------;
 		ORG 	0EFC7H
-INT_1E	DBT 	<0CFH, 0010B, 37, 2, 8, 2AH, 0FFH, 50H, 0F6H, 25, 4>
+INT_1E	DBT 	<DNB <12, 15>, 0010B, 37, 2, 8, 2AH, 0FFH, 50H, 0F6H, 25, 4>
 
 ;----------------------------------------------------------------------------;
 ; INT 17 - Printer BIOS Services
@@ -8063,6 +8265,7 @@ INT_10_JMP LABEL WORD
 	DW	OFFSET INT_10_D		; AH = D - Read graphics pixel at coordinate
 	DW	OFFSET INT_10_E		; AH = E - Write text in teletype mode
 	DW	OFFSET INT_10_F		; AH = F - Get current video state
+L_INT_10_JMP	EQU	($-INT_10_JMP)/2
 
 ;----------------------------------------------------------------------------;
 ; INT 10h - Video BIOS Services
@@ -8083,7 +8286,7 @@ INT_10_JMP LABEL WORD
 		ORG 0F065H
 INT_10 PROC
 	STI					; enable interrupts
-	CMP	AH, 0FH			; function > 15?
+	CMP	AH, L_INT_10_JMP-1	; function valid?
 	JA	INT_10_IRET			; exit if function not valid
 	PUSHX	ES, DS, DI			; always preserve these registers
 	CLD					; string instructions forward direction
@@ -8161,7 +8364,11 @@ INT_1D_40		CRTC	<38H,28H,2DH,0AH,1FH,06H,19H,1CH,02H,07H,06H,07H>
 O_INT_1D_40		EQU	INT_1D_40-INT_1D		; 40x25 mode data offset
 
 ; 80x25 CGA text
+		IF ARCH_TYPE EQ ARCH_CPQ
+INT_1D_80		CRTC	<71H,50H,5AH,0AH,19H,06H,19H,19H,02H,0DH,0BH,0CH>
+		ELSE
 INT_1D_80		CRTC	<71H,50H,5AH,0AH,1FH,06H,19H,1CH,02H,07H,06H,07H>
+		ENDIF
 O_INT_1D_80		EQU	INT_1D_80-INT_1D		; 80x25 mode data offset
 
 ; 320x200 CGA graphics
@@ -8234,7 +8441,7 @@ INT_10_0_1:
 ; Determine video adapter type and new mode and re-program 6845
 ;
 	CMP_EFLAG VID, VID_MDA			; is switch MDA (ON, ON)?
-	MOV	AL, 0					; 0 = CGA disable video signal
+	MOV	AL, CL				; 0 = CGA disable video signal
 	MOV	SI, O_INT_1D_80			; SI = CGA 80 CRTD offset
 	MOV	BH, VID_DEF_COLS			; default 80 columns
 	MOV	CH, HIGH OFFSET MDA_MEM		; Total MDA video memory = 1000H (4K)
@@ -8403,7 +8610,7 @@ INT_10_SET_CUR_OFFSET:
 	MOV	BX, VID_SEG
 	SHR	BX, 1				; byte align
 	ADD	BX, AX
-	MOV	AL, CA_H			; 6845 Cursor address high reg (0EH)
+	MOV	AL, CRTC.CA_H		; 6845 Cursor address high reg (0EH)
 	MOV	AH, BH			; Cursor address (MSB)
 	MOV	DX, VID_PORT
 	OUT	DX, AX			; write AH to index AL
@@ -9813,7 +10020,7 @@ POST_SYS_VIDEO ENDP
 ; Display CPU type
 ;
 	POST_COL_1	POST_CPU, POST_CLR_VAL1	; display 'CPU' left column
-							;  SI default to 8088
+							;  SI now points to '8088'
 CPU_CHECK_TYPE_2:
 	TEST_GFLAG  V20				; ZF = 0 if V20, ZF = 1 if 8088
 	JZ	CPU_CHECK_TYPE_2_DONE		; jump if 8088
@@ -9826,7 +10033,7 @@ CPU_CHECK_TYPE_2_DONE:
 ; Display FPU/math co-processor
 ;
 FPU_CHECK:
-	POST_COL_2  POST_FPU, POST_CLR_VAL1	; SI default to '8087'
+	POST_COL_2  POST_FPU, POST_CLR_VAL1	; display 'FPU', SI now '8087'
 	TEST_EFLAG  FPU				; was FPU detected?
 	JNZ	FPU_DISP_DONE			; jump to output if FPU
 	MOV	SI, OFFSET POST_NONE		; otherwise 'None'
@@ -9837,7 +10044,7 @@ FPU_DISP_DONE:
 ;----------------------------------------------------------------------------;
 ; Display LPT ports
 ;
-	POST_COL_1	POST_LPT, POST_CLR_VAL2
+	POST_COL_1	POST_LPT, POST_CLR_VAL2	; display 'LPT' in column 1
 	GET_EFLAG   LPT				; AX = number of LPT ports
 	XCHG	AX, CX				; CX = number of ports
 	MOV	SI, OFFSET LPT_ADDR
@@ -9846,7 +10053,7 @@ FPU_DISP_DONE:
 ;----------------------------------------------------------------------------;
 ; Display COM ports
 ;
-	POST_COL_2	POST_COM, POST_CLR_VAL2
+	POST_COL_2	POST_COM, POST_CLR_VAL2	; display 'COM' in column 2
 	GET_EFLAG   COM				; AX = number of COM ports
 	XCHG	AX, CX				; CX = number of ports
 	XOR	SI, SI				; OFFSET COM_ADDR = 0000H
@@ -10554,8 +10761,8 @@ CAS_WRITE_BIT PROC
 	SHR	AX, 1				; set for 0 = ~0.5ms (2.015 KHz = 1,193,182/592)
 CAS_START_TIMER:
 	OUT	PIT_CH2, AL			; send low byte to timer
- 	XCHG	AL, AH 			; select high byte
- 	OUT	PIT_CH2, AL			; send high byte to timer
+	XCHG	AL, AH			; select high byte
+	OUT	PIT_CH2, AL			; send high byte to timer
 
 ;----------------------------------------------------------------------------;
 ; Read Timer 2 and wait a full rising and falling flank
@@ -10568,8 +10775,8 @@ CAS_WRITE_FALL:
 	IN	AL, PPI_C			; read PPI C
 	TEST	AL, MASK PCT2		; is cassette output high?
 	JNZ	CAS_WRITE_FALL		; loop until fall
- 	POP	AX				; restore AL for next call
- 	SAHF					; restore CF flag for next call
+	POP	AX				; restore AL for next call
+	SAHF					; restore CF flag for next call
 	RET
 CAS_WRITE_BIT ENDP
 
@@ -10607,44 +10814,6 @@ CAS_WRITE_BYTE ENDP
 CAS_WRITE_WORD ENDP
 
 CAS_WRITE ENDP
-
-;----------------------------------------------------------------------------;
-; CAS_CRC_ADD: Add current bit to CRC message
-;----------------------------------------------------------------------------;
-; Input:
-;	CF = bit to add
-;----------------------------------------------------------------------------;
-; This is (effectively) CRC16-CCITT as used by IBM for SDLC/HDLC. It uses a
-; 0FFFFh initial/preset value, 1021h polynomial and has an expected residue
-; value of 01D0Fh.
-;
-; cf = ( ( crc & 0x8000 ) >> 15 ) ^ CF;
-; if ( cf ) {
-;	crc = crc ^ 0x0810;
-; }
-; crc = crc << 1 | cf;
-; return crc;
-;
-; https://stackoverflow.com/questions/62771192/crc16-ccitt-calculation
-; http://bitsavers.trailing-edge.com/pdf/ibm/datacomm/GA27-3093-3_SDLC_Concepts_Jun86.pdf
-;----------------------------------------------------------------------------;
-CAS_CRC_PRE		EQU	0FFFFh	; Cassette CRC16-CCITT preset value
-CAS_CRC_RES		EQU	01D0Fh	; Cassette CRC16-CCITT residue value
-CAS_CRC_POLY 	EQU 	01021h	; Cassette CRC16-CCITT polynomial
-
-CAS_CRC_ADD PROC
-	XCHG	AX, CAS_CRC			; get working CRC, save AX
-	RCR	AX, 1				; set up for RCL
-	RCL	AX, 1				; OF = MSB(AX) XOR CF
-	CLC					; CF = OF
-	JNO	CAS_CRC_SHIFT		; if OF: AX = AX XOR 0810h
-	XOR	AX, CAS_CRC_POLY SHR 1	; divide by polynomial (already shifted)
-	STC					; CF = OF
-CAS_CRC_SHIFT:
-	ADC	AX, AX			; shift and add bit to working CRC value
-	XCHG	CAS_CRC, AX			; store working CRC, restore AX
-	RET
-CAS_CRC_ADD ENDP
 
 ;----------------------------------------------------------------------------; 
 ; INT 15,2 - Read Blocks from Cassette 
@@ -10835,6 +11004,37 @@ CAS_READ_EXIT:
 	JMP	INT_15_DONE_NO_DX		; exit without restoring DX
 
 ;----------------------------------------------------------------------------;
+; CAS_READ_CYCLE: read 1 cycle
+;----------------------------------------------------------------------------;
+; Time a single cycle of a bit
+; Output:
+;	AX = counter reading
+;	DX = lendth of cycle in counter ticks
+;	NZ if success
+;	ZF if failure (cycle exceeded maximum possible length)
+;----------------------------------------------------------------------------;
+CAS_READ_CYCLE PROC
+	PUSH	CX				; call-preserve CX
+	MOV	CX, 100			; timeout value
+	MOV	AH, CAS_PREV		; AH last input register value
+CAS_READ_CYCLE_LOOP:
+	IN	AL, PPI_C			; read PPI C
+	AND	AL, MASK PCCI		; mask only cassette input
+	CMP	AL, AH			; ZF if reading is same as last
+	LOOPZ	CAS_READ_CYCLE_LOOP	; loop until change or timeout
+	MOV	CAS_PREV, AL		; save new input value
+	CALL	IO_WAIT_LATCH		; latch and read PIT counter into AX
+	MOV	DX, CAS_TIME_CNT		; DX = last counter reading
+	SUB	DX, AX			; DX = difference of last and current
+	MOV	CAS_TIME_CNT, AX		; update counter read
+	TEST	CX, CX			; ZF if timeout, NZ if success
+	POP	CX
+	RET
+CAS_READ_CYCLE ENDP
+CAS_READ ENDP
+
+			IF CAS_RELOCATE EQ 0
+;----------------------------------------------------------------------------;
 ; CAS_READ_WORD: read 16 bits, add to working CRC
 ;----------------------------------------------------------------------------;
 ; Output:
@@ -10902,36 +11102,47 @@ CAS_READ_BYTE_RET:
 
 CAS_READ_BYTE ENDP
 CAS_READ_WORD ENDP
+			ENDIF			; CAS_RELOCATE
 
+			IF CAS_RELOCATE EQ 0
 ;----------------------------------------------------------------------------;
-; CAS_READ_CYCLE: read 1 cycle
+; CAS_CRC_ADD: Add current bit to CRC message
 ;----------------------------------------------------------------------------;
-; Time a single cycle of a bit 
-; Output:
-;	AX = counter reading
-;	DX = lendth of cycle in counter ticks
-;	NZ if success
-;	ZF if failure (cycle exceeded maximum possible length)
+; Input:
+;	CF = bit to add
 ;----------------------------------------------------------------------------;
-CAS_READ_CYCLE PROC
-	PUSH	CX				; call-preserve CX
-	MOV	CX, 100			; timeout value
-	MOV	AH, CAS_PREV		; AH last input register value
-CAS_READ_CYCLE_LOOP:
-	IN	AL, PPI_C			; read PPI C
-	AND	AL, MASK PCCI		; mask only cassette input
-	CMP	AL, AH			; ZF if reading is same as last
-	LOOPZ	CAS_READ_CYCLE_LOOP	; loop until change or timeout
-	MOV	CAS_PREV, AL		; save new input value
-	CALL	IO_WAIT_LATCH		; latch and read PIT counter into AX
-	MOV	DX, CAS_TIME_CNT		; DX = last counter reading
-	SUB	DX, AX			; DX = difference of last and current
-	MOV	CAS_TIME_CNT, AX		; update counter read
-	TEST	CX, CX			; ZF if timeout, NZ if success
-	POP	CX
+; This is (effectively) CRC16-CCITT as used by IBM for SDLC/HDLC. It uses a
+; 0FFFFh initial/preset value, 1021h polynomial and has an expected residue
+; value of 01D0Fh.
+;
+; cf = ( ( crc & 0x8000 ) >> 15 ) ^ CF;
+; if ( cf ) {
+;	crc = crc ^ 0x0810;
+; }
+; crc = crc << 1 | cf;
+; return crc;
+;
+; https://stackoverflow.com/questions/62771192/crc16-ccitt-calculation
+; http://bitsavers.trailing-edge.com/pdf/ibm/datacomm/GA27-3093-3_SDLC_Concepts_Jun86.pdf
+;----------------------------------------------------------------------------;
+CAS_CRC_PRE		EQU	0FFFFh	; Cassette CRC16-CCITT preset value
+CAS_CRC_RES		EQU	01D0Fh	; Cassette CRC16-CCITT residue value
+CAS_CRC_POLY 	EQU 	01021h	; Cassette CRC16-CCITT polynomial
+
+CAS_CRC_ADD PROC
+	XCHG	AX, CAS_CRC			; get working CRC, save AX
+	RCR	AX, 1				; set up for RCL
+	RCL	AX, 1				; OF = MSB(AX) XOR CF
+	CLC					; CF = OF
+	JNO	CAS_CRC_SHIFT		; if OF: AX = AX XOR 0810h
+	XOR	AX, CAS_CRC_POLY SHR 1	; divide by polynomial (already shifted)
+	STC					; CF = OF
+CAS_CRC_SHIFT:
+	ADC	AX, AX			; shift and add bit to working CRC value
+	XCHG	CAS_CRC, AX			; store working CRC, restore AX
 	RET
-CAS_READ_CYCLE ENDP
-CAS_READ ENDP
+CAS_CRC_ADD ENDP
+			ENDIF			; CAS_RELOCATE
 
 INT_15_CASS ENDP
 			ENDIF			; ENDIF CASSETTE EQ 1
@@ -11155,7 +11366,7 @@ INT_10_4 PROC
 	XOR	AH, AH			; AH = 0 (switch not triggered)
 	TEST	AL, MASK VSPE		; light pen on? (/0100b) (0=on, 1=off)
 	JNZ	INT_10_4_RESET		; if light pen off, reset latch and exit
-	TEST	AL, MASK VSPT		; light pen trigger set? (0010b)
+	TEST	AL, MASK VSPT		; light pen trigger set? (0010b) (0=not set, 1=set)
 	JZ	INT_10_4_EXIT		; if not set, just exit
 
 ;----------------------------------------------------------------------------;
@@ -11295,7 +11506,7 @@ INT_10_4 ENDP
 		ENDIF
 
 ;
-; 79 BYTES HERE / (54 BYTES HERE 5150)
+; 79 BYTES HERE / (20 BYTES HERE 5150)
 ;
 BYTES_HERE	GFX_CHARSET
 
@@ -11307,134 +11518,271 @@ BYTES_HERE	GFX_CHARSET
 ;----------------------------------------------------------------------------;
 		ORG 0FA6EH
 GFX_CHARSET LABEL BYTE
-	DB   000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H	; 00H
-	DB   07EH, 081H, 0A5H, 081H, 0BDH, 099H, 081H, 07EH	; 01H
-	DB   07EH, 0DBH, 0FFH, 0FFH, 0C3H, 0E7H, 07EH, 000H	; 02H
-	DB   036H, 07FH, 07FH, 07FH, 03EH, 01CH, 008H, 000H	; 03H
-	DB   008H, 01CH, 03EH, 07FH, 03EH, 01CH, 008H, 000H	; 04H
-	DB   018H, 03CH, 018H, 066H, 0FFH, 066H, 018H, 03CH	; 05H
-	DB   008H, 01CH, 03EH, 07FH, 07FH, 03EH, 008H, 01CH	; 06H
-	DB   000H, 000H, 018H, 03CH, 03CH, 018H, 000H, 000H	; 07H
-	DB   0FFH, 0FFH, 0E7H, 0C3H, 0C3H, 0E7H, 0FFH, 0FFH	; 08H
-	DB   000H, 03CH, 066H, 042H, 042H, 066H, 03CH, 000H	; 09H
-	DB   0FFH, 0C3H, 099H, 0BDH, 0BDH, 099H, 0C3H, 0FFH	; 0AH
-	DB   03FH, 00DH, 01CH, 03EH, 063H, 063H, 03EH, 000H	; 0BH
-	DB   03EH, 063H, 063H, 03EH, 01CH, 07FH, 01CH, 000H	; 0CH
-	DB   00EH, 00FH, 00DH, 00DH, 01CH, 07FH, 01CH, 000H	; 0DH
-	DB   00FH, 03BH, 037H, 03BH, 033H, 037H, 077H, 070H	; 0EH
-	DB   018H, 0DBH, 03CH, 0E7H, 03CH, 0DBH, 018H, 000H	; 0FH
-	DB   060H, 078H, 07EH, 07FH, 07EH, 078H, 060H, 000H	; 10H
-	DB   003H, 00FH, 03FH, 07FH, 03FH, 00FH, 003H, 000H	; 11H
-	DB   018H, 03CH, 07EH, 018H, 018H, 07EH, 03CH, 018H	; 12H
-	DB   066H, 066H, 066H, 066H, 066H, 000H, 066H, 000H	; 13H
-	DB   03FH, 06DH, 06DH, 03DH, 00DH, 00DH, 00DH, 000H	; 14H
-	DB   03FH, 070H, 03EH, 063H, 063H, 03EH, 007H, 07EH	; 15H
-	DB   000H, 000H, 000H, 000H, 0FFH, 0FFH, 0FFH, 000H	; 16H
-	DB   03CH, 07EH, 018H, 018H, 07EH, 03CH, 018H, 07EH	; 17H
-	DB   018H, 03CH, 07EH, 018H, 018H, 018H, 018H, 000H	; 18H
-	DB   018H, 018H, 018H, 018H, 07EH, 03CH, 018H, 000H	; 19H
-	DB   018H, 00CH, 006H, 07FH, 006H, 00CH, 018H, 000H	; 1AH
-	DB   00CH, 018H, 030H, 07FH, 030H, 018H, 00CH, 000H	; 1BH
-	DB   000H, 000H, 000H, 060H, 060H, 07FH, 000H, 000H	; 1CH
-	DB   000H, 024H, 066H, 0FFH, 066H, 024H, 000H, 000H	; 1DH
-	DB   008H, 01CH, 01CH, 03EH, 03EH, 07FH, 07FH, 000H	; 1EH
-	DB   07FH, 07FH, 03EH, 03EH, 01CH, 01CH, 008H, 000H	; 1FH
-	DB   000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H	; 20H  
-	DB   018H, 018H, 018H, 018H, 018H, 000H, 018H, 000H	; 21H !
-	DB   033H, 066H, 0CCH, 000H, 000H, 000H, 000H, 000H	; 22H "
-	DB   036H, 036H, 07FH, 036H, 036H, 07FH, 036H, 036H	; 23H #
-	DB   018H, 07EH, 058H, 038H, 01CH, 01AH, 07EH, 018H	; 24H $
-	DB   0E3H, 0A6H, 0ECH, 018H, 037H, 065H, 0C7H, 000H	; 25H %
-	DB   03CH, 066H, 03CH, 038H, 06DH, 066H, 03DH, 000H	; 26H &
-	DB   006H, 00CH, 018H, 000H, 000H, 000H, 000H, 000H	; 27H '
-	DB   01CH, 030H, 060H, 060H, 060H, 030H, 01CH, 000H	; 28H (
-	DB   038H, 00CH, 006H, 006H, 006H, 00CH, 038H, 000H	; 29H )
-	DB   063H, 036H, 01CH, 07FH, 01CH, 036H, 063H, 000H	; 2AH *
-	DB   018H, 018H, 018H, 07EH, 018H, 018H, 018H, 000H	; 2BH +
-	DB   000H, 000H, 000H, 000H, 000H, 018H, 018H, 030H	; 2CH ,
-	DB   000H, 000H, 000H, 07EH, 000H, 000H, 000H, 000H	; 2DH -
-	DB   000H, 000H, 000H, 000H, 000H, 018H, 018H, 000H	; 2EH .
-	DB   002H, 006H, 00CH, 018H, 030H, 060H, 040H, 000H	; 2FH /
-	DB   03EH, 063H, 063H, 06BH, 063H, 063H, 03EH, 000H	; 30H 0
-	DB   01CH, 03CH, 00CH, 00CH, 00CH, 00CH, 00CH, 000H	; 31H 1
-	DB   03EH, 063H, 003H, 00EH, 038H, 060H, 07FH, 000H	; 32H 2
-	DB   07CH, 006H, 006H, 03CH, 006H, 006H, 07CH, 000H	; 33H 3
-	DB   00EH, 01EH, 036H, 066H, 07FH, 006H, 006H, 000H	; 34H 4
-	DB   07EH, 060H, 07CH, 006H, 006H, 006H, 07CH, 000H	; 35H 5
-	DB   01EH, 030H, 060H, 07EH, 063H, 063H, 03EH, 000H	; 36H 6
-	DB   07EH, 066H, 00CH, 018H, 030H, 030H, 030H, 000H	; 37H 7
-	DB   03EH, 063H, 036H, 01CH, 036H, 063H, 03EH, 000H	; 38H 8
-	DB   03EH, 063H, 063H, 03FH, 003H, 006H, 07CH, 000H	; 39H 9
-	DB   000H, 000H, 018H, 018H, 000H, 018H, 018H, 000H	; 3AH :
-	DB   000H, 000H, 018H, 018H, 000H, 018H, 018H, 030H	; 3BH ;
-	DB   00CH, 018H, 030H, 060H, 030H, 018H, 00CH, 000H	; 3CH <
-	DB   000H, 000H, 07EH, 000H, 07EH, 000H, 000H, 000H	; 3DH =
-	DB   030H, 018H, 00CH, 006H, 00CH, 018H, 030H, 000H	; 3EH >
-	DB   03EH, 063H, 006H, 00CH, 00CH, 000H, 00CH, 000H	; 3FH ?
-	DB   03EH, 063H, 06FH, 069H, 06FH, 060H, 03FH, 000H	; 40H @
-	DB   03CH, 066H, 066H, 07EH, 066H, 066H, 066H, 000H	; 41H A
-	DB   07EH, 063H, 063H, 07EH, 063H, 063H, 07EH, 000H	; 42H B
-	DB   01EH, 033H, 060H, 060H, 060H, 033H, 01EH, 000H	; 43H C
-	DB   07CH, 066H, 063H, 063H, 063H, 066H, 07CH, 000H	; 44H D
-	DB   07EH, 060H, 060H, 07CH, 060H, 060H, 07EH, 000H	; 45H E
-	DB   07EH, 060H, 060H, 07CH, 060H, 060H, 060H, 000H	; 46H F
-	DB   01EH, 033H, 063H, 060H, 067H, 033H, 01EH, 000H	; 47H G
-	DB   063H, 063H, 063H, 07FH, 063H, 063H, 063H, 000H	; 48H H
-	DB   03CH, 018H, 018H, 018H, 018H, 018H, 03CH, 000H	; 49H I
-	DB   006H, 006H, 006H, 006H, 066H, 066H, 03CH, 000H	; 4AH J
-	DB   063H, 066H, 06CH, 078H, 06CH, 066H, 063H, 000H	; 4BH K
-	DB   030H, 030H, 030H, 030H, 030H, 030H, 03FH, 000H	; 4CH L
-	DB   063H, 077H, 07FH, 06BH, 063H, 063H, 063H, 000H	; 4DH M
-	DB   063H, 073H, 07BH, 06FH, 067H, 063H, 063H, 000H	; 4EH N
-	DB   03EH, 063H, 063H, 063H, 063H, 063H, 03EH, 000H	; 4FH O
-	DB   07EH, 063H, 063H, 07EH, 060H, 060H, 060H, 000H	; 50H P
-	DB   03EH, 063H, 063H, 063H, 07BH, 06EH, 03CH, 007H	; 51H Q
-	DB   07EH, 063H, 063H, 07EH, 06CH, 066H, 063H, 000H	; 52H R
-	DB   03EH, 063H, 030H, 01CH, 006H, 063H, 03EH, 000H	; 53H S
-	DB   07EH, 018H, 018H, 018H, 018H, 018H, 018H, 000H	; 54H T
-	DB   063H, 063H, 063H, 063H, 063H, 063H, 03EH, 000H	; 55H U
-	DB   063H, 063H, 063H, 063H, 036H, 01CH, 008H, 000H	; 56H V
-	DB   063H, 063H, 063H, 06BH, 06BH, 07FH, 036H, 000H	; 57H W
-	DB   063H, 063H, 036H, 01CH, 036H, 063H, 063H, 000H	; 58H X
-	DB   063H, 063H, 063H, 03EH, 00CH, 00CH, 00CH, 000H	; 59H Y
-	DB   07FH, 006H, 00CH, 018H, 030H, 060H, 07FH, 000H	; 5AH Z
-	DB   03EH, 030H, 030H, 030H, 030H, 030H, 03EH, 000H	; 5BH [
-	DB   040H, 060H, 030H, 018H, 00CH, 006H, 002H, 000H	; 5CH \
-	DB   03EH, 006H, 006H, 006H, 006H, 006H, 03EH, 000H	; 5DH ]
-	DB   01CH, 036H, 063H, 000H, 000H, 000H, 000H, 000H	; 5EH ^
-	DB   000H, 000H, 000H, 000H, 000H, 000H, 000H, 0FFH	; 5FH _
-	DB   030H, 018H, 00CH, 000H, 000H, 000H, 000H, 000H	; 60H `
-	DB   000H, 000H, 03CH, 006H, 03EH, 066H, 03FH, 000H	; 61H a
-	DB   060H, 060H, 07CH, 066H, 066H, 066H, 07CH, 000H	; 62H b
-	DB   000H, 000H, 03EH, 063H, 060H, 060H, 03FH, 000H	; 63H c
-	DB   006H, 006H, 03EH, 066H, 066H, 066H, 03EH, 000H	; 64H d
-	DB   000H, 000H, 03CH, 066H, 07CH, 060H, 03EH, 000H	; 65H e
-	DB   01EH, 030H, 030H, 07CH, 030H, 030H, 030H, 000H	; 66H f
-	DB   000H, 000H, 03FH, 063H, 063H, 03FH, 003H, 07EH	; 67H g
-	DB   060H, 060H, 06CH, 076H, 066H, 066H, 066H, 000H	; 68H h
-	DB   018H, 000H, 038H, 018H, 018H, 018H, 018H, 000H	; 69H i
-	DB   006H, 000H, 006H, 006H, 006H, 006H, 066H, 03CH	; 6AH j
-	DB   060H, 060H, 066H, 06CH, 078H, 06CH, 066H, 000H	; 6BH k
-	DB   018H, 018H, 018H, 018H, 018H, 018H, 00CH, 000H	; 6CH l
-	DB   000H, 000H, 076H, 07FH, 06BH, 06BH, 063H, 000H	; 6DH m
-	DB   000H, 000H, 06CH, 076H, 066H, 066H, 066H, 000H	; 6EH n
-	DB   000H, 000H, 03EH, 063H, 063H, 063H, 03EH, 000H	; 6FH o
-	DB   000H, 000H, 07CH, 066H, 066H, 07CH, 060H, 060H	; 70H p
-	DB   000H, 000H, 03EH, 066H, 066H, 03EH, 006H, 006H	; 71H q
-	DB   000H, 000H, 036H, 03BH, 030H, 030H, 030H, 000H	; 72H r
-	DB   000H, 000H, 03EH, 070H, 03CH, 00EH, 07CH, 000H	; 73H s
-	DB   018H, 018H, 07EH, 018H, 018H, 018H, 00EH, 000H	; 74H t
-	DB   000H, 000H, 066H, 066H, 066H, 066H, 03BH, 000H	; 75H u
-	DB   000H, 000H, 066H, 066H, 066H, 03CH, 018H, 000H	; 76H v
-	DB   000H, 000H, 063H, 063H, 06BH, 07FH, 036H, 000H	; 77H w
-	DB   000H, 000H, 063H, 036H, 01CH, 036H, 063H, 000H	; 78H x
-	DB   000H, 000H, 066H, 066H, 066H, 03EH, 006H, 07CH	; 79H y
-	DB   000H, 000H, 07EH, 00CH, 018H, 030H, 07EH, 000H	; 7AH z
-	DB   00EH, 018H, 018H, 078H, 018H, 018H, 00EH, 000H	; 7BH {
-	DB   018H, 018H, 018H, 000H, 018H, 018H, 018H, 000H	; 7CH |
-	DB   070H, 018H, 018H, 00EH, 018H, 018H, 070H, 000H	; 7DH }
-	DB   03BH, 06EH, 000H, 000H, 000H, 000H, 000H, 000H	; 7EH ~
-	DB   018H, 03CH, 066H, 0C3H, 0C3H, 0FFH, 000H, 000H	; 7FH
+			IF OEM_FONT EQ 1
+;----------------------------------------------------------------------------;
+; A more OEM style font
+;
+	DB	000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H	; 00H
+	DB	07EH, 081H, 0A5H, 081H, 0BDH, 099H, 081H, 07EH	; 01H
+	DB	07EH, 0FFH, 0DBH, 0FFH, 0C3H, 0E7H, 0FFH, 07EH	; 02H
+	DB	06CH, 0FEH, 0FEH, 0FEH, 07CH, 038H, 010H, 000H	; 03H
+	DB	010H, 038H, 07CH, 0FEH, 07CH, 038H, 010H, 000H	; 04H
+	DB	038H, 07CH, 038H, 0FEH, 0FEH, 07CH, 038H, 07CH	; 05H
+	DB	010H, 010H, 038H, 07CH, 0FEH, 07CH, 038H, 07CH	; 06H
+	DB	000H, 000H, 018H, 03CH, 03CH, 018H, 000H, 000H	; 07H
+	DB	0FFH, 0FFH, 0E7H, 0C3H, 0C3H, 0E7H, 0FFH, 0FFH	; 08H
+	DB	000H, 03CH, 066H, 042H, 042H, 066H, 03CH, 000H	; 09H
+	DB	0FFH, 0C3H, 099H, 0BDH, 0BDH, 099H, 0C3H, 0FFH	; 0AH
+	DB	00FH, 007H, 00FH, 07DH, 0CCH, 0CCH, 0CCH, 078H	; 0BH
+	DB	03CH, 066H, 066H, 066H, 03CH, 018H, 07EH, 018H	; 0CH
+	DB	03FH, 033H, 03FH, 030H, 030H, 070H, 0F0H, 0E0H	; 0DH
+	DB	07FH, 063H, 07FH, 063H, 063H, 067H, 0E6H, 0C0H	; 0EH
+	DB	099H, 05AH, 03CH, 0E7H, 0E7H, 03CH, 05AH, 099H	; 0FH
+	DB	080H, 0E0H, 0F8H, 0FEH, 0F8H, 0E0H, 080H, 000H	; 10H
+	DB	002H, 00EH, 03EH, 0FEH, 03EH, 00EH, 002H, 000H	; 11H
+	DB	018H, 03CH, 07EH, 018H, 018H, 07EH, 03CH, 018H	; 12H
+	DB	066H, 066H, 066H, 066H, 066H, 000H, 066H, 000H	; 13H
+	DB	07FH, 0DBH, 0DBH, 07BH, 01BH, 01BH, 01BH, 000H	; 14H
+	DB	03EH, 063H, 038H, 06CH, 06CH, 038H, 0CCH, 078H	; 15H
+	DB	000H, 000H, 000H, 000H, 07EH, 07EH, 07EH, 000H	; 16H
+	DB	018H, 03CH, 07EH, 018H, 07EH, 03CH, 018H, 0FFH	; 17H
+	DB	018H, 03CH, 07EH, 018H, 018H, 018H, 018H, 000H	; 18H
+	DB	018H, 018H, 018H, 018H, 07EH, 03CH, 018H, 000H	; 19H
+	DB	000H, 018H, 00CH, 0FEH, 00CH, 018H, 000H, 000H	; 1AH
+	DB	000H, 030H, 060H, 0FEH, 060H, 030H, 000H, 000H	; 1BH
+	DB	000H, 000H, 0C0H, 0C0H, 0C0H, 0FEH, 000H, 000H	; 1CH
+	DB	000H, 024H, 066H, 0FFH, 066H, 024H, 000H, 000H	; 1DH
+	DB	000H, 018H, 03CH, 07EH, 0FFH, 0FFH, 000H, 000H	; 1EH
+	DB	000H, 0FFH, 0FFH, 07EH, 03CH, 018H, 000H, 000H	; 1FH
+	DB	000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H	; 20H  
+	DB	030H, 078H, 078H, 030H, 030H, 000H, 030H, 000H	; 21H !
+	DB	06CH, 06CH, 06CH, 000H, 000H, 000H, 000H, 000H	; 22H "
+	DB	06CH, 06CH, 0FEH, 06CH, 0FEH, 06CH, 06CH, 000H	; 23H #
+	DB	030H, 07CH, 0C0H, 078H, 00CH, 0F8H, 030H, 000H	; 24H $
+	DB	000H, 0C6H, 0CCH, 018H, 030H, 066H, 0C6H, 000H	; 25H %
+	DB	038H, 06CH, 038H, 076H, 0DCH, 0CCH, 076H, 000H	; 26H &
+	DB	060H, 060H, 0C0H, 000H, 000H, 000H, 000H, 000H	; 27H '
+	DB	018H, 030H, 060H, 060H, 060H, 030H, 018H, 000H	; 28H (
+	DB	060H, 030H, 018H, 018H, 018H, 030H, 060H, 000H	; 29H )
+	DB	000H, 066H, 03CH, 0FFH, 03CH, 066H, 000H, 000H	; 2AH *
+	DB	000H, 030H, 030H, 0FCH, 030H, 030H, 000H, 000H	; 2BH +
+	DB	000H, 000H, 000H, 000H, 000H, 030H, 030H, 060H	; 2CH ,
+	DB	000H, 000H, 000H, 0FCH, 000H, 000H, 000H, 000H	; 2DH -
+	DB	000H, 000H, 000H, 000H, 000H, 030H, 030H, 000H	; 2EH .
+	DB	006H, 00CH, 018H, 030H, 060H, 0C0H, 080H, 000H	; 2FH /
+	DB	07CH, 0C6H, 0CEH, 0DEH, 0F6H, 0E6H, 07CH, 000H	; 30H 0
+	DB	030H, 070H, 030H, 030H, 030H, 030H, 0FCH, 000H	; 31H 1
+	DB	078H, 0CCH, 00CH, 038H, 060H, 0CCH, 0FCH, 000H	; 32H 2
+	DB	078H, 0CCH, 00CH, 038H, 00CH, 0CCH, 078H, 000H	; 33H 3
+	DB	01CH, 03CH, 06CH, 0CCH, 0FEH, 00CH, 01EH, 000H	; 34H 4
+	DB	0FCH, 0C0H, 0F8H, 00CH, 00CH, 0CCH, 078H, 000H	; 35H 5
+	DB	038H, 060H, 0C0H, 0F8H, 0CCH, 0CCH, 078H, 000H	; 36H 6
+	DB	0FCH, 0CCH, 00CH, 018H, 030H, 030H, 030H, 000H	; 37H 7
+	DB	078H, 0CCH, 0CCH, 078H, 0CCH, 0CCH, 078H, 000H	; 38H 8
+	DB	078H, 0CCH, 0CCH, 07CH, 00CH, 018H, 070H, 000H	; 39H 9
+	DB	000H, 030H, 030H, 000H, 000H, 030H, 030H, 000H	; 3AH :
+	DB	000H, 030H, 030H, 000H, 000H, 030H, 030H, 060H	; 3BH ;
+	DB	018H, 030H, 060H, 0C0H, 060H, 030H, 018H, 000H	; 3CH <
+	DB	000H, 000H, 0FCH, 000H, 000H, 0FCH, 000H, 000H	; 3DH =
+	DB	060H, 030H, 018H, 00CH, 018H, 030H, 060H, 000H	; 3EH >
+	DB	078H, 0CCH, 00CH, 018H, 030H, 000H, 030H, 000H	; 3FH ?
+	DB	07CH, 0C6H, 0DEH, 0DEH, 0DEH, 0C0H, 078H, 000H	; 40H @
+	DB	030H, 078H, 0CCH, 0CCH, 0FCH, 0CCH, 0CCH, 000H	; 41H A
+	DB	0FCH, 066H, 066H, 07CH, 066H, 066H, 0FCH, 000H	; 42H B
+	DB	03CH, 066H, 0C0H, 0C0H, 0C0H, 066H, 03CH, 000H	; 43H C
+	DB	0F8H, 06CH, 066H, 066H, 066H, 06CH, 0F8H, 000H	; 44H D
+	DB	0FEH, 062H, 068H, 078H, 068H, 062H, 0FEH, 000H	; 45H E
+	DB	0FEH, 062H, 068H, 078H, 068H, 060H, 0F0H, 000H	; 46H F
+	DB	03CH, 066H, 0C0H, 0C0H, 0CEH, 066H, 03EH, 000H	; 47H G
+	DB	0CCH, 0CCH, 0CCH, 0FCH, 0CCH, 0CCH, 0CCH, 000H	; 48H H
+	DB	078H, 030H, 030H, 030H, 030H, 030H, 078H, 000H	; 49H I
+	DB	01EH, 00CH, 00CH, 00CH, 0CCH, 0CCH, 078H, 000H	; 4AH J
+	DB	0E6H, 066H, 06CH, 078H, 06CH, 066H, 0E6H, 000H	; 4BH K
+	DB	0F0H, 060H, 060H, 060H, 062H, 066H, 0FEH, 000H	; 4CH L
+	DB	0C6H, 0EEH, 0FEH, 0FEH, 0D6H, 0C6H, 0C6H, 000H	; 4DH M
+	DB	0C6H, 0E6H, 0F6H, 0DEH, 0CEH, 0C6H, 0C6H, 000H	; 4EH N
+	DB	038H, 06CH, 0C6H, 0C6H, 0C6H, 06CH, 038H, 000H	; 4FH O
+	DB	0FCH, 066H, 066H, 07CH, 060H, 060H, 0F0H, 000H	; 50H P
+	DB	078H, 0CCH, 0CCH, 0CCH, 0DCH, 078H, 01CH, 000H	; 51H Q
+	DB	0FCH, 066H, 066H, 07CH, 06CH, 066H, 0E6H, 000H	; 52H R
+	DB	078H, 0CCH, 0E0H, 070H, 01CH, 0CCH, 078H, 000H	; 53H S
+	DB	0FCH, 0B4H, 030H, 030H, 030H, 030H, 078H, 000H	; 54H T
+	DB	0CCH, 0CCH, 0CCH, 0CCH, 0CCH, 0CCH, 0FCH, 000H	; 55H U
+	DB	0CCH, 0CCH, 0CCH, 0CCH, 0CCH, 078H, 030H, 000H	; 56H V
+	DB	0C6H, 0C6H, 0C6H, 0D6H, 0FEH, 0EEH, 0C6H, 000H	; 57H W
+	DB	0C6H, 0C6H, 06CH, 038H, 038H, 06CH, 0C6H, 000H	; 58H X
+	DB	0CCH, 0CCH, 0CCH, 078H, 030H, 030H, 078H, 000H	; 59H Y
+	DB	0FEH, 0C6H, 08CH, 018H, 032H, 066H, 0FEH, 000H	; 5AH Z
+	DB	078H, 060H, 060H, 060H, 060H, 060H, 078H, 000H	; 5BH [
+	DB	0C0H, 060H, 030H, 018H, 00CH, 006H, 002H, 000H	; 5CH \
+	DB	078H, 018H, 018H, 018H, 018H, 018H, 078H, 000H	; 5DH ]
+	DB	010H, 038H, 06CH, 0C6H, 000H, 000H, 000H, 000H	; 5EH ^
+	DB	000H, 000H, 000H, 000H, 000H, 000H, 000H, 0FFH	; 5FH _
+	DB	030H, 030H, 018H, 000H, 000H, 000H, 000H, 000H	; 60H `
+	DB	000H, 000H, 078H, 00CH, 07CH, 0CCH, 076H, 000H	; 61H a
+	DB	0E0H, 060H, 060H, 07CH, 066H, 066H, 0DCH, 000H	; 62H b
+	DB	000H, 000H, 078H, 0CCH, 0C0H, 0CCH, 078H, 000H	; 63H c
+	DB	01CH, 00CH, 00CH, 07CH, 0CCH, 0CCH, 076H, 000H	; 64H d
+	DB	000H, 000H, 078H, 0CCH, 0FCH, 0C0H, 078H, 000H	; 65H e
+	DB	038H, 06CH, 060H, 0F0H, 060H, 060H, 0F0H, 000H	; 66H f
+	DB	000H, 000H, 076H, 0CCH, 0CCH, 07CH, 00CH, 0F8H	; 67H g
+	DB	0E0H, 060H, 06CH, 076H, 066H, 066H, 0E6H, 000H	; 68H h
+	DB	030H, 000H, 070H, 030H, 030H, 030H, 078H, 000H	; 69H i
+	DB	00CH, 000H, 00CH, 00CH, 00CH, 0CCH, 0CCH, 078H	; 6AH j
+	DB	0E0H, 060H, 066H, 06CH, 078H, 06CH, 0E6H, 000H	; 6BH k
+	DB	070H, 030H, 030H, 030H, 030H, 030H, 078H, 000H	; 6CH l
+	DB	000H, 000H, 0CCH, 0FEH, 0FEH, 0D6H, 0C6H, 000H	; 6DH m
+	DB	000H, 000H, 0F8H, 0CCH, 0CCH, 0CCH, 0CCH, 000H	; 6EH n
+	DB	000H, 000H, 078H, 0CCH, 0CCH, 0CCH, 078H, 000H	; 6FH o
+	DB	000H, 000H, 0DCH, 066H, 066H, 07CH, 060H, 0F0H	; 70H p
+	DB	000H, 000H, 076H, 0CCH, 0CCH, 07CH, 00CH, 01EH	; 71H q
+	DB	000H, 000H, 0DCH, 076H, 066H, 060H, 0F0H, 000H	; 72H r
+	DB	000H, 000H, 07CH, 0C0H, 078H, 00CH, 0F8H, 000H	; 73H s
+	DB	010H, 030H, 07CH, 030H, 030H, 034H, 018H, 000H	; 74H t
+	DB	000H, 000H, 0CCH, 0CCH, 0CCH, 0CCH, 076H, 000H	; 75H u
+	DB	000H, 000H, 0CCH, 0CCH, 0CCH, 078H, 030H, 000H	; 76H v
+	DB	000H, 000H, 0C6H, 0D6H, 0FEH, 0FEH, 06CH, 000H	; 77H w
+	DB	000H, 000H, 0C6H, 06CH, 038H, 06CH, 0C6H, 000H	; 78H x
+	DB	000H, 000H, 0CCH, 0CCH, 0CCH, 07CH, 00CH, 0F8H	; 79H y
+	DB	000H, 000H, 0FCH, 098H, 030H, 064H, 0FCH, 000H	; 7AH z
+	DB	01CH, 030H, 030H, 0E0H, 030H, 030H, 01CH, 000H	; 7BH {
+	DB	018H, 018H, 018H, 000H, 018H, 018H, 018H, 000H	; 7CH |
+	DB	0E0H, 030H, 030H, 01CH, 030H, 030H, 0E0H, 000H	; 7DH }
+	DB	076H, 0DCH, 000H, 000H, 000H, 000H, 000H, 000H	; 7EH ~
+	DB	000H, 010H, 038H, 06CH, 0C6H, 0C6H, 0FEH, 000H	; 7FH
+			ELSE
+;----------------------------------------------------------------------------;
+; A more clone style font
+;
+	DB	000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H	; 00H
+	DB	07EH, 081H, 0A5H, 081H, 0BDH, 099H, 081H, 07EH	; 01H
+	DB	07EH, 0DBH, 0FFH, 0FFH, 0C3H, 0E7H, 07EH, 000H	; 02H
+	DB	036H, 07FH, 07FH, 07FH, 03EH, 01CH, 008H, 000H	; 03H
+	DB	008H, 01CH, 03EH, 07FH, 03EH, 01CH, 008H, 000H	; 04H
+	DB	018H, 03CH, 018H, 066H, 0FFH, 066H, 018H, 03CH	; 05H
+	DB	008H, 01CH, 03EH, 07FH, 07FH, 03EH, 008H, 01CH	; 06H
+	DB	000H, 000H, 018H, 03CH, 03CH, 018H, 000H, 000H	; 07H
+	DB	0FFH, 0FFH, 0E7H, 0C3H, 0C3H, 0E7H, 0FFH, 0FFH	; 08H
+	DB	000H, 03CH, 066H, 042H, 042H, 066H, 03CH, 000H	; 09H
+	DB	0FFH, 0C3H, 099H, 0BDH, 0BDH, 099H, 0C3H, 0FFH	; 0AH
+	DB	03FH, 00DH, 01CH, 03EH, 063H, 063H, 03EH, 000H	; 0BH
+	DB	03EH, 063H, 063H, 03EH, 01CH, 07FH, 01CH, 000H	; 0CH
+	DB	00EH, 00FH, 00DH, 00DH, 01CH, 07FH, 01CH, 000H	; 0DH
+	DB	00FH, 03BH, 037H, 03BH, 033H, 037H, 077H, 070H	; 0EH
+	DB	018H, 0DBH, 03CH, 0E7H, 03CH, 0DBH, 018H, 000H	; 0FH
+	DB	060H, 078H, 07EH, 07FH, 07EH, 078H, 060H, 000H	; 10H
+	DB	003H, 00FH, 03FH, 07FH, 03FH, 00FH, 003H, 000H	; 11H
+	DB	018H, 03CH, 07EH, 018H, 018H, 07EH, 03CH, 018H	; 12H
+	DB	066H, 066H, 066H, 066H, 066H, 000H, 066H, 000H	; 13H
+	DB	03FH, 06DH, 06DH, 03DH, 00DH, 00DH, 00DH, 000H	; 14H
+	DB	03FH, 070H, 03EH, 063H, 063H, 03EH, 007H, 07EH	; 15H
+	DB	000H, 000H, 000H, 000H, 0FFH, 0FFH, 0FFH, 000H	; 16H
+	DB	03CH, 07EH, 018H, 018H, 07EH, 03CH, 018H, 07EH	; 17H
+	DB	018H, 03CH, 07EH, 018H, 018H, 018H, 018H, 000H	; 18H
+	DB	018H, 018H, 018H, 018H, 07EH, 03CH, 018H, 000H	; 19H
+	DB	018H, 00CH, 006H, 07FH, 006H, 00CH, 018H, 000H	; 1AH
+	DB	00CH, 018H, 030H, 07FH, 030H, 018H, 00CH, 000H	; 1BH
+	DB	000H, 000H, 000H, 060H, 060H, 07FH, 000H, 000H	; 1CH
+	DB	000H, 024H, 066H, 0FFH, 066H, 024H, 000H, 000H	; 1DH
+	DB	008H, 01CH, 01CH, 03EH, 03EH, 07FH, 07FH, 000H	; 1EH
+	DB	07FH, 07FH, 03EH, 03EH, 01CH, 01CH, 008H, 000H	; 1FH
+	DB	000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H	; 20H  
+	DB	018H, 018H, 018H, 018H, 018H, 000H, 018H, 000H	; 21H !
+	DB	033H, 066H, 0CCH, 000H, 000H, 000H, 000H, 000H	; 22H "
+	DB	036H, 036H, 07FH, 036H, 036H, 07FH, 036H, 036H	; 23H #
+	DB	018H, 07EH, 058H, 038H, 01CH, 01AH, 07EH, 018H	; 24H $
+	DB	0E3H, 0A6H, 0ECH, 018H, 037H, 065H, 0C7H, 000H	; 25H %
+	DB	03CH, 066H, 03CH, 038H, 06DH, 066H, 03DH, 000H	; 26H &
+	DB	006H, 00CH, 018H, 000H, 000H, 000H, 000H, 000H	; 27H '
+	DB	01CH, 030H, 060H, 060H, 060H, 030H, 01CH, 000H	; 28H (
+	DB	038H, 00CH, 006H, 006H, 006H, 00CH, 038H, 000H	; 29H )
+	DB	063H, 036H, 01CH, 07FH, 01CH, 036H, 063H, 000H	; 2AH *
+	DB	018H, 018H, 018H, 07EH, 018H, 018H, 018H, 000H	; 2BH +
+	DB	000H, 000H, 000H, 000H, 000H, 018H, 018H, 030H	; 2CH ,
+	DB	000H, 000H, 000H, 07EH, 000H, 000H, 000H, 000H	; 2DH -
+	DB	000H, 000H, 000H, 000H, 000H, 018H, 018H, 000H	; 2EH .
+	DB	002H, 006H, 00CH, 018H, 030H, 060H, 040H, 000H	; 2FH /
+	DB	03EH, 063H, 063H, 06BH, 063H, 063H, 03EH, 000H	; 30H 0
+	DB	01CH, 03CH, 00CH, 00CH, 00CH, 00CH, 00CH, 000H	; 31H 1
+	DB	03EH, 063H, 003H, 00EH, 038H, 060H, 07FH, 000H	; 32H 2
+	DB	07CH, 006H, 006H, 03CH, 006H, 006H, 07CH, 000H	; 33H 3
+	DB	00EH, 01EH, 036H, 066H, 07FH, 006H, 006H, 000H	; 34H 4
+	DB	07EH, 060H, 07CH, 006H, 006H, 006H, 07CH, 000H	; 35H 5
+	DB	01EH, 030H, 060H, 07EH, 063H, 063H, 03EH, 000H	; 36H 6
+	DB	07EH, 066H, 00CH, 018H, 030H, 030H, 030H, 000H	; 37H 7
+	DB	03EH, 063H, 036H, 01CH, 036H, 063H, 03EH, 000H	; 38H 8
+	DB	03EH, 063H, 063H, 03FH, 003H, 006H, 07CH, 000H	; 39H 9
+	DB	000H, 000H, 018H, 018H, 000H, 018H, 018H, 000H	; 3AH :
+	DB	000H, 000H, 018H, 018H, 000H, 018H, 018H, 030H	; 3BH ;
+	DB	00CH, 018H, 030H, 060H, 030H, 018H, 00CH, 000H	; 3CH <
+	DB	000H, 000H, 07EH, 000H, 07EH, 000H, 000H, 000H	; 3DH =
+	DB	030H, 018H, 00CH, 006H, 00CH, 018H, 030H, 000H	; 3EH >
+	DB	03EH, 063H, 006H, 00CH, 00CH, 000H, 00CH, 000H	; 3FH ?
+	DB	03EH, 063H, 06FH, 069H, 06FH, 060H, 03FH, 000H	; 40H @
+	DB	03CH, 066H, 066H, 07EH, 066H, 066H, 066H, 000H	; 41H A
+	DB	07EH, 063H, 063H, 07EH, 063H, 063H, 07EH, 000H	; 42H B
+	DB	01EH, 033H, 060H, 060H, 060H, 033H, 01EH, 000H	; 43H C
+	DB	07CH, 066H, 063H, 063H, 063H, 066H, 07CH, 000H	; 44H D
+	DB	07EH, 060H, 060H, 07CH, 060H, 060H, 07EH, 000H	; 45H E
+	DB	07EH, 060H, 060H, 07CH, 060H, 060H, 060H, 000H	; 46H F
+	DB	01EH, 033H, 063H, 060H, 067H, 033H, 01EH, 000H	; 47H G
+	DB	063H, 063H, 063H, 07FH, 063H, 063H, 063H, 000H	; 48H H
+	DB	03CH, 018H, 018H, 018H, 018H, 018H, 03CH, 000H	; 49H I
+	DB	006H, 006H, 006H, 006H, 066H, 066H, 03CH, 000H	; 4AH J
+	DB	063H, 066H, 06CH, 078H, 06CH, 066H, 063H, 000H	; 4BH K
+	DB	030H, 030H, 030H, 030H, 030H, 030H, 03FH, 000H	; 4CH L
+	DB	063H, 077H, 07FH, 06BH, 063H, 063H, 063H, 000H	; 4DH M
+	DB	063H, 073H, 07BH, 06FH, 067H, 063H, 063H, 000H	; 4EH N
+	DB	03EH, 063H, 063H, 063H, 063H, 063H, 03EH, 000H	; 4FH O
+	DB	07EH, 063H, 063H, 07EH, 060H, 060H, 060H, 000H	; 50H P
+	DB	03EH, 063H, 063H, 063H, 07BH, 06EH, 03CH, 007H	; 51H Q
+	DB	07EH, 063H, 063H, 07EH, 06CH, 066H, 063H, 000H	; 52H R
+	DB	03EH, 063H, 030H, 01CH, 006H, 063H, 03EH, 000H	; 53H S
+	DB	07EH, 018H, 018H, 018H, 018H, 018H, 018H, 000H	; 54H T
+	DB	063H, 063H, 063H, 063H, 063H, 063H, 03EH, 000H	; 55H U
+	DB	063H, 063H, 063H, 063H, 036H, 01CH, 008H, 000H	; 56H V
+	DB	063H, 063H, 063H, 06BH, 06BH, 07FH, 036H, 000H	; 57H W
+	DB	063H, 063H, 036H, 01CH, 036H, 063H, 063H, 000H	; 58H X
+	DB	063H, 063H, 063H, 03EH, 00CH, 00CH, 00CH, 000H	; 59H Y
+	DB	07FH, 006H, 00CH, 018H, 030H, 060H, 07FH, 000H	; 5AH Z
+	DB	03EH, 030H, 030H, 030H, 030H, 030H, 03EH, 000H	; 5BH [
+	DB	040H, 060H, 030H, 018H, 00CH, 006H, 002H, 000H	; 5CH \
+	DB	03EH, 006H, 006H, 006H, 006H, 006H, 03EH, 000H	; 5DH ]
+	DB	01CH, 036H, 063H, 000H, 000H, 000H, 000H, 000H	; 5EH ^
+	DB	000H, 000H, 000H, 000H, 000H, 000H, 000H, 0FFH	; 5FH _
+	DB	030H, 018H, 00CH, 000H, 000H, 000H, 000H, 000H	; 60H `
+	DB	000H, 000H, 03CH, 006H, 03EH, 066H, 03FH, 000H	; 61H a
+	DB	060H, 060H, 07CH, 066H, 066H, 066H, 07CH, 000H	; 62H b
+	DB	000H, 000H, 03EH, 063H, 060H, 060H, 03FH, 000H	; 63H c
+	DB	006H, 006H, 03EH, 066H, 066H, 066H, 03EH, 000H	; 64H d
+	DB	000H, 000H, 03CH, 066H, 07CH, 060H, 03EH, 000H	; 65H e
+	DB	01EH, 030H, 030H, 07CH, 030H, 030H, 030H, 000H	; 66H f
+	DB	000H, 000H, 03FH, 063H, 063H, 03FH, 003H, 07EH	; 67H g
+	DB	060H, 060H, 06CH, 076H, 066H, 066H, 066H, 000H	; 68H h
+	DB	018H, 000H, 038H, 018H, 018H, 018H, 018H, 000H	; 69H i
+	DB	006H, 000H, 006H, 006H, 006H, 006H, 066H, 03CH	; 6AH j
+	DB	060H, 060H, 066H, 06CH, 078H, 06CH, 066H, 000H	; 6BH k
+	DB	018H, 018H, 018H, 018H, 018H, 018H, 00CH, 000H	; 6CH l
+	DB	000H, 000H, 076H, 07FH, 06BH, 06BH, 063H, 000H	; 6DH m
+	DB	000H, 000H, 06CH, 076H, 066H, 066H, 066H, 000H	; 6EH n
+	DB	000H, 000H, 03EH, 063H, 063H, 063H, 03EH, 000H	; 6FH o
+	DB	000H, 000H, 07CH, 066H, 066H, 07CH, 060H, 060H	; 70H p
+	DB	000H, 000H, 03EH, 066H, 066H, 03EH, 006H, 006H	; 71H q
+	DB	000H, 000H, 036H, 03BH, 030H, 030H, 030H, 000H	; 72H r
+	DB	000H, 000H, 03EH, 070H, 03CH, 00EH, 07CH, 000H	; 73H s
+	DB	018H, 018H, 07EH, 018H, 018H, 018H, 00EH, 000H	; 74H t
+	DB	000H, 000H, 066H, 066H, 066H, 066H, 03BH, 000H	; 75H u
+	DB	000H, 000H, 066H, 066H, 066H, 03CH, 018H, 000H	; 76H v
+	DB	000H, 000H, 063H, 063H, 06BH, 07FH, 036H, 000H	; 77H w
+	DB	000H, 000H, 063H, 036H, 01CH, 036H, 063H, 000H	; 78H x
+	DB	000H, 000H, 066H, 066H, 066H, 03EH, 006H, 07CH	; 79H y
+	DB	000H, 000H, 07EH, 00CH, 018H, 030H, 07EH, 000H	; 7AH z
+	DB	00EH, 018H, 018H, 078H, 018H, 018H, 00EH, 000H	; 7BH {
+	DB	018H, 018H, 018H, 000H, 018H, 018H, 018H, 000H	; 7CH |
+	DB	070H, 018H, 018H, 00EH, 018H, 018H, 070H, 000H	; 7DH }
+	DB	03BH, 06EH, 000H, 000H, 000H, 000H, 000H, 000H	; 7EH ~
+	DB	018H, 03CH, 066H, 0C3H, 0C3H, 0FFH, 000H, 000H	; 7FH
+			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; INT 1A - System and "Real Time" Clock BIOS Services
@@ -11545,7 +11893,7 @@ INT_08 PROC
 INT_08_TICK_TIMER:				; Advance the time ticker
 	MOV	DI, OFFSET TIMER 			; Low timer at BDA 0040:006C
 	ADD	[DI].LW, 1				; increment low word
-	ADC	[DI].HW, DX				; maybe increment high word
+	ADC	[DI].HW, DX				; carry into high word
 	CMP	[DI].HW, 24 			; rolled over to next day?
 	JAE	INT_08_TICK_DAY			; if so, check for day rollover
 
