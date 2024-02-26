@@ -474,7 +474,7 @@ CGA_SNOW_REMOVE	=	0			; disable snow removal
 DRAM_REFRESH	=	0			; disable refresh (no DRAM)
 RAM_PARITY		=	0			; disable memory parity/IO check
 FDC_ENABLE		=	0			; no floppy
-;POST_TEST_KB	=	0			; disable PKEY and PKI errors
+POST_TEST_KB	=	0			; disable PKEY and PKI errors
 INT_19_BOOT_HD	=	0			; Try IPL to floppy then HD
 INIT_AT_KBC		=	1			; init AT type KB controller
 KB_FILTER_SC	=	1			; Filter KB make/break code >= 70h
@@ -3885,11 +3885,11 @@ TOGGLE_TURBO_TD_1:
 ;----------------------------------------------------------------------------;
 ; FE2010 Toggle two speeds
 ;
-	XCHG  AX, CX                        ; save AX
-	MOV   AL, FE2010_CONF_REG           ; get current register
-	XOR   AL, FE_CR <> AND MASK FSPD    ; flip speed bit(s)
-	CALL  FE2010_SETUP_SAVE             ; write to memory and register
-	XCHG  AX, CX                        ; restore AX
+	XCHG	AX, CX				; save AX
+	MOV	AL, FE2010_CONF_REG		; get current register
+	XOR	AL, FE_CR <> AND MASK FSPD	; flip speed bit(s)
+	CALL	FE2010_SETUP_SAVE			; write to memory and register
+	XCHG	AX, CX				; restore AX
 				ENDIF			; ARCH_FE2010
 
 				IF ARCH_TYPE EQ ARCH_UM82
