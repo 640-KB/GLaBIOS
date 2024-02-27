@@ -36,6 +36,8 @@ Copyright &copy; 2022-2024, [640KB](mailto:640kb@glabios.org) and contributors.
 - [VTech Laser Turbo XT](https://www.minuszerodegrees.net/manuals/VTech/VTech%20-%20Laser%20Turbo%20XT%20Series%20-%20Technical%20Reference%20Manual.pdf)
 - Emulator-optmized [MartyPC](https://github.com/dbalsom/martypc), [86Box](https://86box.net/) and others
 - [VirtualXT](https://virtualxt.org)
+- [Book 8088](https://github.com/640-KB/GLaBIOS/releases/v0.2.5#beta) (beta)
+- Compaq Portable (beta)
 
 ### Companion ROMs
 
