@@ -129,7 +129,7 @@ VER_NAME		EQU	'GLaBIOS'
 VER_NUM		EQU	'0.2.6'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'02/22/24' 		; must be MM/DD/YY format
+VER_DATE		EQU	'03/16/24' 		; must be MM/DD/YY format
 	ENDIF
 COPY_YEAR		EQU	'2022-24'		; Copyright year range
 
@@ -470,10 +470,11 @@ POST_TEST_PIC_INT	=	0			;  intergrated to Gate Array A1
 ; Configuration for Book 8088
 ;
 	IF ARCH_TYPE EQ ARCH_BOOK88
-CGA_SNOW_REMOVE	=	0			; disable snow removal
+CGA_SNOW_REMOVE	=	1			; enable snow removal
 DRAM_REFRESH	=	0			; disable refresh (no DRAM)
 RAM_PARITY		=	0			; disable memory parity/IO check
-FDC_ENABLE		=	0			; no floppy
+FDC_ENABLE		=	0			; disable floppy controller
+POST_TEST_FD	=	0			; disable floppy test
 POST_TEST_KB	=	0			; disable PKEY and PKI errors
 INT_19_BOOT_HD	=	0			; Try IPL to floppy then HD
 INIT_AT_KBC		=	1			; init AT type KB controller
@@ -3382,7 +3383,7 @@ PIC_INT_TEST:
 PIC_VECT_TMP_LOOP:
 	MOV	AX, OFFSET INT_IRQ	; offset for handler
 	STOSW					; write to IVT (ES=0000 from CPU_REG_TEST)
-	MOV	AX, CS			; segment for hanlder (BIOS)
+	MOV	AX, CS			; segment for handler (BIOS)
 	STOSW					; write to IVT
 	LOOP	PIC_VECT_TMP_LOOP
 
@@ -7108,15 +7109,15 @@ INT_13_0_1:
 INT_13_0_2:
 	OR	AL, MASK FDDMA			; enable DMA & I/O interface, FDC reset
 	OUT	DX, AL				; send to FDC
-	XOR	CX, CX 				; clear CX, delay for FDC to settle	(3)
-	MOV	_FD_CAL_ST, CL 			; flag all drives for recalibration	(22)
-	MOV	_FD_LAST_OP, CL 			; clear last operation flags		(22)
+	XOR	CX, CX 				; clear CX, delay for FDC to settle
+	MOV	_FD_CAL_ST, CL 			; flag all drives for recalibration
+	MOV	_FD_LAST_OP, CL 			; clear last operation flags
 
 ;----------------------------------------------------------------------------;
 ; Re-enable FDC by setting bit 2 to 1.
 ; Wait for Interrupt (WIF) from FDC
 ;
-	OR	AL, MASK FDCEN			; set FDC enable 				(4)
+	OR	AL, MASK FDCEN			; set FDC enable
 	OUT	DX, AL				; send to FDC
 	STI 						; enable interrupts
 	CALL	FDC_WAIT_SENSE			; wait for FDC to signal interrupt
@@ -8594,7 +8595,7 @@ INT_10_2 PROC
 	SHL	DI, 1				; word align index
 	MOV	VID_CURS_POS[DI], DX	; write to page cursor position in BDA
 	CMP	VID_PAGE, BH		; is this the current page?
-	JNZ	INT_10_2_DONE		; if not, do nothing and exit
+	JNE	INT_10_2_DONE		; if not, do nothing and exit
 	PUSH	BX
 	PUSH	DX
 
@@ -11302,7 +11303,7 @@ ROM_SCAN_POST PROC
 	PUSHF							; re-save flag
 	JNZ	ROM_SCAN_POST_CHK				; jump if checksum error
 	PUSH	AX						; save ROM size again
-	POST_COL_2  S_OPT_SIZE, POST_CLR_VAL2	; start Size column 2
+	POST_COL_2  S_OPT_SIZE, POST_CLR_VAL2	; start 'Size' column 2
 	POP	AX
 	XCHG	AH, AL					; convert bytes to KB
 	SHR	AL, 1
@@ -11793,7 +11794,7 @@ GFX_CHARSET LABEL BYTE
 		ORG 0FE6EH
 INT_1A PROC
 		ASSUME DS:_BDA
-	STI
+	STI						; enable interrupts
 	SUB	AH, 1 				; is function 0 or 1?
 	JA	INT_1A_EXIT 			; if not, exit
 	PUSH	DS
@@ -11814,6 +11815,7 @@ INT_1A PROC
 ;	DX = low order word of tick count
 ;----------------------------------------------------------------------------;
 INT_1A_READ PROC
+	STD						; string direction forward
 	LODSW 					; AX = low word of timer
 	XCHG	AX, DX
 	LODSW 					; AX = high word of timer
@@ -11821,7 +11823,7 @@ INT_1A_READ PROC
 	XOR	AX, AX				; reset midnight flag to 0
 	XCHG	AL, [SI]				; AL = BDA flag, BDA = 0
 INT_1A_DONE:
-	STI 						; re-enable interrupts
+	;STI 						; re-enable interrupts
 	POP	SI
 	POP	DS
 INT_1A_EXIT:
