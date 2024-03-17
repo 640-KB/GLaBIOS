@@ -11815,7 +11815,7 @@ INT_1A PROC
 ;	DX = low order word of tick count
 ;----------------------------------------------------------------------------;
 INT_1A_READ PROC
-	STD						; string direction forward
+	CLD						; string direction forward
 	LODSW 					; AX = low word of timer
 	XCHG	AX, DX
 	LODSW 					; AX = high word of timer
