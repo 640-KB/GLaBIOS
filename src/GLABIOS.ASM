@@ -572,15 +572,17 @@ BOOT_SPEED		EQU	BOOT_NORMAL
 ;
 CAS_RELOCATE	=	0			; keep CAS code in contiguous block
 
-;----------------------------------------------------------------------------;
-; Choose (by commenting out below) one feature to included along with cassette
-;
 	IF CASSETTE EQ 1
-;POST_HD_PARMS	=	0			; disable HD size display
-RANDOM_TAGLINE	=	0			; disable random tagline
-POST_OPT_ROM	=	0			; display POST option ROM display
-LIGHT_PEN		=	0			; disable light pen (8 more bytes needed)
 CAS_RELOCATE	=	1			; relocate cassette code
+
+;----------------------------------------------------------------------------;
+; One of the following features may be enabled with cassette support.
+;
+POST_HD_PARMS	=	1			; enable POST HD size display
+POST_OPT_ROM	=	0			; enable POST option ROM display
+RANDOM_TAGLINE	=	0			; enable random tagline
+LIGHT_PEN		=	0			; enable light pen
+
 	ENDIF
 
 	IF POST_HD_CHECK EQ 0
@@ -916,8 +918,8 @@ FDC_ST_SENSE	EQU	0FFH 			; Sense operation failed
 
 ; Trivial RAM / data patterns
 RAM_TEST_1		EQU 	1001010110100101B	; Simple RAM test 095A5H
-RAM_TEST_2		EQU 	0111001110011101B	; Alternate RAM test 0739DH
-RAM_TEST		=	RAM_TEST_1		; pick one!
+RAM_TEST_2		EQU 	0111001100011101B	; Alternate RAM test 0731DH
+RAM_TEST		=	RAM_TEST_2		; pick one
 MAGIC_WORD		EQU	0AA55H		; Magic Word used for option ROM, IPL device
 
 ; Warm Boot Flag options set in BDA 40:72H
@@ -1171,6 +1173,15 @@ KBFLAGS3 RECORD	KERD:1,KEFI:1,KENL:1,KEEN:1,KERA:1,KERC:1,KEE0:1,KEE1:1
 ;        0|			- KLSL	scroll lock indicator
 ;----------------------------------------------------------------------------;
 KBFLAGS4 RECORD	KLTE:1,KLMU:1,KLRF:1,KLAK:1,KLCI:1,KLCL:1,KLNL:1,KLSL:1
+
+;----------------------------------------------------------------------------;
+; 40:71	BIOS Keyboard Break (BIOS_BREAK)
+;----------------------------------------------------------------------------;
+; 84218421
+; 7 	    |			- KBRK	1=break active
+;  654321 |			- KBRX	unused
+;----------------------------------------------------------------------------;
+KBBRK	RECORD	KBRK:1,KBRX:7
 
 ;----------------------------------------------------------------------------;
 ; FDC BDA Status Flags
@@ -6337,7 +6348,7 @@ KB_INT_CHECK_FN_KEY_DONE:				; not a function key
 
 INT_KB_CTRL_BREAK:
 	CALL	KB_BUF_CLEAR				; clear keyboard buffer
-	MOV	BIOS_BREAK, 10000000b			; BIOS break flag
+	MOV	BIOS_BREAK, KBBRK <1>			; BIOS break flag
 	INT	1BH						; call BIOS Break handler
 	JMP	SHORT INT_KB_DONE_2
 
@@ -6908,12 +6919,22 @@ L_KEY_SCAN_TBL EQU $-KEY_SCAN_TBL
 
 INT_09 ENDP
 
+			IF CASSETTE EQ 1
+;----------------------------------------------------------------------------;
+; Cassette equates for indirect memory references to save code bytes
+;----------------------------------------------------------------------------;
+_CAS_CRC		EQU	WORD PTR[SI]
+_CAS_PREV		EQU	BYTE PTR[SI][CAS_PREV-CAS_CRC]
+_CAS_TIME_CNT	EQU	WORD PTR[SI][CAS_TIME_CNT-CAS_CRC]
+_BIOS_BREAK		EQU	BYTE PTR[SI][BIOS_BREAK-CAS_CRC]
+
 			IF CAS_RELOCATE EQ 1
 ;----------------------------------------------------------------------------;
 ; CAS_CRC_ADD: Add current bit to CRC message
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	CF = bit to add
+;	SI = OFFSET CAS_CRC
 ;----------------------------------------------------------------------------;
 ; This is (effectively) CRC16-CCITT as used by IBM for SDLC/HDLC. It uses a
 ; 0FFFFh initial/preset value, 1021h polynomial and has an expected residue
@@ -6934,7 +6955,7 @@ CAS_CRC_RES		EQU	01D0Fh	; Cassette CRC16-CCITT residue value
 CAS_CRC_POLY 	EQU 	01021h	; Cassette CRC16-CCITT polynomial
 
 CAS_CRC_ADD PROC
-	XCHG	AX, CAS_CRC			; get working CRC, save AX
+	XCHG	AX, _CAS_CRC		; get working CRC, save AX
 	RCR	AX, 1				; set up for RCL
 	RCL	AX, 1				; OF = MSB(AX) XOR CF
 	CLC					; CF = OF
@@ -6942,10 +6963,11 @@ CAS_CRC_ADD PROC
 	XOR	AX, CAS_CRC_POLY SHR 1	; divide by polynomial (already shifted)
 	STC					; CF = OF
 CAS_CRC_SHIFT:
-	ADC	AX, AX			; shift and add bit to working CRC value
-	XCHG	CAS_CRC, AX			; store working CRC, restore AX
+	ADC	AX, AX			; add bit to working CRC value
+	XCHG	_CAS_CRC, AX		; store working CRC, restore AX
 	RET
 CAS_CRC_ADD ENDP
+			ENDIF
 			ENDIF
 
 ;
@@ -10476,10 +10498,12 @@ INT_15_EXIT:
 INT_15_CASS PROC
 			ASSUME DS:_BDA
 	PUSH	DS
+	PUSH	SI
 	PUSH	DX				; scratch register
-	MOV	DX, SEG _BDA		; DS = BDA
-	MOV	DS, DX
-	MOV	BIOS_BREAK, DH		; clear BIOS break key flag
+	MOV	SI, OFFSET CAS_CRC	; used for CAS_CRC and BIOS_BREAK offsets
+	MOV	DX, SEG _BDA		; DH = 0, DL = 40H
+	MOV	DS, DX			; DS = BDA segment
+	MOV	_BIOS_BREAK, DH		; clear BIOS break key flag
 	MOV	AL, AH			; AL = function
 	LAHF					; save 'CMP AH, 3' flags
 	DEC	AL				; is motor off function?
@@ -10527,6 +10551,7 @@ INT_15_DONE:
 	POP	DX				; restore working registers
 
 INT_15_DONE_NO_DX:			; return without restoring DX
+	POP	SI
 	POP	DS
 	JMP	SHORT INT_15_EXIT
 
@@ -10673,7 +10698,7 @@ CAS_WRITE_BLOCKS PROC
 ; - Byte loop (BIT)
 ;
 CAS_WRITE_BLOCK PROC
-	MOV	CAS_CRC, CAS_CRC_PRE	; Init CRC preset
+	MOV	_CAS_CRC, CAS_CRC_PRE	; Init CRC preset
 	XOR	DX, DX			; block counter DX = 0
 CAS_WRITE_BLOCK_LOOP:
 	MOV	AL, ES:[BX]			; AL = next byte
@@ -10699,7 +10724,7 @@ CAS_WRITE_PAD_LOOP:
 ; - Write One's complement of CRC to cassette
 ;
 CAS_WRITE_CRC:
-	MOV	AX, CAS_CRC			; get working CRC
+	MOV	AX, _CAS_CRC		; get working CRC
 	NOT	AX				; one's complement it
 	CALL	CAS_WRITE_WORD		; write to cassette
 
@@ -10852,8 +10877,8 @@ CAS_WRITE ENDP
 ; - 4 bytes FFh   (=32 bits of 1)
 ;----------------------------------------------------------------------------;
 CAS_READ PROC
-	PUSH	SI				; call-preserve SI
-	MOV	SI, 5				; set timeout/retry counter
+	PUSH	BP				; call-preserve BP
+	MOV	BP, 5				; set timeout/retry counter
 	PUSH	DI
 	MOV	DI, BX			; DI = output buffer
 	PUSH	CX				; save bytes to read
@@ -10876,7 +10901,7 @@ CAS_READ_HEADER_START:
 ;
 	MOV	CX, 1000 * 8 * 2		; timeout is 1000 bytes
 CAS_READ_HEADER_LOOP:
-	TEST	BIOS_BREAK, 10000000b	; Test BIOS break flag
+	TEST	_BIOS_BREAK, MASK KBRK	; Test BIOS break flag
 	JNZ	CAS_READ_ERR_1		; Break key was hit
 	CALL	CAS_READ_CYCLE		; loop until bit detected or timeout
 	LOOPZ	CAS_READ_HEADER_LOOP
@@ -10893,7 +10918,7 @@ CAS_READ_HEADER_LOOP:
 ;
 	MOV	CX, 32 * 8 * 2		; leader must be at least 32 bytes
 CAS_READ_HEADER_LOOP_1:
-	TEST	BIOS_BREAK, 10000000b	; Test BIOS break flag
+	TEST	_BIOS_BREAK, MASK KBRK	; Test BIOS break flag
 CAS_READ_ERR_1:				; (short jump hack)
 	JNZ	CAS_READ_ERR		; exit if break key was hit
 
@@ -10942,10 +10967,10 @@ CAS_READ_HEADER_SYNC:
 	POP	CX				; restore counter
 	PUSH	CX				; rebalance stack
 CAS_READ_BLOCKS PROC
-	MOV	CAS_CRC, CAS_CRC_PRE	; set CRC to initial preset
+	MOV	_CAS_CRC, CAS_CRC_PRE	; set CRC to initial preset
 	MOV	BH, 0				; loop 256 bytes
 CAS_READ_BLOCK_LOOP:
-	TEST	BIOS_BREAK, 10000000b	; Test BIOS break flag
+	TEST	_BIOS_BREAK, MASK KBRK	; Test BIOS break flag
 	JNZ	CAS_READ_ERR		; exit if break key was hit
 	CALL	CAS_READ_BYTE		; read next full byte
 	MOV	AH, 2				; data error
@@ -10972,7 +10997,7 @@ CAS_READ_BLOCK_PAD:
 CAS_READ_VERIFY_CRC:
 	CALL	CAS_READ_WORD		; read final two CRC bytes, adding to CRC
 	JC	CAS_READ_ERR		; 
-	CMP	CAS_CRC, CAS_CRC_RES	; is expected CRC-CCITT residue (01D0Fh)?
+	CMP	_CAS_CRC, CAS_CRC_RES	; is expected CRC-CCITT residue (01D0Fh)?
 	MOV	AH, 1				; CRC error
 	JNE	CAS_READ_EXIT
 	INC	CX				; any more bytes left to read?
@@ -10986,7 +11011,7 @@ CAS_READ_BLOCKS ENDP
 ; General / timeout error
 ;
 CAS_READ_ERR PROC
-	DEC	SI				; dec retry counter
+	DEC	BP				; dec retry counter
 	JNZ	CAS_READ_HEADER_START	; if not 0, retry header read
 	MOV	AH, 4				; general/timeout error
 CAS_READ_ERR ENDP
@@ -10999,7 +11024,7 @@ CAS_READ_EXIT:
 	SUB	DX, CX			; DX = actual bytes read (subtract bytes remaining)
 	MOV	BX, DI			; BX = pointer to end of output buffer
 	POP	DI				; restore original DI
-	POP	SI
+	POP	BP
 	POP	DS				; discard original DX
 	CALL	CAS_TIMER_ON_MOTOR_OFF	; Re-enable timer and motor off
 	JMP	INT_15_DONE_NO_DX		; exit without restoring DX
@@ -11017,7 +11042,7 @@ CAS_READ_EXIT:
 CAS_READ_CYCLE PROC
 	PUSH	CX				; call-preserve CX
 	MOV	CX, 100			; timeout value
-	MOV	AH, CAS_PREV		; AH last input register value
+	MOV	AH, _CAS_PREV		; AH last input register value
 CAS_READ_CYCLE_LOOP:
 	IN	AL, PPI_C			; read PPI C
 	AND	AL, MASK PCCI		; mask only cassette input
@@ -11025,7 +11050,7 @@ CAS_READ_CYCLE_LOOP:
 	LOOPZ	CAS_READ_CYCLE_LOOP	; loop until change or timeout
 	MOV	CAS_PREV, AL		; save new input value
 	CALL	IO_WAIT_LATCH		; latch and read PIT counter into AX
-	MOV	DX, CAS_TIME_CNT		; DX = last counter reading
+	MOV	DX, _CAS_TIME_CNT		; DX = last counter reading
 	SUB	DX, AX			; DX = difference of last and current
 	MOV	CAS_TIME_CNT, AX		; update counter read
 	TEST	CX, CX			; ZF if timeout, NZ if success
@@ -11111,6 +11136,7 @@ CAS_READ_WORD ENDP
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	CF = bit to add
+;	SI = OFFSET CAS_CRC
 ;----------------------------------------------------------------------------;
 ; This is (effectively) CRC16-CCITT as used by IBM for SDLC/HDLC. It uses a
 ; 0FFFFh initial/preset value, 1021h polynomial and has an expected residue
@@ -11131,7 +11157,7 @@ CAS_CRC_RES		EQU	01D0Fh	; Cassette CRC16-CCITT residue value
 CAS_CRC_POLY 	EQU 	01021h	; Cassette CRC16-CCITT polynomial
 
 CAS_CRC_ADD PROC
-	XCHG	AX, CAS_CRC			; get working CRC, save AX
+	XCHG	AX, _CAS_CRC		; get working CRC, save AX
 	RCR	AX, 1				; set up for RCL
 	RCL	AX, 1				; OF = MSB(AX) XOR CF
 	CLC					; CF = OF
@@ -11139,8 +11165,8 @@ CAS_CRC_ADD PROC
 	XOR	AX, CAS_CRC_POLY SHR 1	; divide by polynomial (already shifted)
 	STC					; CF = OF
 CAS_CRC_SHIFT:
-	ADC	AX, AX			; shift and add bit to working CRC value
-	XCHG	CAS_CRC, AX			; store working CRC, restore AX
+	ADC	AX, AX			; add bit to working CRC value
+	XCHG	_CAS_CRC, AX		; store working CRC, restore AX
 	RET
 CAS_CRC_ADD ENDP
 			ENDIF			; CAS_RELOCATE
