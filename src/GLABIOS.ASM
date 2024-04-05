@@ -843,6 +843,7 @@ MDA_PEN_RST		EQU	03BBH			; CGA light pen strobe reset
 CGA_IDX		EQU	03D4H			; CGA Mode Select Register
 CGA_DATA		EQU	03D5H			; CGA Mode Data Register
 CGA_CTRL		EQU	03D8H			; CGA Mode Control Register
+CGA_COLOR		EQU	03D9H			; CGA Color Select register
 CGA_STAT		EQU	03DAH			; CGA Status Register (R)
 CGA_PEN_RST		EQU	03DBH			; CGA light pen strobe reset (W)
 
@@ -5438,7 +5439,7 @@ CAS_READ_WORD ENDP
 			ENDIF
 
 ;
-; 43/8 BYTES HERE
+; 43 BYTES HERE / 8 BYTES HERE 5150
 ;
 BYTES_HERE	INT_19
 
@@ -5538,7 +5539,7 @@ BYTES_HERE	INT_14
 ;	INT 14,3  Get Serial port status
 ;
 ; All functions have:
-;	  AH = function number
+;	  AH = function number (bounds not checked)
 ;	  AL = character to send or receive
 ;	  DX = zero based RS232 card number
 ;
@@ -6971,7 +6972,7 @@ CAS_CRC_ADD ENDP
 			ENDIF
 
 ;
-; 5 BYTES HERE
+; 22 BYTES HERE / 5 BYTES HERE 5150
 ;
 BYTES_HERE	INT_13
 
@@ -8479,7 +8480,7 @@ INT_10_0_1:
 	JMP	SHORT INT_10_0_DETECT_DONE	; MDA mode selected, continue
 INT_10_0_IS_CGA:
 	MOV	CH, HIGH OFFSET CGA_MEM		; Total CGA video memory = 4000H (16K)
-	MOV	DX, CGA_CTRL			; CGA Mode Select Register (03D8H)
+	MOV	DX, CGA_CTRL			; CGA Mode Select Register (3D8H)
 	MOV	BP, SEG _CGA_MEM			; BP = CGA memory segment (0B800H)
 	TEST	BL, 0100B				; text or gfx mode?
 	JZ	INT_10_0_IS_CGA_TEXT		; jump if text
@@ -8503,7 +8504,7 @@ INT_10_0_DETECT_DONE:
 	MOV	VID_MEM_SEG, BP			; write video segment for later
 	OUT	DX, AL				; disable video
 	MOV	BYTE PTR VID_BUF_SZ[1], AH	; write BDA video page size
-	SUB	DL, 4					; DX = 6845 index register port
+	SUB	DX, CGA_CTRL-CGA_IDX		; DX = 6845 index register port
 	MOV	VID_PORT, DX			; write BDA video I/O port
 	MOV	BP, BX				; save video mode to BP
 
@@ -8524,6 +8525,7 @@ INT_10_0_DETECT_DONE:
 	MOV	DS, AX				; DS = IVT
 			ASSUME DS:_IVT
 	LDS	BX, IVT_1D				; DS:BX = BIOS:INT_1D
+			ASSUME DS:NOTHING
 	MOV	DI, WORD PTR [BX][SI].CSL	; DI = cursor type (start and end)
 	MOV	CL, SIZE CRTC			; size of CRTC data
 INT_10_0_CRTC_LOOP:
@@ -8544,9 +8546,9 @@ INT_10_0_CRTC_LOOP:
 INT_10_0_COLOR_BYTE:
 	MOV	BX, OFFSET CRT_MODE
 	XLAT						; AL = control byte data
-			ASSUME DS:_BDA
 	POP	DS					; DS = BDA
-	ADD	DL, 4					; DX = control reg
+			ASSUME DS:_BDA
+	ADD	DX, CGA_CTRL-CGA_IDX		; DX = 6845 control reg port (3D8H)
 	MOV	WORD PTR VID_MODE_REG, AX	; write mode and color to BDA
 	OUT	DX, AX				; write mode and color to 6845
 	XCHG	AX, DI				; AX = cursor bytes from CRTC table
@@ -8862,7 +8864,8 @@ INT_10_SCR_TXT:
 	SHL	CL, 1				; WORD-align bytes per full row (now 160 or 80)
 	MUL	CL				; AX = size in WORDs of full rows to scroll
 	XCHG	AX, BP			; AL = # rows, AH = func, BP = WORD size of rect. rows
-	ADD	DX, 101H			; convert 0-based indexes to 1-based loop counters
+	INC	DX				; convert 0-based indexes to 1-based loop counters
+	INC	DH
 	SAHF					; set ZF if scroll up
 	MOV	AH, BH			; AH = fill attribute byte
 	PUSHF					; save scroll direction flag (out of registers!)
@@ -8988,8 +8991,8 @@ INT_10_SCR_GFX PROC
 	SHL	AX, 1				;  (default for 640x200)
 	ADD	DX, AX
 	XCHG	DX, DI			; DI = memory offset of new rect bottom
-						; DX = original row/col
-	ADD	DX, 101H			; use 0-based indexes for 1-based counters
+	INC	DX				; DX = original row/col
+	INC	DH				; use 0-based indexes for 1-based counters
 	SUB	DX, CX			; DH = rect height, DL = rect width
 	XCHG	AX, BP			; restore original AL / AH = func flag
 	MOV	BL, AL			; BL = lines to scroll
@@ -9619,7 +9622,7 @@ INT_10_B_DONE:
 	MOV	VID_COLOR, AL			; save to BDA
 	PUSH	DX
 	MOV	DX, VID_PORT
-	ADD	DL, 5					; DX = 03D9H
+	ADD	DX, CGA_COLOR-CGA_IDX		; DX = 6845 color select reg (3D9H)
 	OUT	DX, AL				; send to CGA Color Select Register
 	POP	DX
 	POP	AX
@@ -9804,11 +9807,11 @@ INT_10_E_CHAR:
 ;----------------------------------------------------------------------------;
 ; Handle line wrap
 ;
-	MOV	CL, BYTE PTR VID_COLS	; get screen cols
-	DEC	CX				; fix 0 index
-	CMP	DL, CL			; reached end of screen cols?
+	MOV	AL, BYTE PTR VID_COLS	; get screen cols (80 or 40)
+	DEC	AX				; fix 0 index (79 or 39)
+	CMP	DL, AL			; reached end of screen cols?
 	JB	NEXT_COL			; jump if not
-	MOV	DL, -1			; else move to first col and next row 
+	MOV	DL, -1			; else move to first col and next row
 NEXT_COL:
 	INC	DX				; move to next column (and maybe row)
 
@@ -9818,9 +9821,9 @@ NEXT_COL:
 INT_10_E_SCROLL:
 	CMP	DH, VID_DEF_ROWS		; moved past last row?
 	JBE	INT_10_E_CURS		; if not, no scroll necessary
-	XOR	AH, AH			; attribute = 0 if gfx mode
 	DEC	DH				; undo row scroll
 	CALL	INT_10_IS_TXT		; ZF = 1 if CGA/MDA Text, ZF = 0 if gfx
+	CBW					; if gfx mode, attribute AH = 0
 	JNZ	INT_10_E_SCROLL_UP	; jump if graphics
 	CALL	INT_10_8			; Read character: AH = attribute, AL = char
 
@@ -9833,7 +9836,7 @@ INT_10_E_SCROLL_UP:
 	MOV	AX, DBW <6, 1>		; AH = 06H Scroll Window Up, AL = 1 line
 	XOR	CX, CX			; scroll top left: CH = row 0, CL = col 0
 	PUSH	DX				; save cursor bottom
-	MOV	DL, BYTE PTR VID_COLS	; DL = right-most column
+	MOV	DL, BYTE PTR VID_COLS	; DL = right-most column (1-indexed)
 	MOV	DH, VID_DEF_ROWS		; DH = bottom row (always 24)
 	DEC	DX				; fixup 0-indexed column
 	CLD
@@ -9855,16 +9858,16 @@ INT_10_E_DONE:
 ; Handle control codes
 ;
 INT_10_E_CTRL:
-	JZ	INT_10_E_CR			; ZF = CR (from above)
+	JE	INT_10_E_CR			; is a CR? (from above)
 	CMP	AL, LF			; is an LF?
-	JZ	INT_10_E_LF
+	JE	INT_10_E_LF
 	CMP	AL, BS			; is a backspace?
-	JZ	INT_10_E_BS
+	JE	INT_10_E_BS
 	CMP	AL, BELL			; Isabelle?
-	JNZ	INT_10_E_CHAR		; otherwise, handle as a normal char
+	JNE	INT_10_E_CHAR		; otherwise, handle as a normal char
 INT_10_E_BELL:
-	POPX	DX, CX, BX, AX		; clear stack, beep and exit
-	JMP	BEEP				; standard BEEP and RET
+	CALL	BEEP				; beep for ^G
+	JMP	INT_10_E_DONE		; exit
 INT_10_E_CR:
 	XOR	DL, DL			; move to column 0
 	JMP	INT_10_E_CURS		; update cursor
@@ -9872,10 +9875,9 @@ INT_10_E_LF:
 	INC	DH				; move to next row
 	JMP	INT_10_E_SCROLL		; maybe scroll
 INT_10_E_BS:
-	TEST	DL, DL			; is first column? (can't backspace further)
-	JZ	INT_10_E_DONE		; if so, do nothing and exit
-	DEC	DX				; back space one column
-	JMP	INT_10_E_SCROLL		; maybe scroll
+	DEC	DL				; back space one column
+	JS	INT_10_E_DONE		; if first column, do nothing and exit
+	JMP	INT_10_E_CURS		; update cursor
 
 INT_10_E ENDP
 
@@ -10411,7 +10413,7 @@ WORD_HEX ENDP
 DWORD_HEX ENDP
 
 ;
-; 23 BYTES HERE
+; 30 BYTES HERE
 ;
 BYTES_HERE	INT_12
 
@@ -11533,7 +11535,7 @@ INT_10_4 ENDP
 		ENDIF
 
 ;
-; 79 BYTES HERE / (20 BYTES HERE 5150)
+; 79 BYTES HERE / 0 BYTES HERE 5150
 ;
 BYTES_HERE	GFX_CHARSET
 
