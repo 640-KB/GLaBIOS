@@ -1312,6 +1312,16 @@ FDC_ST0 RECORD	ST0CS:2,ST0SK:1,ST0CHK:1,ST0NR:1,ST0HD:1,ST0DRV:2
 FDC_CB RECORD	FC0MT:1,FC0MF:1=1,FC0SK:1,FC0CMD:5
 
 ;----------------------------------------------------------------------------;
+; FDC Command Byte 1
+;----------------------------------------------------------------------------;
+; 84218421
+; 76543   |			- FC1X	unused
+;      2  |			- FC1HD	head (0-1)
+;       10|			- FC1DS	drive (0-3)
+;----------------------------------------------------------------------------;
+FDC_CB1 RECORD	FC1X:5,FC1HD:1,FC1DS:2
+
+;----------------------------------------------------------------------------;
 ; Port 3BD Printer Status Flags returned from INT 17
 ;----------------------------------------------------------------------------;
 ; 84218421
@@ -7333,13 +7343,13 @@ FDC_INIT_DMA_EXIT:
 ;-------------------------------------------------------------------------
 ; Set FDC command byte
 ;
-	MOV	AL, FDC_CB <1,1,,FDC_CMD_WR>	; FDC Write Data - Multi-Track, MFM
+	MOV	AL, FDC_CB <1,,0,FDC_CMD_WR>	; FDC Write Data - Multi-Track, MFM
 	CMP	AH, 3 				; is write?
 	JE	FDC_RWVF				; jump if write
-	MOV	AL, FDC_CB <0,1,,FDC_CMD_FMT>	; FDC Format Track - Single Track, MFM
-	CMP	AH, 5 				; is format command?
+	MOV	AL, FDC_CB <0,,0,FDC_CMD_FMT>	; FDC Format Track - Single-Track, MFM
+	CMP	AH, 5 				; is format?
 	JE	FDC_RWVF 				; jump if format
-	MOV	AL, FDC_CB <1,1,1,FDC_CMD_RD>	; FDC Read Data - MT, MFM, Skip deleted
+	MOV	AL, FDC_CB <1,,1,FDC_CMD_RD>	; FDC Read Data - MT, MFM, Skip deleted
 
 ;-------------------------------------------------------------------------
 ; FDC_RWVF: read, write, verify or format sectors
@@ -7347,8 +7357,8 @@ FDC_INIT_DMA_EXIT:
 ; Input:
 ;	AL = FDC command
 ;	AH = function
-;	DL = drive
-;	DH = head
+;	DL = drive (0-3)
+;	DH = head (0-1) (bounds not checked)
 ;-------------------------------------------------------------------------
 FDC_RWVF:
 	PUSH	AX					; preserve AH function number
@@ -7357,10 +7367,10 @@ FDC_RWVF:
 	JC	FDC_RWV_ERR
 	MOV	AL, DH				; AL = head
 	XCHG	AX, DX				; AL = drive, AH = head, DL = head, DH = function
-	AND	AX, 103H				;  xxxxx     ; unused
-	SHL	AH, 1					;       h    ; head number (bit 3)
-	SHL	AH, 1					;        dd  ; drive number (bit 1,2)
-	OR	AL, AH 				; [1] head / drive
+	SHL	AH, 1					; [1] head / drive
+	SHL	AH, 1					;  xxxxx     ; unused
+	OR	AL, AH 				;       h    ; head number (bit 3)
+	AND	AL, MASK FC1HD OR MASK FC1DS	;        dd  ; drive number (bit 1,2)
 	CALL	FDC_SEND 				; send command in AL, CF if error
 	JC	FDC_RWV_ERR
 	CMP	DH, 5					; is format?
@@ -7854,7 +7864,7 @@ FDC_WAIT_STATUS PROC
 ;-------------------------------------------------------------------------
 FDC_WAIT_STATUS_ERR PROC
 	PUSH	SI
-	TEST	AL, 01000000B			; command terminated abnormally?
+	TEST	AL, FDC_ST0 < 01B >		; command terminated abnormally?
 	MOV	AL, FDC_ST_ERR_FDC		; if not, FDC error
 	JZ	FDC_WAIT_STATUS_ERR_DONE
 	MOV	AH, _FDC_LAST_ST.SB1		; AH = last status byte 1
