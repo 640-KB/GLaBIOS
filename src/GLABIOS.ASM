@@ -129,7 +129,7 @@ VER_NAME		EQU	'GLaBIOS'
 VER_NUM		EQU	'0.2.6'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'03/16/24' 		; must be MM/DD/YY format
+VER_DATE		EQU	'05/05/24' 		; must be MM/DD/YY format
 	ENDIF
 COPY_YEAR		EQU	'2022-24'		; Copyright year range
 
@@ -248,13 +248,18 @@ RAM_PARITY		=	1		; Enable RAM parity checking
 RAM_TEST_LONG	=	1		; Long RAM test on cold boot
 RAM_DIGITS		=	3		; Number of zero-padded digits for RAM (3 or 4)
 BASIC_ROM		=	1		; BASIC ROM support at 0F600h
-OPT_ROM_END		=	0FE00H	; Option ROM scan ending address
+OPT_ROM_END		=	0FE00H	; Option ROM scan ending address (must be xx00)
 FDC_ENABLE		=	1		; Enable INT 13h floppy support
 FDC_IPL_SW		=	0		; Use IPL switch to enable/disable floppy
 FDC_HLT_WAIT	=	1		; Halt CPU during FD access
 						;   Some chipsets (TD3300A known affected)
 						;   hang during floppy access if this is
 						;   enabled
+FDC_ADV_SEEK	=	1		; Advanced floppy seeking performance
+						;   Store current head position in BDA
+						;   to avoid unnecessary seek commands
+FDC_ZERO_BDA	=	0		; clear FDC FIFO buffer between ops
+						;   Some HD ROMs appropriate this memory
 KB_HLT_WAIT		=	1		; Halt CPU during KB wait
 MBR_CHECK		=	0		; Verify magic number of DOS MBR at boot
 						;   note: DOS 1.0 does not use MBR, so
@@ -296,6 +301,11 @@ UNSAFE_FLOPPY	=	0		; Use % of specified disk head settle time
 ;UNSAFE_FLP_DIV	EQU	<1/3>		; 33%
 UNSAFE_FLP_DIV	EQU	<3/10>	; 30%
 ;UNSAFE_FLP_DIV	EQU	<1/4>		; 25%
+
+;	IF FDC_ADV_SEEK EQ 1
+;UNSAFE_FLOPPY	=	1		; reduce head settle times with FDC_ADV
+;UNSAFE_FLP_DIV	EQU	<1/2>		; 50%
+;	ENDIF
 
 ;----------------------------------------------------------------------------;
 ; UNSAFE_REFRESH: Lower the amount of time spent in DMA/DRAM refresh state.
@@ -576,7 +586,7 @@ CAS_RELOCATE	=	0			; keep CAS code in contiguous block
 CAS_RELOCATE	=	1			; relocate cassette code
 
 ;----------------------------------------------------------------------------;
-; One of the following features may be enabled with cassette support.
+; One of the following features may be enabled in addition to cassette support.
 ;
 POST_HD_PARMS	=	1			; enable POST HD size display
 POST_OPT_ROM	=	0			; enable POST option ROM display
@@ -1208,6 +1218,18 @@ FDC_SF RECORD	FWIF:1,FSTBD:3,FCAL3:1,FCAL2:1,FCAL1:1,FCAL0:1
 ;     3210|			- FMOT	1=drive 3 motor on
 ;----------------------------------------------------------------------------;
 FDC_MF RECORD	FWRT:1,FMTBD:3,FMOT:4
+
+;----------------------------------------------------------------------------;
+; 40:3F	FD_MOTOR_ST	Diskette motor status flags - separated drives
+;----------------------------------------------------------------------------;
+; 84218421
+; 7654    |			- FMOTX	unused
+;     3   |			- FMOT3	1=drive 3 on
+;      2  |			- FMOT2	1=drive 2 on
+;       1 |			- FMOT1	1=drive 1 on
+;        0|			- FMOT0	1=drive 0 on
+;----------------------------------------------------------------------------;
+FDC_MFD RECORD	FMOTX:4,FMOT3:1,FMOT2:1,FMOT1:1,FMOT0:1
 
 ;----------------------------------------------------------------------------;
 ; 40:8F	FD_MODE	Floppy drive mode
@@ -2676,12 +2698,11 @@ COM_TIME		DB	4 DUP(?) 		; 7CH  Time-out value for COM1-4
 KB_BUF_ST		DW	?			; 80H  Keyboard buffer start
 			DW	?			; 82H  Keyboard buffer end
 		ORG	08BH
-			DB	?			; 8BH  Last diskette data rate selected
+FD_LR			DB	?			; 8BH  Last diskette data rate selected
 		ORG	08FH
 FD_MODE		FDC_MODE <>			; 8FH  FDC Drive Mode (see FDC_MODE)
 FD_MEDIA_ST		FDC_STATE 4 DUP(<>)	; 90H-93H  Drive 0-3 media state
-FD0_TRACK		DB	?			; 94H  Drive 0 current track
-FD1_TRACK		DB	?			; 95H  Drive 1 current track
+FD_TRACK		DB	2 DUP(?)		; 94H-95H  Drive 0-1 current track
 EKB_FLAGS1		KBFLAGS3 <>			; 96H  Keyboard mode/type (Enhanced)
 EKB_FLAGS2		KBFLAGS4 <>			; 97H  Keyboard LED flags (Enhanced)
 		ORG	0A0H
@@ -4220,7 +4241,7 @@ SET_EFLAG_FLP ENDP
 			ENDIF
 
 ;
-; 2 BYTES HERE
+; 3 BYTES HERE
 ;
 BYTES_HERE	INT_02
 
@@ -4246,17 +4267,17 @@ INT_02_NMI_PAR:
 	DEC	SI					; otherwise is I/O error
 	DEC	SI					; decrement to NMI_ERR_IO
 INT_02_NMI_HALT:
+			IF CPU_TYPE	EQ CPU_V20
+	MOV	AL, OCW1 <1,1,1,1,1,1,1,1>	; mask the maskable since V20 can
+	OUT	INT_IMR, AL				;  exit HLT on IRQ even if IF=0
+			ENDIF
 	XOR	AX, AX				; reset video, clear screen
 	OUT	NMI_R0, AL				; mask the unmaskable
 	INT	10H					; switch to text video mode
 	CALL	OUT_SZ 				; display string in CS:SI
 	CALL	NMI_RESET				; clear NMI/parity flags
-INT_02_LOOP:
 	CLI						; ensure interrupts off
 	HLT						; halt CPU
-			IF ARCH_TYPE EQ ARCH_TD3300
-	JMP	SHORT INT_02_LOOP			; TD3300A seems to have a
-			ENDIF				;  "halting problem"
 INT_02 ENDP
 
 POST_DETECT_PORTS PROC
@@ -4543,8 +4564,8 @@ DMA_STATUS_OK:
 ; [28] Option ROM scan for other ROMs (storage, etc)
 ;----------------------------------------------------------------------------;
 	MOV	AX, SEG _OPT_ROM			; start at 0C800H
-	MOV	DI, OPT_ROM_END 			; end below 0FE00H
-	CALL	BIOS_ROM_SCAN
+	MOV	DI, OPT_ROM_END			; end below 0FE00H
+	CALL	BIOS_ROM_SCAN			; scan for option ROMs, AL = 0
 
 ;----------------------------------------------------------------------------;
 ; [31] Enable interrupts
@@ -4556,7 +4577,7 @@ DMA_STATUS_OK:
 ; [30] Recalibrate and test seek the floppy drive
 ;----------------------------------------------------------------------------;
 FDC_POST PROC
-	XOR	AX, AX 				; AH = reset (0)
+	CBW						; AH = reset (0)
 	CWD						; DL = start at drive 0
 			IF FDC_IPL_SW EQ 1
 	TEST_EFLAG	IPL				; IPL switch (floppy installed) set?
@@ -4573,6 +4594,7 @@ FDC_POST PROC
 ;
 	XCHG	AX, CX				; CX = number of floppy drives
 FDC_POST_TESTS_DRV:
+	MOV	DI, OFFSET FD_LAST_OP		; DI = FD_LAST_OP to use INT 13h PROCs
 				IF POST_TEST_SEEK EQ 1
 	CALL	FDC_RECAL_SEEK_TEST		; recal and seek test
 				ELSE
@@ -4614,6 +4636,7 @@ FDC_POST_TESTS_COL:
 				IF POST_FD_COUNT EQ 1
 ;----------------------------------------------------------------------------;
 ; Display FDC POST drive count column in AX
+; TODO: re-arrange to display counts after drive list
 ;
 	POST_COL_1  POST_FDD, POST_CLR_VAL2	; display FDC column label
 	CALL	NIB_HEX				; display drive count value in AL
@@ -5449,7 +5472,7 @@ CAS_READ_WORD ENDP
 			ENDIF
 
 ;
-; 43 BYTES HERE / 8 BYTES HERE 5150
+; 43 BYTES HERE / 6 BYTES HERE 5150
 ;
 BYTES_HERE	INT_19
 
@@ -6982,7 +7005,7 @@ CAS_CRC_ADD ENDP
 			ENDIF
 
 ;
-; 22 BYTES HERE / 5 BYTES HERE 5150
+; 5 BYTES HERE / 4 BYTES HERE 5150
 ;
 BYTES_HERE	INT_13
 
@@ -7032,14 +7055,6 @@ BYTES_HERE	INT_13
 ;	3F7 Diskette digital input
 ;
 ;----------------------------------------------------------------------------;
-		ORG 0EC59H
-INT_13 PROC
-		ASSUME DS:_BDA
-	STI 						; enable interrupts
-	CLD
-	PUSHX	DS, DI, DX, CX, BX, AX		; save original registers
-	MOV	DI, SEG _BDA			; DS = BDA
-	MOV	DS, DI
 
 ;----------------------------------------------------------------------------;
 ; Use indexed addressing to DI = FD_LAST_OP for byte savings.
@@ -7047,25 +7062,39 @@ INT_13 PROC
 _FD_LAST_OP		EQU	BYTE PTR [DI]				; FD_LAST_OP
 _FD_MOTOR_ST	EQU	_FD_LAST_OP[FD_MOTOR_ST-FD_LAST_OP]	; FD_MOTOR_ST
 _FD_CAL_ST		EQU	_FD_LAST_OP[FD_CAL_ST-FD_LAST_OP]	; FD_CAL_ST
+_FD_TRACK		EQU	_FD_LAST_OP[FD_TRACK-FD_LAST_OP]	; FD_TRACK
+_FD_MEDIA_ST	EQU	_FD_LAST_OP[FD_MEDIA_ST-FD_LAST_OP]	; FD_MEDIA_ST
+_FD_TIMER		EQU	_FD_LAST_OP[TIMER-FD_LAST_OP]		; TIMER
 _FDC_LAST_ST	EQU	[DI][FDC_LAST_ST-FD_LAST_OP]		; FDC_LAST_ST
 
+		ORG 0EC59H
+INT_13 PROC
+		ASSUME DS:_BDA
+	STI 						; enable interrupts
+	CLD
+	PUSHX	DS, DI, DX, CX, BX		; save original registers
+	MOV	DI, SEG _BDA			; DS = BDA
+	MOV	DS, DI
 	MOV	DI, OFFSET FD_LAST_OP		; DI = FD_LAST_OP throughout
+	AND	_FD_MOTOR_ST, NOT MASK FWRT	; clear write operation flag
 	CMP	AH, 1 				; AH = 1?
+	JE	INT_13_1 				; AH = 1, jump to Status
+	MOV	_FD_LAST_OP, FDC_ST_OK		; clear last operation
 	JB	INT_13_0 				; AH = 0, jump to Reset
-	JZ	INT_13_1 				; AH = 1, jump to Status
 	CMP	DL, 3 				; is drive number > 3?
 	JA	INT_13_BAD_CMD 			; if so, exit
-	MOV	_FD_LAST_OP, FDC_ST_OK		; clear last operation
 	CMP	AH, 6 				; AH = 2 through 5?
 	JB	INT_13_2_5 				; jump to FDC RWVF command
 INT_13_BAD_CMD:
-	MOV	_FD_LAST_OP, FDC_ST_BADCMD	; otherwise return "bad command"
+	INC	_FD_LAST_OP				; otherwise return "bad command" (1)
 INT_13_DONE:
+	MOV	AH, _FD_LAST_OP 			; AH = last operation status
+INT_13_SET_MOTOR_CT:
+	XCHG	AX, BX				; save AL
 	MOV	AL, DBT.FMCT 			; INT_1E[2] = motor shutoff counter
 	CALL	INT_1E_PARAM 			; AL = shutoff counter value (37)
 	MOV	FD_MOTOR_CT, AL 			; update in BDA
-	POP	AX 					; restore original AL
-	MOV	AH, _FD_LAST_OP 			; AH = last operation status
+	XCHG	AX, BX				; restore AL
 INT_13_EXIT:
 	POPX	BX, CX, DX, DI, DS		; restore original registers
 	CMP	AH, FDC_ST_OK+1			; check AH for error (CF = AH < 1)
@@ -7089,9 +7118,9 @@ INT_13_EXIT:
 ;
 ; To Convert FD_MOTOR_ST to FDC byte use the following table/formula:
 ;	Motors On 	Drive #
-;	0 0 0 0	 	0 			AND with 1111, jump if AL = 0
+;	0 0 0 0	 	- 			AND with 1111, jump if AL = 0
 ;	1 x x x		3			TEST bit 1000, if non-zero then AL = 3
-;	0 1 x x		2 			Shift right once and AL will be correct
+;	0 1 0 x		2 			Shift right once and AL will be correct
 ;	0 0 1 x		1 			"
 ;	0 0 0 x	 	0			"
 ;
@@ -7120,7 +7149,7 @@ INT_13_0 PROC
 ; since FDC requires a drive index for the reset.
 ;
 	SHR	AL, 1					; disregard low bit (will be 0 either way)
-	TEST	AL, 0100B 				; test for drive 3?
+	TEST	AL, MASK FMOT3 SHR 1		; test for drive 3?
 	JZ	INT_13_0_1				; if not drive 3, AL is now correct
 	MOV	AL, 3 				; otherwise set AL to drive 3
 INT_13_0_1:
@@ -7136,15 +7165,13 @@ INT_13_0_1:
 
 ;----------------------------------------------------------------------------;
 ; Reset the controller by holding FDC reset (bit 2) at 0.
-; Flag all drives for recalibration (not just the drive in DL)
-; Clear last FDC operation status in BDA
+; Perform the following memory operations here to satisfy reset timing for FDC:
+; - Flag all drives for recalibration (not just the drive in DL)
 ;
 INT_13_0_2:
 	OR	AL, MASK FDDMA			; enable DMA & I/O interface, FDC reset
 	OUT	DX, AL				; send to FDC
-	XOR	CX, CX 				; clear CX, delay for FDC to settle
-	MOV	_FD_CAL_ST, CL 			; flag all drives for recalibration
-	MOV	_FD_LAST_OP, CL 			; clear last operation flags
+	MOV	_FD_CAL_ST, AH 			; flag all drives for recalibration
 
 ;----------------------------------------------------------------------------;
 ; Re-enable FDC by setting bit 2 to 1.
@@ -7154,27 +7181,32 @@ INT_13_0_2:
 	OUT	DX, AL				; send to FDC
 	STI 						; enable interrupts
 	CALL	FDC_WAIT_SENSE			; wait for FDC to signal interrupt
-	JC	INT_13_0_RESET_BAD
-	CMP	AL, 11000000B			; was successful reset?
+	JC	INT_13_0_RESET_BAD		; jump if FDC read/sense error
+	CMP	AL, FDC_ST0 < 11B >		; was successful reset?
 	JZ	INT_13_0_RESET_DONE		; jump if success, AH = 0
 INT_13_0_RESET_BAD:
 	MOV	AH, FDC_ST_ERR_FDC		; otherwise, controller failure
 INT_13_0_RESET_DONE:
 	MOV	_FD_LAST_OP, AH			; set last result
-	JNZ	INT_13_DONE				; exit if there was an error
+	JNZ	INT_13_SET_MOTOR_CT		; exit on error with AH already set
 
 ;----------------------------------------------------------------------------;
 ; (Re)send Specify bytes to FDC
 ;
 	MOV	AL, FDC_CMD_SPEC 			; [0] FDC Specify command
 	CALL	FDC_SEND 				; send command in AL, CF if error
-	JC	INT_13_DONE
+	JC	INT_13_0_DONE
 	MOV	AL, DBT.SRT				; [1] step rate time, head unload time
 	CALL	FDC_SEND_PARAM
-	JC	INT_13_DONE
+	JC	INT_13_0_DONE
 	MOV	AL, DBT.HLT_ND			; [2] head load time (01H), DMA mode (ND)
 	CALL	FDC_SEND_PARAM
+
+;----------------------------------------------------------------------------;
+; Exit and return with AL = 0
+;
 INT_13_0_DONE:
+	MOV	AL, 0					; 0 sectors read
 	JMP	SHORT INT_13_DONE
 INT_13_0 ENDP
 
@@ -7184,7 +7216,6 @@ INT_13_0 ENDP
 ; Output: AL and AH = status of last operation
 ;----------------------------------------------------------------------------;
 INT_13_1 PROC
-	POP	AX 					; discard original AX
 	MOV	AL, _FD_LAST_OP 			; AL = last operation status
 	MOV	AH, AL				; AH = last operation status
 	JMP	SHORT INT_13_EXIT
@@ -7229,31 +7260,29 @@ FDC_DMA_BOUND:
 ;	- Check if drive is valid? Check if exists in BDA and not a hard drive
 ;----------------------------------------------------------------------------;
 INT_13_2_5 PROC
-	CALL	FDC_SEEK 				; Turn on motor, CH = track, DL = drive
-	JC	INT_13_DONE				; exit if seek error
-	PUSH	AX					; save function / sector count
-	PUSH	DX					; save head / drive
-	XCHG	AX, DX 				; DL = sectors count
-	MOV	AL, DH				; AL = function number
-	MOV	DH, DMA_MR <1,0,0,2,2> 		; set DMA 8237A write/format mode 2 (AH = 3,5)
-	OR	_FD_MOTOR_ST, MASK FWRT		; turn on write flag default
-	TEST	AL, 3 AND 5				; is write (3) or format (5)?
-	JNZ	INT_13_2_5_SETUP_DMA		; if so, proceed to setup
-	AND	_FD_MOTOR_ST, NOT MASK FWRT	; else read or verify (turn off BDA write flag)
-	MOV	DH, DMA_MR <1,0,0,0,2> 		; 8237A verify mode 0 (AH = 4)
-	CMP	AL, 4 				; is verify?
+	XCHG	AL, AH				; AL = function, AH = sectors to read
+	PUSH	AX					; save function, sector count
+	PUSH	DX					; save head, drive
+	MOV	DH, DMA_MR <1,0,0,1,2> 		; set DMA read mode 1 (AH = 2)
+	CMP	AL, 2					; is read?
 	JE	INT_13_2_5_SETUP_DMA		; if so, proceed to setup
-	MOV	DH, DMA_MR <1,0,0,1,2> 		; else set 8237A read mode 1 (AH = 2)
+	MOV	DH, DMA_MR <1,0,0,0,2> 		; set DMA verify mode 0 (AH = 4)
+	CMP	AL, 4					; is verify?
+	JE	INT_13_2_5_SETUP_DMA		; if so, proceed to setup
+	MOV	DH, DMA_MR <1,0,0,2,2> 		; else DMA write/format mode 2 (AH = 3,5)
+	OR	_FD_MOTOR_ST, MASK FWRT		; turn on write flag
 INT_13_2_5_SETUP_DMA:
-	XCHG	AX, DX				; AL = sectors to read, AH = DMA mode
+	MOV	AL, DH				; AL = DMA mode, AH = sectors to read
+	CALL	FDC_SEEK 				; Turn on motor, CH = track, DL = drive
+	JC	INT_13_2_5_SEEK_ERR		; exit if seek error
 							; fall through to set up DMA
 
 ;----------------------------------------------------------------------------;
 ; FDC_INIT_DMA: Configure DMA channel 2 for FDC operation
 ;----------------------------------------------------------------------------;
 ; Input:
-;  AL = sectors to read
-;  AH = DMA mode:
+;  AH = sectors to read
+;  AL = DMA mode:
 ;	01000110 (46H) - Read
 ;	01000010 (42H) - Verify
 ;	01001010 (4AH) - Write
@@ -7270,7 +7299,7 @@ INT_13_2_5_SETUP_DMA:
 ; Things you must do:
 ;	- Calculate # of bytes to transfer by multiplying AL (sectors) by
 ;		sector size in INT 1E Disk Base Table.
-;	- Calculate linear memory address from ES:BX and normalize to
+;	- Calculate physical memory address from ES:BX and normalize to
 ;		Paragraph:Offset (P:FFFFH).
 ;	- Verify that Offset + Byte Count does not exceed the remaining
 ;		space in that paragraph. The DMA controller can only select one
@@ -7301,7 +7330,6 @@ FDC_INIT_DMA:
 	MOV	CL, 4					; DL = lowest and highest nibble of ES
 	ROL	DX, CL				; DH = middle nibbles
 			ENDIF
-	XCHG	AL, AH				; AL = DMA mode, AH = sectors to read
 	OUT	DMA_MODE, AL			; write to DMA mode reg (port 0BH)
 	XOR	AL, AL				; AX = sectors to read << 8
 	XCHG	AX, CX				; CX = sectors, AX = scratch
@@ -7335,45 +7363,46 @@ FDC_INIT_DMA:
 	MOV	AL, DMA_SMR <0, 2>		; DMA clear single channel 2 mask bit
 	OUT	DMA_MASK, AL			; Unmask DMA Channel 2 (port 0AH)
 FDC_INIT_DMA_EXIT:
-	POP	CX					; restore track / sector
-	POP	DX 					; restore drive number DL
-	POP	AX					; restore function number AH
-	JC	INT_13_0_DONE			; exit if DMA error
+	POP	CX					; CL = sector, CH = track
+INT_13_2_5_SEEK_ERR:
+	POP	DX 					; DL = drive, DH = head
+	POP	AX					; AL = function, AH = sectors to read
+	JC	INT_13_0_DONE			; exit if DMA error with AL = 0
 
 ;----------------------------------------------------------------------------;
 ; Set FDC command byte
 ;
-	MOV	AL, FDC_CB <1,,0,FDC_CMD_WR>	; FDC Write Data - Multi-Track, MFM
-	CMP	AH, 3 				; is write?
+	MOV	BL, FDC_CB <1,,0,FDC_CMD_WR>	; FDC Write Data - Multi-Track, MFM
+	CMP	AL, 3 				; is write (AH=3)?
 	JE	FDC_RWVF				; jump if write
-	MOV	AL, FDC_CB <0,,0,FDC_CMD_FMT>	; FDC Format Track - Single-Track, MFM
-	CMP	AH, 5 				; is format?
+	MOV	BL, FDC_CB <0,,0,FDC_CMD_FMT>	; FDC Format Track - Single-Track, MFM
+	CMP	AL, 5 				; is format (AH=5)?
 	JE	FDC_RWVF 				; jump if format
-	MOV	AL, FDC_CB <1,,1,FDC_CMD_RD>	; FDC Read Data - MT, MFM, Skip deleted
+	MOV	BL, FDC_CB <1,,1,FDC_CMD_RD>	; FDC Read/Verify - MT, MFM, Skip deleted
+							; else read (AH=2,4)
+FDC_RWVF:
+	XCHG	AX, BX				; AL = FDC cmd byte, BL = function
 
 ;----------------------------------------------------------------------------;
 ; FDC_RWVF: read, write, verify or format sectors
 ;----------------------------------------------------------------------------;
 ; Input:
-;	AL = FDC command
-;	AH = function
+;	AL = FDC command byte
+;	BL = INT 13h function number
+;	BH = sectors to read
 ;	DL = drive (0-3)
 ;	DH = head (0-1)
 ;----------------------------------------------------------------------------;
-FDC_RWVF:
-	PUSH	AX					; preserve AH function number
 	CALL	FDC_SEND 				; [0] send command in AL, CF if error
-	POP	AX
 	JC	FDC_RWV_ERR
-	MOV	AL, DH				; AL = head
-	XCHG	AX, DX				; AL = drive, AH = head, DL = head, DH = function
-	SHL	AH, 1					; [1] head / drive
-	SHL	AH, 1					;  xxxxx     ; unused
-	OR	AL, AH 				;       h    ; head number (bit 3)
+	MOV	AL, DH				; AL/DH = head, DL=drive
+	SHL	AL, 1					; [1] head / drive byte: 
+	SHL	AL, 1					;  xxxxx     ; unused
+	OR	AL, DL 				;       h    ; head number (bit 3)
 	AND	AL, MASK FC1HD OR MASK FC1DS	;        dd  ; drive number (bit 1,2)
 	CALL	FDC_SEND 				; send command in AL, CF if error
 	JC	FDC_RWV_ERR
-	CMP	DH, 5					; is format?
+	CMP	BL, 5					; is format?
 	JE	FDC_FORMAT
 
 ;----------------------------------------------------------------------------;
@@ -7382,8 +7411,7 @@ FDC_RWVF:
 ; Input:
 ;	CH = track/cylinder number (0-39)
 ;	CL = sector number (1-17)
-;	DL = head number (0-1) (bounds not checked)
-; 	(All registers clobbered)
+;	DH = head number (0-1) (bounds not checked)
 ;
 ; Output:
 ;	AL = number of sectors read, written or verified
@@ -7392,7 +7420,7 @@ FDC_RWV PROC
 	MOV	AL, CH 				; [2] cylinder number
 	CALL	FDC_SEND 				; send command in AL, CF if error
 	JC	FDC_RWV_ERR
-	MOV	AL, DL 				; [3] head number
+	MOV	AL, DH 				; [3] head number
 	CALL	FDC_SEND 				; send command in AL, CF if error
 	JC	FDC_RWV_ERR
 	MOV	AL, CL 				; [4] sector number
@@ -7404,6 +7432,7 @@ FDC_RWV PROC
 	MOV	AL, DBT.SPT				; [6] end of track (last sector in track)
 	CALL	FDC_SEND_PARAM
 	JC	FDC_RWV_ERR
+	MOV	BL, AL				; BL = sectors per track
 	MOV	AL, DBT.SGAP			; [7] sector gap length
 	CALL	FDC_SEND_PARAM
 	JC	FDC_RWV_ERR
@@ -7423,47 +7452,44 @@ FDC_RWV_SEND_WAIT:
 ; FDC_SEC_COUNT: get the number of sectors read/verified/written
 ;----------------------------------------------------------------------------;
 ; Input:
+;	BL = sectors per track (1-9)
+;	BH = number of sectors to read
 ;	CH = start track/cylinder number (0-39)
 ;	CL = start sector number (1-17)
-;	DL = head number (0-1)
-; Ouput:
+;	DH = head number (0-1)
+; Output:
 ;	AL = sectors transferred
+;	AH = preserved
 ;
 ; Note: If the operation finishes at the last head/sector of a track, 
 ;	FDC will report the head/track/sector position to be the beginning 
 ;	of the next track.
 ;----------------------------------------------------------------------------;
-FDC_SEC_COUNT PROC
-	MOV	AH, _FDC_LAST_ST.SEC		; AL = FDC reported end sector
-	MOV	DH, DL				; DH = start head
+FDC_SEC_COUNT:
+	MOV	AL, FDC_LAST_ST.SEC		; AL = FDC reported end sector
 	MOV	DL, CH				; DL = start track
-	CMP	DX, WORD PTR _FDC_LAST_ST.CYL	; end on the same head and track?
-	JE	FDC_SEC_COUNT_SAME		; if not, rolled to next head or track
+	CMP	DX, WORD PTR _FDC_LAST_ST.CYL	; rolled to next head or track?
+	JE	FDC_SEC_COUNT_SAME		; if not, ended on the same head/track
 
 ;----------------------------------------------------------------------------;
 ; FDC has ended on a different head or track. Calculate the correct number of
 ; sectors spanned.
 ;
-	MOV	AL, DBT.SPT				; get INT 1E sectors per track
-	CALL	INT_1E_PARAM			; AL = last sector (# of SPT)
 	CMP	DH, _FDC_LAST_ST.HEAD		; end on same head but different track?
 	JNE	FDC_SEC_COUNT_SAME_CYL		; if so, has spanned a full head
-	SHL	AL, 1					; two tracks worth of sectors
+	ADD	AL, BL				; add two tracks worth of sectors
 FDC_SEC_COUNT_SAME_CYL:
-	ADD	AH, AL				; add ending sector
+	ADD	AL, BL				; add ending sector
 FDC_SEC_COUNT_SAME:
-	MOV	AL, AH				; AL = last_sector - starting_sector
-	SUB	AL, CL				;   returns AL = sectors read
-FDC_SEC_COUNT ENDP
+	SUB	AL, CL				; AL = ending - starting = sec read
+	;CMP	AL, BH				; verify requested # of sectors was
+							; # actually read (not necessary).
 
 FDC_RWV ENDP					; fall through for exit
 
 ;----------------------------------------------------------------------------;
 ; Done with all disk operations and return AL
 ;
-INT_13_2_5_DONE:
-	POP	CX					; discard original AX from INT_13 PROC
-	PUSH	AX					; replace with AL = sectors read
 INT_13_2_5_EXIT:
 	JMP	INT_13_DONE
 
@@ -7472,8 +7498,7 @@ INT_13_2_5_EXIT:
 ;
 FDC_RWV_ERR:
 FDC_FORMAT_ERR:
-	MOV	AL, 0					; on error: sectors read = 0
-	JMP	SHORT INT_13_2_5_DONE
+	JMP	INT_13_0_DONE			; on error: exit with sectors read = 0
 
 ;----------------------------------------------------------------------------;
 ; INT 13, 5: Format Track
@@ -7507,12 +7532,40 @@ INT_13_2_5 ENDP
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	CH = track
-;	DL = drive
+;	DL = drive (0-3) (bounds not checked)
+;	DI = OFFSET FD_LAST_OP
 ;----------------------------------------------------------------------------;
 FDC_SEEK PROC
 	PUSH	AX
+	PUSH	BX
 	CALL	FDC_RECAL 				; recalibrate if needed
-	JC	FDC_SEEK_RECAL_ERR
+	JC	FDC_SEEK_RECAL_ERR		; exit if recal error
+
+			IF FDC_ADV_SEEK EQ 1
+;----------------------------------------------------------------------------;
+; If FDC_ADV_SEEK, the current track where the head is positioned is saved in
+; the BDA so that a subsequent operation on the same track will not require
+; another seek. This may result in performance improvements on sequential reads.
+;
+	JNZ	FDC_CHECK_SEEK			; recal not needed, check if seek
+
+;----------------------------------------------------------------------------;
+; Recal was executed and now on track 0. Just do a head settle if it was
+; the destination track.
+;
+	TEST	CH, CH				; destination track 0?
+	JZ	FDC_SEEK_SETTLE			; if so, skip to head settle time
+
+;----------------------------------------------------------------------------;
+; Check BDA to see if head is already positioned at the destination track.
+;
+FDC_CHECK_SEEK:
+	XOR	BH, BH
+	MOV	BL, DL				; BX = drive #
+	CMP	_FD_TRACK[BX], CH			; compare last track seek to dest
+	JE	FDC_SEEK_DONE			; already on track - nothing to do
+			ENDIF				; end IF FDC_ADV_SEEK
+
 	MOV	AL, FDC_CMD_SEEK			; seek command (0FH)
 	CALL	FDC_SEND 				; send command, CF if error
 	JC	FDC_SEEK_ERR
@@ -7527,13 +7580,22 @@ FDC_SEEK PROC
 	XOR	AL, FDC_ST0 <01B, 1>		; select abnormal term, seek complete
 	AND	AL, FDC_ST0 <01B, 1>		; ZF = abnormal term AND seek complete
 	JZ	FDC_SEEK_ERR
+			IF FDC_ADV_SEEK EQ 1
+	MOV	_FD_TRACK[BX], CH			; save last seeked track (BX = drv #)
+			ENDIF
+
+;----------------------------------------------------------------------------;
+; Allow time for heads to settle after seek. This may be skipped on emulators.
+;
+FDC_SEEK_SETTLE:
 			IF ARCH_TYPE NE ARCH_EMU
-	MOV	AX, DBT.HDST
+	MOV	AX, DBT.HDST			; AH=0 JIC (AH=0 from FDC_WAIT_SENSE)
 	CALL	INT_1E_PARAM			; AL = head settle time (ms)
 	CALL	IO_DELAY_MS_FDC			; delay AX ms
 			ENDIF
-	CLC
+	CLC						; no error
 FDC_SEEK_DONE:
+	POP	BX
 	POP	AX
 	RET
 FDC_SEEK_ERR:
@@ -7547,11 +7609,12 @@ FDC_SEEK ENDP
 ; FDC_RECAL: recalibrate drive, if necessary
 ;----------------------------------------------------------------------------;
 ; Input:
-;	DL = drive to recalibrate
+;	DL = drive to recalibrate (0-3) (bounds not checked)
+;	DI = OFFSET FD_LAST_OP
 ; Output:
 ;	CF if error
 ;
-; Clobbers: AX
+; Clobbers: AX, BX (if ADV_SEEK)
 ;----------------------------------------------------------------------------;
 FDC_RECAL PROC
 	PUSH	CX
@@ -7560,17 +7623,15 @@ FDC_RECAL PROC
 ; FDC_MOTOR_ON: Turn on motor
 ;----------------------------------------------------------------------------;
 ; Input:
-; 	DL = drive number
+; 	DL = drive number (0-3) (bounds not checked)
 ;----------------------------------------------------------------------------;
 ; Things you must do:
 ;	- is motor already on? Skip wait for spin up
 ;	- wait only for writes?
 ;	- check if recalibration is necessary
 ;----------------------------------------------------------------------------;
-FDC_MOTOR_ON PROC
-	PUSH	DX
+FDC_MOTOR_ON:
 	MOV	CL, DL 				; move to CL for shift
-	AND	CL, MASK FDSEL			; isolate selected drive number in CL
 
 ;----------------------------------------------------------------------------;
 ; Convert drive number to motor run format
@@ -7580,36 +7641,31 @@ FDC_MOTOR_ON PROC
 	CLI 						; disable interrupts
 	MOV	CH, _FD_MOTOR_ST			; get current RUN_ST
 	TEST	CH, AH 				; is drive already running?
-	JNZ	FDC_DRV_ALREADY_ON		; skip startup if so
+	JNZ	FDC_DRIVE_STARTED			; skip startup if so
 	OR	AL, CL 				; combine drive number to FDC byte
 	OR	AL, MASK FDDMA OR MASK FDCEN	; set DMA and controller enable flags
+	PUSH	DX					; preserve DX
 	MOV	DX, FDC_CTRL			; turn on motor
 	OUT	DX, AL				; port 3F2H, FDC Digital Output
+	POP	DX
 	MOV	AL, CH 				; AL = FD_MOTOR_ST
 	MOV	CH, AH				; CH = RUN_ST drive bit field
 	AND	AL, NOT MASK FMOT 		; clear motor status of FD_MOTOR_ST
-	OR	AL, AH				; combine nibbles
-	MOV	AH, 255				; restart timer to max for motor spinup
+	OR	AL, AH				; combine nibbles, SF if write
+	CBW						; restart timer to max for operation
 	MOV	WORD PTR FD_MOTOR_ST, AX	; write to motor status and timer
-	STI 						; enable interrupts
-	TEST	AL, MASK FWRT			; Delay for motor spinup if write operation
-	JZ	FDC_DRIVE_STARTED 		; if not, bypass delay
+	JNS	FDC_DRIVE_STARTED 		; delay for motor spinup if write op
 
 ;----------------------------------------------------------------------------;
 ; Delay using timer tick counter
 ;
+	STI 						; enable interrupts
 	MOV	AL, DBT.FMST			; AL = INT_1E[10]
 	CALL	INT_1E_PARAM 			; AL = motor startup time (in 125ms)
 	CALL	IO_WAIT_MS_125			; wait AL * 125ms
 
-FDC_DRV_ALREADY_ON:
-	MOV	AL, DBT.FMCT 			; AL = INT_1E[2]
-	CALL	INT_1E_PARAM			; AL = reset motor counter
-	MOV	FD_MOTOR_CT, AL
-	STI
 FDC_DRIVE_STARTED:
-	POP	DX
-FDC_MOTOR_ON ENDP
+	STI 						; ensure interrupts enabled
 
 ;----------------------------------------------------------------------------;
 ; Calibrate drive if necessary
@@ -7629,6 +7685,16 @@ FDC_MOTOR_ON ENDP
 	STC						; presume failure
 	JZ	FDC_RECAL_ERR			; jump if error
 	OR	_FD_CAL_ST, CH 			; mark drive as calibrated and CLC
+
+			IF FDC_ADV_SEEK EQ 1
+;----------------------------------------------------------------------------;
+; Save track 0 to BDA FD_TRACK
+;
+	XOR	BH, BH				; track 0 and set ZF
+	MOV	BL, DL				; BX = drive index
+	MOV	_FD_TRACK[BX], BH			; save last track seek 0
+			ENDIF
+
 FDC_RECAL_ERR:
 FDC_RECAL_DONE:
 	POP	CX
@@ -7687,7 +7753,7 @@ FDC_SEND_RECV:
 ;
 	MOV	DX, FDC_STAT 			; port 3F4H - FDC Main Status Register
 	MOV	CX, 5					; CX = # of ticks to wait
-	MOV	AH, BYTE PTR TIMER.LW		; get starting tick counter low byte
+	MOV	AH, BYTE PTR _FD_TIMER.LW	; get starting tick counter low byte
 
 FDC_SEND_WAIT_POLL:
 	IN	AL, DX				; AL = FDC status register
@@ -7765,9 +7831,10 @@ FDC_RECV ENDP
 ; FDC_WAIT_SENSE: wait for WIF, sense status and get status bytes
 ;----------------------------------------------------------------------------;
 ; Output:
-;	CF if error
+;	CF if FDC read/timeout error
+;	NZ if result status error
 ;	AL = FDC_LAST_ST (BDA Floppy drive status)
-;	AH clobbered
+;	AH = 0 if success, 80H if failure
 ;----------------------------------------------------------------------------;
 FDC_WAIT_SENSE PROC
 	CALL	FDC_WAIT_INT 			; wait for WIF
@@ -7783,7 +7850,7 @@ FDC_WAIT_SENSE PROC
 ;	NZ if result status error
 ;
 ;	AL = FDC_LAST_ST (BDA Floppy drive status), if success
-;	AH clobbered
+;	AH = 0 if success, 80H if failure
 ;----------------------------------------------------------------------------;
 FDC_RECV_STATUS PROC
 	JC	FDC_WAIT_SENSE_EXIT		; return if timeout error
@@ -7794,6 +7861,7 @@ FDC_RECV_STATUS PROC
 ;----------------------------------------------------------------------------;
 ; Check for FDC errors and set FD_LAST_OP if necessary
 ; Input: DS = BDA (40H), DI = FD_LAST_OP (41H)
+; Output: AH = 0 if success, 80H if failure
 ;----------------------------------------------------------------------------;
 FDC_RECV_ALL PROC
 	PUSH	ES
@@ -7829,7 +7897,9 @@ FDC_RECV_DELAY:					; [7+19(AX-1)] clocks
 	AND	AL, MASK FDRW 			; is FDC R/W command in progress flag?
 	LOOPNZ FDC_RECV_ALL_LOOP		; loop until no flag or 7 bytes read
 							; AL = 0 (no command in progress) or CX = 0
-	;REP	STOSB 				; zero out rest of results in BDA
+		IF FDC_ZERO_BDA EQ 1
+	REP	STOSB 				; zero out rest of results in BDA
+		ENDIF
 FDC_RECV_CHECK_ERR:
 	MOV	AL, FDC_LAST_ST.SB0 		; AL = last FDC status byte 0
 	TEST	AL, MASK ST0CS			; check Last Command Status
@@ -7867,8 +7937,8 @@ FDC_WAIT_STATUS_ERR PROC
 	TEST	AL, FDC_ST0 < 01B >		; command terminated abnormally?
 	MOV	AL, FDC_ST_ERR_FDC		; if not, FDC error
 	JZ	FDC_WAIT_STATUS_ERR_DONE
-	MOV	AH, _FDC_LAST_ST.SB1		; AH = last status byte 1
-	TEST	AH, AH
+	CBW						; AH = 0
+	OR	AH, _FDC_LAST_ST.SB1		; AH = last status byte 1, ZF if 0
 	JZ	FDC_WAIT_STATUS_ERR_DONE	; skip if AH = 0
 	MOV	SI, OFFSET FDC_ERR1_MAP
 FDC_ERR_MAP_LOOP:
@@ -7886,6 +7956,7 @@ FDC_WAIT_ERR_EXIT_OK:
 	RET
 
 ;----------------------------------------------------------------------------;
+; FDC Status register to INT 13h error map
 ; Note: Must check from most sig bit to lowest since higher
 ; bits are more meaningful.
 ;
@@ -7927,7 +7998,7 @@ INT_1E_PARAM PROC
 INT_1E_PARAM ENDP
 
 ;
-; 0 BYTES HERE
+; 12 BYTES HERE
 ;
 BYTES_HERE	INT_0E
 
@@ -7997,16 +8068,16 @@ INT_13 ENDP
 ; FDC_RECAL_SEEK_TEST: Reset, Recalibrate and Seek test a floppy drive at POST
 ;----------------------------------------------------------------------------;
 ; Input:
-;	DL = drive # to test (0 = A:, 1 = B:, etc)
+;	DL = drive # to test (0 = A:, 1 = B:, etc) (bounds not checked)
+;	DI = OFFSET FD_LAST_OP
 ; Output:
 ;	CF if error
-; Clobbers: DI, SI, AX
+; Clobbers: DI, SI, AX, BX (if FDC_ADV_SEEK)
 ;
-; Size: 41 bytes
+; Size: 36 bytes
 ;----------------------------------------------------------------------------;
 FDC_RECAL_SEEK_TEST PROC
 	PUSH	CX
-	MOV	DI, OFFSET FD_LAST_OP		; DI = FD_LAST_OP to use INT 13h PROCs
 	CALL	FDC_RECAL				; Motor on, recal, DL = drive
 	JC	FDC_TEST_DRIVE_EXIT		; exit if error
 	JWB	FDC_TEST_DRIVE_DONE		; skip seek tests on warm boot
@@ -8015,9 +8086,7 @@ FDC_RECAL_SEEK_TEST PROC
 FDC_TEST_DRIVE_SEEK:
 	LODS	BYTE PTR CS:[SI]			; next track to seek
 	MOV	CH, AL				; CH = track
-	PUSH	CX					; CX clobbered by FDC_SEEK
 	CALL	FDC_SEEK				; CH = track, DL = drive
-	POP	CX					; restore CX
 	JCXZ	FDC_TEST_DRIVE_DONE		; exit if track = 0
 	JNC	FDC_TEST_DRIVE_SEEK		; loop unless error
 FDC_TEST_DRIVE_DONE:
@@ -8032,7 +8101,7 @@ FDC_TEST_DRIVE_EXIT:
 	RET
 
 ;----------------------------------------------------------------------------;
-; Track seek pattern for POST seek test
+; Track pattern for POST seek test
 ;
 FDC_SEEK_TRACKS	DB	38, 2, 19, 0	; tracks (0 is end)
 
@@ -8040,7 +8109,7 @@ FDC_RECAL_SEEK_TEST ENDP
 			ENDIF
 
 ;
-; 15 BYTES HERE
+; 20 BYTES HERE
 ;
 BYTES_HERE	INT_1E
 
@@ -8056,9 +8125,9 @@ BYTES_HERE	INT_1E
 ;  02  timer ticks to wait before disk motor shutoff = 37
 ;  03  512 bytes per sector (0=128, 1=256, 2=512, 3=1024) = 2
 ;  04  sectors per track (last sector number) = 8
-;  05  inter-block gap length/gap between sectors = 02AH
+;  05  inter-block gap length/gap between sectors (mills) 42
 ;  06  data length, if sector length not specified = 0FFH
-;  07  gap length between sectors for format = 50H
+;  07  gap length between sectors for format (mills) 80
 ;  08  fill byte for formatted sectors = 0F6H
 ;  09  head settle time in milliseconds = 25
 ;  0A  motor startup time in eighths of a second = 4
@@ -8069,7 +8138,7 @@ BYTES_HERE	INT_1E
 ; https://stanislavs.org/helppc/int_1e.html
 ;----------------------------------------------------------------------------;
 		ORG 	0EFC7H
-INT_1E	DBT 	<DNB <12, 15>, 0010B, 37, 2, 8, 2AH, 0FFH, 50H, 0F6H, 25, 4>
+INT_1E	DBT 	<DNB <12, 15>, 0010B, 37, 2, 8, 42, 0FFH, 80, 0F6H, 25, 4>
 
 ;----------------------------------------------------------------------------;
 ; INT 17 - Printer BIOS Services
@@ -10423,7 +10492,7 @@ WORD_HEX ENDP
 DWORD_HEX ENDP
 
 ;
-; 30 BYTES HERE
+; 32 BYTES HERE
 ;
 BYTES_HERE	INT_12
 
