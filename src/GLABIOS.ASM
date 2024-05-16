@@ -2008,7 +2008,7 @@ FLAG_MEM	= EQUIP_FLAGS[1]			; high BDA flags byte
 ; Input:
 ;	FLAG = field name from EQUIP_FLAGS RECORD
 ;	SET_BDA = if defined, saves CX and sets DS = BDA
-;		otherwise assumes DS = BDA and clobbers CX
+;		otherwise assumes DS = BDA and clobbers CX if 3 or 4 shifts
 ; Output: AX = flag value
 ;
 ; Note: flags must not cross byte boundary (which they don't)
@@ -2029,6 +2029,10 @@ GET_EFLAG	MACRO	FLAG, SET_BDA
 FLAG_MASK	= MASK FLAG
 FLAG_BIT	= FLAG AND 0111B
 FLAG_MEM	= EQUIP_FLAGS[0]			; low BDA flags byte
+				IF FLAG + WIDTH FLAG GT 8
+					.ERR
+					%OUT ERROR: BDA EQFLAG crosses byte boundary
+				ENDIF
 			ELSE				; is in high byte
 FLAG_MASK	= HIGH MASK FLAG
 FLAG_BIT	= (FLAG - 8) AND 0111B
@@ -2046,15 +2050,32 @@ FLAG_MEM	= EQUIP_FLAGS[1]			; high BDA flags byte
 				IF FLAG_BIT GT 4
 	ROL	AL, 8-FLAG_BIT			; shift value into position
 				ELSE
+					IF FLAG_BIT EQ 4
+	ROL4	_AL					; shift value into position
+					ELSE
 	ROR	AL, FLAG_BIT			; shift value into position
+					ENDIF
 				ENDIF
 			ELSE
-				IF FLAG_BIT GT 4
-	MOV	CL, 8-FLAG_BIT			; CL = bit(s) position of record
+				IF FLAG_BIT GT 4	; optimal to roll left
+					FLAG_BIT = 8-FLAG_BIT
+					IF FLAG_BIT GT 2	; 3-4 shifts use CL
+	MOV	CL, FLAG_BIT			; CL = bit(s) position of record
 	ROL	AL, CL				; shift value into position
-				ELSE
+					ELSE		; 0-2 shifts use single op(s)
+						REPT FLAG_BIT
+	ROL	AL, 1					; shift value into position
+						ENDM
+					ENDIF
+				ELSE			; optimal to roll right
+					IF FLAG_BIT GT 2
 	MOV	CL, FLAG_BIT			; CL = bit(s) position of record
 	ROR	AL, CL				; shift value into position
+					ELSE
+						REPT FLAG_BIT
+	ROR	AL, 1					; shift value into position
+						ENDM
+					ENDIF
 				ENDIF
 			ENDIF
 			IFNB <SET_BDA>
