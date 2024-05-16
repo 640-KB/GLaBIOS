@@ -943,7 +943,8 @@ WARM_BOOT_TEST	EQU	9ABCH			; Warm Boot - Manufacturer test
 ; Video Related
 VID_DEF_COLS	EQU	80			; standard video mode columns
 VID_DEF_ROWS	EQU	24			; standard video mode rows
-VID_ATTR		EQU	DNB <BLACK, GRAY>	; fill byte for blank video attribute
+VID_ATTR		EQU	BLACK SHL 4 OR GRAY ; fill byte for blank video attribute
+
 VID_SP		EQU	' '			; fill byte for blank video RAM char
 
 
@@ -2766,20 +2767,16 @@ _IPL_SEG	ENDS
 ; B000:0000 - MDA Video Memory
 ;----------------------------------------------------------------------------;
 _MDA_MEM	SEGMENT AT 0B000H
-			DB	1000H DUP(?)
-MDA_MEM	LABEL BYTE				; 4KiB (1000H) total MDA memory
+MDA_MEM		DB	1000H DUP(?)	; 4KiB (1000H) total MDA memory
 _MDA_MEM	ENDS
 
 ;----------------------------------------------------------------------------;
 ; B800:0000 - CGA Video Memory
 ;----------------------------------------------------------------------------;
 _CGA_MEM	SEGMENT AT 0B800H
-CGA_MEM_TOP		DB	0800H DUP(?)	; page 1 of CGA 40 column
-CGA_MEM_40		DB	0800H DUP(?)	; page 1 of CGA 80 column
-CGA_MEM_80		DB	3000H DUP(?)	; pages 2-4
-CGA_MEM_GFX	LABEL BYTE
-CGA_MEM	LABEL BYTE				; End of CGA memory offset
-CGA_MEM_SZ		= CGA_MEM - CGA_MEM_TOP	; 16 KiB (4000H) total CGA memory
+CGA_MEM_40		DB	0800H DUP(?)	; page 1 of CGA 40 column (2K)
+CGA_MEM_80		DB	3800H DUP(?)	; pages 1-4 of CGA 80 column (14K)
+CGA_MEM_SZ		= SIZE CGA_MEM_40 + SIZE CGA_MEM_80	; 16 KiB (4000H) total CGA memory
 CGA_MEM_FLD 	= CGA_MEM_SZ / 2		;  8 KiB (2000H) CGA memory field
 _CGA_MEM	ENDS
 
@@ -7954,23 +7951,22 @@ FDC_WAIT_STATUS PROC
 ;	AH/AL = BDA Floppy drive status
 ;----------------------------------------------------------------------------;
 FDC_WAIT_STATUS_ERR PROC
-	PUSH	SI
 	TEST	AL, FDC_ST0 < 01B >		; command terminated abnormally?
 	MOV	AL, FDC_ST_ERR_FDC		; if not, FDC error
 	JZ	FDC_WAIT_STATUS_ERR_DONE
 	CBW						; AH = 0
 	OR	AH, _FDC_LAST_ST.SB1		; AH = last status byte 1, ZF if 0
 	JZ	FDC_WAIT_STATUS_ERR_DONE	; skip if AH = 0
+	PUSH	SI
 	MOV	SI, OFFSET FDC_ERR1_MAP
 FDC_ERR_MAP_LOOP:
 	LODS	BYTE PTR CS:[SI]			; fetch next error byte
 	SHL	AH, 1					; CF if this status flag
 	JA	FDC_ERR_MAP_LOOP			; loop if NC (not this flag)
-							;  and NZ (more flags to check)
+	POP	SI					;  and NZ (more flags to check)
 FDC_WAIT_STATUS_ERR_DONE:
 	MOV	AH, AL				; AH = last result
 FDC_WAIT_ERR_EXIT:
-	POP	SI
 	OR	_FD_LAST_OP, AH			; BDA 40:41H
 	STC
 FDC_WAIT_ERR_EXIT_OK:
@@ -8568,7 +8564,7 @@ INT_10_0_1:
 	MOV	AL, CL				; 0 = CGA disable video signal
 	MOV	SI, O_INT_1D_80			; SI = CGA 80 CRTD offset
 	MOV	BH, VID_DEF_COLS			; default 80 columns
-	MOV	CH, HIGH OFFSET MDA_MEM		; Total MDA video memory = 1000H (4K)
+	MOV	CH, HIGH SIZE MDA_MEM		; Total MDA video memory = 1000H (4K)
 	MOV	AH, CH				; MDA/CGA 80x25 page size = 1000H (4K)
 	MOV	DI, DBW <VID_ATTR, VID_SP>	; fill memory with attr 7 and space
 	JNE	INT_10_0_IS_CGA			; jump if not MDA
@@ -8579,14 +8575,14 @@ INT_10_0_1:
 	MOV	SI, O_INT_1D_MDA			; SI = MDA CRTD offset
 	JMP	SHORT INT_10_0_DETECT_DONE	; MDA mode selected, continue
 INT_10_0_IS_CGA:
-	MOV	CH, HIGH OFFSET CGA_MEM		; Total CGA video memory = 4000H (16K)
+	MOV	CH, HIGH CGA_MEM_SZ		; Total CGA video memory = 4000H (16K)
 	MOV	DX, CGA_CTRL			; CGA Mode Select Register (3D8H)
 	MOV	BP, SEG _CGA_MEM			; BP = CGA memory segment (0B800H)
 	TEST	BL, 0100B				; text or gfx mode?
 	JZ	INT_10_0_IS_CGA_TEXT		; jump if text
 INT_10_0_IS_CGA_GFX:
 	MOV	SI, O_INT_1D_GFX			; SI = CGA GFX CRTD offset
-	MOV	AH, HIGH OFFSET CGA_MEM		; CGA gfx page size = 4000H (16K)
+	MOV	AH, HIGH CGA_MEM_SZ		; CGA gfx page size = 4000H (16K)
 	XOR	DI, DI				; DI = memory fill 0's
 	TEST	BL, 0010B				; is 80 or 40 col text?
 	JNZ	INT_10_0_DETECT_DONE		; jump if 80
@@ -8594,7 +8590,7 @@ INT_10_0_IS_CGA_GFX:
 INT_10_0_IS_CGA_TEXT:
 	TEST	BL, 0010B				; is 80 or 40 col text?
 	JNZ	INT_10_0_DETECT_DONE		; jump if 80
-	MOV	AH, HIGH OFFSET CGA_MEM_40	; CGA 40x25 page size = 800H (2K)
+	MOV	AH, HIGH SIZE CGA_MEM_40	; CGA 40x25 page size = 800H (2K)
 	XOR	SI, SI				; SI = CGA 40 CRTD offset (00H)
 INT_10_0_IS_40_COL:
 	SHR	BH, 1					; BH = 40 columns
