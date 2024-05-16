@@ -4433,7 +4433,7 @@ POST_KB_RESET PROC
 	STOSW 					; write to tail pointer
 	MOV	DI, OFFSET KB_BUF_ST 		; setup buffer start and end
 	STOSW
-	MOV	AL, LOW OFFSET KB_BUF_END	; (AH already 00)
+	MOV	AL, KB_BUF_END_B			; (AH already 00)
 	STOSW						; DI = KB_BUF_ST + 4
 
 ;----------------------------------------------------------------------------;
