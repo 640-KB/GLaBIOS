@@ -7159,13 +7159,14 @@ INT_13 PROC
 		ASSUME DS:_BDA
 	STI 						; enable interrupts
 	CLD
-	PUSHX	DS, DI, DX, CX, BX		; save original registers
+	PUSHX	DS, DI				; save caller registers
 	MOV	DI, SEG _BDA			; DS = BDA
 	MOV	DS, DI
-	MOV	DI, OFFSET FD_LAST_OP		; DI = FD_LAST_OP throughout
+	INC	DI					; DI = FD_LAST_OP throughout
 	AND	_FD_MOTOR_ST, NOT MASK FWRT	; clear write operation flag
 	CMP	AH, 1 				; AH = 1?
 	JE	INT_13_1 				; AH = 1, jump to Status
+	PUSHX	DX, CX, BX				; save caller registers
 	MOV	_FD_LAST_OP, FDC_ST_OK		; clear last operation
 	JB	INT_13_0 				; AH = 0, jump to Reset
 	CMP	DL, 3 				; is drive number > 3?
@@ -7183,7 +7184,9 @@ INT_13_SET_MOTOR_CT:
 	MOV	FD_MOTOR_CT, AL 			; update in BDA
 	XCHG	AX, BX				; restore AL
 INT_13_EXIT:
-	POPX	BX, CX, DX, DI, DS		; restore original registers
+	POPX	BX, CX, DX				; restore caller registers
+INT_13_EXIT_1:
+	POPX	DI, DS				; restore caller registers
 	CMP	AH, FDC_ST_OK+1			; check AH for error (CF = AH < 1)
 	CMC   					; invert CF for return (CF = ! CF)
 	IRET_F 					; return from int with current flags
@@ -7305,7 +7308,7 @@ INT_13_0 ENDP
 INT_13_1 PROC
 	MOV	AL, _FD_LAST_OP 			; AL = last operation status
 	MOV	AH, AL				; AH = last operation status
-	JMP	SHORT INT_13_EXIT
+	JMP	SHORT INT_13_EXIT_1
 INT_13_1 ENDP
 
 ;----------------------------------------------------------------------------;
@@ -7685,9 +7688,10 @@ FDC_SEEK_DONE:
 	POP	BX
 	POP	AX
 	RET
+
+FDC_SEEK_RECAL_ERR:
 FDC_SEEK_ERR:
 	OR	_FD_LAST_OP, FDC_ST_ERR_SEEK
-FDC_SEEK_RECAL_ERR:
 	STC
 	JMP	SHORT FDC_SEEK_DONE
 FDC_SEEK ENDP
@@ -7752,6 +7756,7 @@ FDC_MOTOR_ON:
 	CALL	IO_WAIT_MS_125			; wait AL * 125ms
 
 FDC_DRIVE_STARTED:
+	AND	CH, MASK FMOT			; isolate drives, remove write flag
 	STI 						; ensure interrupts enabled
 
 ;----------------------------------------------------------------------------;
@@ -8105,7 +8110,7 @@ INT_1E_PARAM PROC
 INT_1E_PARAM ENDP
 
 ;
-; 3 BYTES HERE
+; 2 BYTES HERE
 ;
 BYTES_HERE	INT_0E
 
