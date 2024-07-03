@@ -358,6 +358,7 @@ MBR_CHECK		=	0			; disable MBR check for DOS 1.x
 TURBO_TYPE		=	TURBO_NONE
 EXP_UNIT		=	1			; enable Expansion Unit
 OEM_FONT		=	1			; use OEM style font
+POST_TEST_DMA_TC0	=	0			; OEM 5150 BIOS does not do this test
 	ENDIF
 
 ;----------------------------------------------------------------------------;
