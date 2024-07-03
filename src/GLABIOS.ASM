@@ -549,7 +549,9 @@ CASSETTE		=	0			; use all features on 5150
 CGA_SNOW_REMOVE	=	0			; disable CGA snow removal
 RAM_TEST_LONG	=	0			; disable long RAM test
 OEM_FONT		=	1			; use OEM style font
+		IF ARCH_TYPE EQ ARCH_TURBO
 TURBO_TYPE		=	TURBO_STD		; use high = turbo
+		ENDIF
 		IF MAX_RAM_AUTO EQ 1		; select max RAM from video switch
 POST_TEST_PIT_1	=	00			; disable to free code space
 		ENDIF
@@ -8706,7 +8708,7 @@ INT_10_0_CRTC_LOOP:
 	LOOP	INT_10_0_CRTC_LOOP
 
 ;----------------------------------------------------------------------------;
-; Send mode and color bytes to 6845
+; Send mode and color bytes to display adapter
 ;
 	XCHG	AX, BP				; AL = new video mode
 	CMP	AL, 6					; is CGA color gfx mode?
@@ -8718,9 +8720,9 @@ INT_10_0_COLOR_BYTE:
 	XLAT	CS:[BX]				; AL = control byte data
 	POP	DS					; DS = BDA
 			ASSUME DS:_BDA
-	ADD	DX, CGA_CTRL-CGA_IDX		; DX = 6845 control reg port (3D8H)
+	ADD	DX, CGA_CTRL-CGA_IDX		; DX = control reg port (3D8H)
 	MOV	WORD PTR VID_MODE_REG, AX	; write mode and color to BDA
-	OUT	DX, AX				; write mode and color to 6845
+	OUT	DX, AX				; write mode and color to adapter
 	XCHG	AX, DI				; AX = cursor bytes from CRTC table
 	XCHG	AH, AL				; convert endian for cursor bytes
 	MOV	VID_CURS_TYPE, AX			; write cursor type to BDA
@@ -10582,7 +10584,7 @@ WORD_HEX ENDP
 DWORD_HEX ENDP
 
 ;
-; 32 BYTES HERE
+; 31 BYTES HERE
 ;
 BYTES_HERE	INT_12
 
