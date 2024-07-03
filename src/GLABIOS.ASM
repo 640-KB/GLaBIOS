@@ -4113,11 +4113,11 @@ TOGGLE_TURBO ENDP
 ; between calls.
 ;
 ; Input: (required)
-;	AX = 0
 ;	SI = on first call: sign bit set (from POST_MEMORY string offset)
-; Size: 41 bytes
+; Size: 43 bytes
 ;----------------------------------------------------------------------------;
 TD3300_MEM_CLEAR PROC
+	XOR	AX, AX				; ensure AL is 0
 	OUT	TD_MEM, AL				; switch to lower bank (AL=0)
 	TEST	SI, SI				; done clearing TD high memory?
 	JS	TD3300_MEM_CLEAR_HI		; if SI sign bit, clear high bank
@@ -4319,7 +4319,7 @@ SET_EFLAG_FLP ENDP
 			ENDIF
 
 ;
-; 3 BYTES HERE
+; 1 BYTES HERE
 ;
 BYTES_HERE	INT_02
 
@@ -5257,6 +5257,9 @@ TD_MEM_CLEAR_DONE:
 ; 	DL = 0 if no parity error, bit 7 or 6 set if error
 ;
 DETECT_MEMORY_ERR:
+			IF ARCH_TYPE EQ ARCH_TD3300
+	PUSH	SI					; preserve SI for TD3300_MEM_CLEAR
+			ENDIF
 	POST_FLAG_SET  PMEM			; set POST Memory error flag
 	CALL	CRLF					; start on new line
 	POST_COL_1	POST_ERR_ERR, RED
@@ -5275,6 +5278,9 @@ DETECT_MEMORY_ERR_2:
 	CALL	WORD_HEX
 DETECT_MEMORY_ERR_DONE:
 	POST_COL_END
+			IF ARCH_TYPE EQ ARCH_TD3300
+	POP	SI
+			ENDIF
 	JMP	SHORT DONE_ZERO_ALL_RAM
 DETECT_MEMORY ENDP
 
@@ -5549,7 +5555,7 @@ CAS_READ_WORD ENDP
 			ENDIF
 
 ;
-; 43 BYTES HERE / 6 BYTES HERE 5150
+; 40 BYTES HERE / 6 BYTES HERE 5150
 ;
 BYTES_HERE	INT_19
 
