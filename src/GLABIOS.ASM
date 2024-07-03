@@ -284,6 +284,7 @@ KB_FILTER_SC	=	0		; Filter KB make/break code >= 70h
 INIT_AT_KBC		=	0		; Init AT type KB controller
 INIT_V40		=	0		; Init V40 config registers
 OEM_FONT		=	0		; 1=use OEM style font, 0=clone style
+POST_CARD		=	0		; enable POST codes on port 80H
 
 ;----------------------------------------------------------------------------;
 ; Hardware hacks!
@@ -2352,6 +2353,24 @@ BEEP_OFF MACRO
 		ENDM
 
 ;----------------------------------------------------------------------------;
+; Write to POST status card, if enabled
+;----------------------------------------------------------------------------;;
+; Input: AL (default) or imm8
+;
+; Clobbers AL if imm8
+;----------------------------------------------------------------------------;
+POST_CODE	MACRO	CODE
+		IF POST_CARD EQ 1
+			IFNB	<CODE>		; if CODE is not blank
+			IFDIFI <CODE>,<AL>	; if CODE is not AL
+	MOV	AL, LOW CODE
+			ENDIF
+			ENDIF
+	OUT	POST_CARD_PORT, AL
+		ENDIF
+		ENDM
+
+;----------------------------------------------------------------------------;
 ; BYTES_HERE - Track and enforce code/byte space around fixed ORGs
 ;----------------------------------------------------------------------------;
 ; Use to mark a block of free code space. Outputs assembly warning if code 
@@ -3018,6 +3037,7 @@ INIT_VIDEO:
 	INC	AX 				; clear MDA control, disable video signal
 	MOV	DL, LOW MDA_CTRL		; DX = 03B8H
 	OUT	DX, AL 			; send to MDA CRT Control Port
+	POST_CODE				; optionally display 01 on POST card
 
 ;----------------------------------------------------------------------------;
 ; Set up POST flags in BP
@@ -6058,6 +6078,7 @@ HALT_BEEP PROC
 	MOV	DX, CS 				; SS to CS
 	MOV	SS, DX				; for CALL_NS
 	XCHG	AX, BX				; beep pattern to AL
+	POST_CODE					; optionally display beep code on POST card
 	AAM_I	10H					; split nibbles
 	XCHG	AX, BP				; BP(H) = short beeps, BP(L) = long beeps
 HALT_BEEP_START:
