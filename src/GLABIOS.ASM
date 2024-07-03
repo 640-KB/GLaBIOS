@@ -129,7 +129,7 @@ VER_NAME		EQU	'GLaBIOS'
 VER_NUM		EQU	'0.2.6'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'05/05/24' 		; must be MM/DD/YY format
+VER_DATE		EQU	'07/03/24' 		; must be MM/DD/YY format
 	ENDIF
 COPY_YEAR		EQU	'2022-24'		; Copyright year range
 
