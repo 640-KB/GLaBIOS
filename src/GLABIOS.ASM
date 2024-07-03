@@ -7801,7 +7801,6 @@ FDC_RECAL ENDP
 FDC_RECV PROC
 	PUSH	BX
 	XOR	BX, BX				; flag is 0 if RECV operation
-	MOV	BH, AL				; save byte to send
 	JMP	SHORT FDC_SEND_RECV
 
 ;----------------------------------------------------------------------------;
@@ -7827,10 +7826,10 @@ FDC_SEND_PARAM PROC
 ;----------------------------------------------------------------------------;
 FDC_SEND PROC
 	PUSH	BX
-	MOV	BH, AL				; save byte to send
 	MOV	BL, 1					; flag is 1 if SEND operation
 
 FDC_SEND_RECV:
+	MOV	BH, AL				; save byte to send
 	PUSH	CX
 	PUSH	DX 					; call-preserve used registers
 
@@ -7994,6 +7993,7 @@ FDC_RECV_DELAY:					; [7+19(AX-1)] clocks
 	IN	AL, DX				; DX = 03F4H
 	AND	AL, MASK FDRW 			; is FDC R/W command in progress flag?
 	LOOPNZ FDC_RECV_ALL_LOOP		; loop until no flag or 7 bytes read
+	JNZ	FDC_RECV_FDC_ERR			; command still in progress?
 							; AL = 0 (no command in progress) or CX = 0
 		IF FDC_ZERO_BDA EQ 1
 	REP	STOSB 				; zero out rest of results in BDA
@@ -8008,6 +8008,15 @@ FDC_RECV_ALL_DONE:
 	POP	ES
 FDC_WAIT_SENSE_EXIT:
 	RET
+
+;----------------------------------------------------------------------------;
+; Command still in progress after reading 7 bytes. Return FDC error.
+;
+FDC_RECV_FDC_ERR:
+	MOV	AH, FDC_ST_ERR_FDC		; controller still busy after
+	OR	FD_LAST_OP, AH			;  reading max bytes
+	STC
+	JMP	SHORT FDC_RECV_ALL_DONE
 FDC_RECV_ALL ENDP
 FDC_RECV_STATUS ENDP
 FDC_WAIT_SENSE ENDP
@@ -8095,7 +8104,7 @@ INT_1E_PARAM PROC
 INT_1E_PARAM ENDP
 
 ;
-; 12 BYTES HERE
+; 3 BYTES HERE
 ;
 BYTES_HERE	INT_0E
 
