@@ -743,6 +743,8 @@ HEART			EQU	03H			; faithful companion
 NOTE1			EQU	0DH
 NOTE2			EQU	0EH
 DBLARROW		EQU	01DH
+HALF			EQU	0ABH			; 1/2
+QUARTER		EQU	0ACH			; 1/4
 
 ;----------------------------------------------------------------------------;
 ; Beepin' Tones
@@ -918,6 +920,7 @@ FDC_ST_BADCMD	EQU	01H			; Bad command passed to driver
 FDC_ST_ERR_MARK	EQU	02H			; Address mark not found or bad sector
 FDC_ST_ERR_WP	EQU	03H			; Write Protect Error
 FDC_ST_ERR_SEC	EQU	04H			; Sector not found
+FDC_ST_DISK_CHG	EQU	06H			; diskette changed or removed
 FDC_ST_DMA_OVR	EQU	08H			; DMA overrun
 FDC_ST_DMA_64K	EQU 	09H			; DMA access across 64k boundary
 FDC_ST_ERR_MED	EQU	0CH			; Invalid media type
@@ -943,8 +946,6 @@ WARM_BOOT_TEST	EQU	9ABCH			; Warm Boot - Manufacturer test
 ; Video Related
 VID_DEF_COLS	EQU	80			; standard video mode columns
 VID_DEF_ROWS	EQU	24			; standard video mode rows
-VID_ATTR		EQU	BLACK SHL 4 OR GRAY ; fill byte for blank video attribute
-
 VID_SP		EQU	' '			; fill byte for blank video RAM char
 
 
@@ -1616,6 +1617,15 @@ VID_CSTXT	RECORD	CTX:3=001B, CTBI:1=1B, CTIN:1, CTBC:3
 ;      210|			- CGBG	RGB for background
 ;----------------------------------------------------------------------------;
 VID_CSGFX	RECORD	CGPH:2,CGPL:1=1B,CGX:1=1B,CGIN:1=1B,CGBG:3=111B
+
+;----------------------------------------------------------------------------;
+; Default video mem attribute byte to fill memory on clear
+;----------------------------------------------------------------------------;
+; 84218421
+; 7654    |			- VBG		background color (0-15) default black
+;     3210|			- VFB		foreground color (0-15) default gray
+;----------------------------------------------------------------------------;
+VID_ATTR	RECORD	VBG:4=BLACK,VFB:4=GRAY
 
 ;----------------------------------------------------------------------------;
 ; MDA Character Attributes
@@ -2397,6 +2407,11 @@ V20_R		RECORD	VRW:5, ROPC:3
 V20_F3	RECORD	VF3_OPC:5=11000b, VF3_SRC:3
 
 ;----------------------------------------------------------------------------;
+; Format 4 - Two Register OPC, Variant 1
+;
+V20_F4	RECORD	VF4_OPC:2=11b, VF4_DST:3, VF4_SRC:3
+
+;----------------------------------------------------------------------------;
 ; Registers used as operands for V20 MACROs
 ;
 _AL	EQU	V20_R	<, 000b>		; reg8
@@ -2446,6 +2461,22 @@ NOT1		MACRO R, IMM
 		ENDM
 
 ;----------------------------------------------------------------------------;
+; V20 (B)INS (Binary INS) - reg/reg form
+;----------------------------------------------------------------------------;
+BINS		MACRO D, S
+	DB	0FH, 31H
+	V20_F4 <, S AND MASK ROPC, D AND MASK ROPC >
+		ENDM
+
+;----------------------------------------------------------------------------;
+; V20 (B)EXT (Binary EXT) - reg/reg form
+;----------------------------------------------------------------------------;
+BEXT		MACRO D, S
+	DB	0FH, 33H
+	V20_F4 <, S AND MASK ROPC, D AND MASK ROPC >
+		ENDM
+
+;----------------------------------------------------------------------------;
 ; ROL4: roll nibbles left in AL through R8
 ;----------------------------------------------------------------------------;
 ; R8(low nibble)  = AL(low nibble)
@@ -2474,7 +2505,7 @@ ROR4		MACRO R8
 ;----------------------------------------------------------------------------;
 POST_FLAG_TEST MACRO	FLAG
 			IF CPU_TYPE	EQ CPU_V20 AND (WIDTH FLAG) EQ 1
-	TEST1		_BP, FLAG			; V20: is FLAG set?
+	TEST1	_BP, FLAG				; V20: is FLAG set?
 			ELSE
 	TEST	BP, MASK FLAG			; Is FLAG set?
 			ENDIF
@@ -2482,7 +2513,7 @@ POST_FLAG_TEST MACRO	FLAG
 
 POST_FLAG_SET MACRO	FLAG
 			IF CPU_TYPE	EQ CPU_V20 AND (WIDTH FLAG) EQ 1
-	SET1		_BP, FLAG			; V20: Set FLAG
+	SET1	_BP, FLAG				; V20: Set FLAG
 			ELSE
 	OR	BP, MASK FLAG			; Set FLAG
 			ENDIF
@@ -2490,7 +2521,7 @@ POST_FLAG_SET MACRO	FLAG
 
 POST_FLAG_FLIP MACRO	FLAG
 			IF CPU_TYPE	EQ CPU_V20 AND (WIDTH FLAG) EQ 1
-	NOT1		_BP, FLAG			; V20: Invert FLAG
+	NOT1	_BP, FLAG				; V20: Invert FLAG
 			ELSE
 	XOR	BP, MASK FLAG			; Invert flag
 			ENDIF
@@ -2583,7 +2614,7 @@ IRET_F	MACRO
 		ENDM
 
 ;----------------------------------------------------------------------------;
-; PUSH multiple registers (up to 8)
+; PUSH multiple (X number of) registers (up to 8)
 ;----------------------------------------------------------------------------;
 PUSHX	MACRO r1, r2, r3, r4, r5, r6, r7, r8
 			IFNB <r1>			; exit if last reg
@@ -2664,7 +2695,7 @@ _BOOT_STACK	ENDS
 ;----------------------------------------------------------------------------;
 _BDA		SEGMENT AT 40H
 COM_ADDR		DW	4 DUP(?) 		; 00H  COM1-4 base addresses
-LPT_ADDR_B		EQU	08H			;	 Low byte hack to force short sign-extend encoding
+LPT_ADDR_B		EQU	$-_BDA		;	 Low byte hack to force short sign-extend encoding
 LPT_ADDR		DW	3 DUP(?) 		; 08H  LPT1-3 base addresses
 			DW	? 			; 0EH  Extended BIOS data area segment
 EQUIP_FLAGS		EQFLAGS <> 			; 10H  Equipment Flags
@@ -2814,6 +2845,15 @@ _BASIC	SEGMENT AT 0F600H
 BASIC_TOP	LABEL WORD 				; ROM BASIC load offset
 _BASIC	ENDS
 
+;----------------------------------------------------------------------------;
+; FFFF:0000: 8086 power-on reset vector
+;----------------------------------------------------------------------------;
+; The x86 CPU begins code excution at hard-coded address FFFF:0000.
+; This is that address. Welcome to the party!
+;----------------------------------------------------------------------------;
+RESET    	SEGMENT AT 0FFFFH
+__POWER_ON	LABEL	FAR				; FFFF:0000
+RESET		ENDS
 
 ;============================================================================;
 ;
@@ -2833,7 +2873,7 @@ BIOS    	SEGMENT
 ;----------------------------------------------------------------------------;
 ; F000:FFF0: 8086 power-on reset vector
 ;----------------------------------------------------------------------------;
-; The x86 CPU begins code excution at hard-coded address F000:FFF0.
+; The x86 CPU begins code excution at hard-coded address FFFF:0000.
 ; This is that address. Welcome to the party!
 ;----------------------------------------------------------------------------;
 		ORG	0FFF0H
@@ -4100,7 +4140,7 @@ TD3300_MEM_CLEAR ENDP
 ; Initial Set up Memory and lock Configuration Register
 ;----------------------------------------------------------------------------;
 ; Input:
-;	DX = memory in paragraphs
+;	DX = highest memory segment detected
 ; 	FE2010_CONF_REG set for 640K
 ;
 ; AX clobbered
@@ -5065,14 +5105,14 @@ DETECT_MEMORY PROC
 ;----------------------------------------------------------------------------;
 ; Otherwise, use default for MAX_RAM and detect
 ;
-	MOV	CX, (MAX_RAM SHR 4) - 1		; Max number of 16KB RAM blocks
-							; (ex: 640K / 16K = 40)
+	MOV	CX, MAX_RAM / 16 - 1		; Max number of 16KB RAM blocks
+							; after the first 16K block
+							; (ex: 640K / 16K - 1 = 39)
 				ENDIF
 			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Detect RAM size in 16K blocks
-; Output: ES = highest memory segment "detected"
 ;
 	MOV	DX, KBP < 16 >			; Start at second 16KB block para
 	MOV	ES, DX				; ES = seg 0400H
@@ -5088,8 +5128,7 @@ BLOCK_LOOP_DONE:
 ; Test and clear RAM, show memory count
 ;
 ; Input:
-;	ES = highest memory segment "detected"
-;	DX = size of memory in paras
+;	ES/DX = highest memory segment detected
 ;
 			IF ARCH_TYPE EQ ARCH_FE2010
 	CALL	FE2010_SETUP_MEM			; set up FE2010 configuration
@@ -6079,7 +6118,7 @@ MEEP_DELAY	EQU	40H
 MEEP_DELAY	EQU	20H
 			ENDIF
 MEEPMEEP PROC
-	CALL MEEP
+	CALL MEEP				; first meep
 
 ;----------------------------------------------------------------------------;
 ; One very short beep
@@ -6908,9 +6947,9 @@ KEY_SCAN_TBL	LABEL BYTE
 
 ;----------------------------------------------------------------------------;
 ; IMPORTANT NOTE: these next two tables are placed here to fill the "hole"
-; for the F1-F10 keys, so MUST be exactly 20 bytes to maintain the table
-; index. Left in commented out below for reference:
-
+; for the F1-F10 keys since those scan codes are handled separately.
+; This space can be used as long as exactly 20 bytes is left to maintain the
+; table index. Left commented-out below for reference:
 ;	DW	10 DUP(0) 				; 3B-44H	F1-F10
 
 ;----------------------------------------------------------------------------;
@@ -6994,7 +7033,7 @@ _BIOS_BREAK		EQU	BYTE PTR[SI][BIOS_BREAK-CAS_CRC]
 ;
 ; cf = ( ( crc & 0x8000 ) >> 15 ) ^ CF;
 ; if ( cf ) {
-;	crc = crc ^ 0x0810;
+;	crc = crc ^ (0x1021 >> 1);
 ; }
 ; crc = crc << 1 | cf;
 ; return crc;
@@ -7009,7 +7048,7 @@ CAS_CRC_POLY 	EQU 	01021h	; Cassette CRC16-CCITT polynomial
 CAS_CRC_ADD PROC
 	XCHG	AX, _CAS_CRC		; get working CRC, save AX
 	RCR	AX, 1				; set up for RCL
-	RCL	AX, 1				; OF = MSB(AX) XOR CF
+	RCL	AX, 1				; OF = MSB(AX) != CF
 	CLC					; CF = OF
 	JNO	CAS_CRC_SHIFT		; if OF: AX = AX XOR 0810h
 	XOR	AX, CAS_CRC_POLY SHR 1	; divide by polynomial (already shifted)
@@ -7771,7 +7810,7 @@ FDC_SEND_RECV:
 ;
 	MOV	DX, FDC_STAT 			; port 3F4H - FDC Main Status Register
 	MOV	CX, 5					; CX = # of ticks to wait
-	MOV	AH, BYTE PTR _FD_TIMER.LW	; get starting tick counter low byte
+	MOV	AH, BYTE PTR TIMER.LW		; get starting tick counter low byte
 
 FDC_SEND_WAIT_POLL:
 	IN	AL, DX				; AL = FDC status register
@@ -7837,7 +7876,7 @@ FDC_SEND_WAIT_TIMER:
 
 FDC_WAIT_TIMEOUT:
 	MOV	AH, FDC_ST_TIMEOUT 		; time out, drive not ready error
-	OR	_FD_LAST_OP, AH			; set flag in BDA
+	OR	FD_LAST_OP, AH			; set flag in BDA
 	STC						; set error
 	JMP	SHORT	FDC_WAIT_EXIT
 
@@ -7896,6 +7935,7 @@ FDC_RECV_ALL_LOOP:
 	JC	FDC_RECV_ALL_DONE			; CF if failure
 	STOSB						; write to BDA
 
+			IF FDC_ADV_SEEK NE 1
 ;----------------------------------------------------------------------------;
 ; Additional delay for FDC to settle
 ;
@@ -7907,6 +7947,17 @@ FDC_RECV_ALL_LOOP:
 FDC_RECV_DELAY:					; [7+19(AX-1)] clocks
 	DEC	AX					; [3]
 	JNZ	FDC_RECV_DELAY			; [4+16(AX-1)]
+
+			ELSE
+
+;----------------------------------------------------------------------------;
+; Additional delay for FDC to settle
+;
+		REPT 2
+	IN	AL, DX				; DX = 03F4H
+		ENDM
+
+			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Check for additional bytes to be read from FDC registers
@@ -8174,10 +8225,6 @@ INT_1E	DBT 	<DNB <12, 15>, 0010B, 37, 2, 8, 42, 0FFH, 80, 0F6H, 25, 4>
 ; - Return AH = 0 if any of the above are not met.
 ; - Do the function call
 ; - Get port status and return in AH for any valid calls.
-;
-; Things you should do:
-; - Get installed printer count via INT 11H
-;
 ;----------------------------------------------------------------------------;
 		ORG 0EFD2H
 INT_17 PROC
@@ -8566,7 +8613,7 @@ INT_10_0_1:
 	MOV	BH, VID_DEF_COLS			; default 80 columns
 	MOV	CH, HIGH SIZE MDA_MEM		; Total MDA video memory = 1000H (4K)
 	MOV	AH, CH				; MDA/CGA 80x25 page size = 1000H (4K)
-	MOV	DI, DBW <VID_ATTR, VID_SP>	; fill memory with attr 7 and space
+	MOV	DI, DBW <VID_ATTR<>, VID_SP>	; fill memory with attr and space
 	JNE	INT_10_0_IS_CGA			; jump if not MDA
 	INC	AX					; 1 = MDA disable video signal value
 	MOV	BP, SEG _MDA_MEM			; BP = MDA memory segment (0B000H)
@@ -9640,7 +9687,6 @@ INT_10_9A_GFX_HIGH_WR:
 	POP	SI				; restore start of glyph
 	INC	DI				; move to next video mem BYTE offset 
 	LOOP	INT_10_9A_GFX_HIGH	; repeat for CX number of chars
-
 	JMP	INT_10_9A_MODE_GFX_DONE	; exit
 
 ;----------------------------------------------------------------------------;
@@ -10078,7 +10124,7 @@ POST_SYS_VIDEO PROC
 							; default to "None"
 
 ;----------------------------------------------------------------------------;
-; Check if INT 10 is using the BIOS. If so, must be CGA or MDA.
+; Check if INT 10 is using this BIOS. If so, must be CGA or MDA.
 ;
 	PUSH	DS
 	XOR	AX, AX				; AX = SEG _IVT
@@ -10361,7 +10407,7 @@ MOVE_COL PROC
 	PUSHX	AX, BX, CX, DX		; must preserve all of these
 			ENDIF
 	PUSH	AX				; preserve AL on INT 10H call
-	XOR	BH, BH 			; video page 0
+	MOV	BH, 0 			; video page 0 (flags preserved)
 	MOV	AH, 3 			; get cursor position
 	INT	10H 				; DH = row, DL = column
 	POP	AX
@@ -10482,7 +10528,7 @@ NIB_HEX PROC
 	CMP	AL, 0AH 			; if < 0Ah, CF=1 and setup a -1 for ASCII
 						;  adjust since 'A'-'9' is 7 (not 6)
 	SBB	AL, -('0'+66H+1) 		; BCD bias for ASCII (30h + 66h + CF)
-						;  AF = AL < 0Ah, CF = 1
+						;  AF if AL < 0Ah, CF = 1
 						;  if > 9, high_nibble = 0Ah
 						;  if <=9, high_nibble = 09h
 	DAS					; BCD adjust to ASCII
@@ -10495,7 +10541,7 @@ NIB_HEX PROC
 OUT_CHAR PROC
 	PUSH	AX
 	PUSH	BX
-	XOR	BX, BX			; video page = 0
+	MOV	BH, 0				; video page = 0 (preserve flags)
 	MOV	AH, 0EH			; Write AL to screen tty mode
 	INT	10H				; send to console
 	POP	BX
@@ -10522,7 +10568,7 @@ BYTES_HERE	INT_12
 		ORG 0F841H
 INT_12 PROC
 		ASSUME DS:_BDA
-	STI 					; Interrupts on
+	STI 					; interrupts on
 	PUSH	DS 				; save DS
 	MOV	AX, SEG _BDA
 	MOV	DS, AX 			; DS = BDA
@@ -10540,7 +10586,7 @@ INT_12 ENDP
 		ORG 0F84DH
 INT_11 PROC
 		ASSUME DS:_BDA
-	STI 					; Interrupts on
+	STI 					; interrupts on
 	PUSH	DS 				; save DS
 	MOV	AX, SEG _BDA
 	MOV	DS, AX 			; DS = BDA
