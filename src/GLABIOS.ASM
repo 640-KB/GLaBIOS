@@ -8715,7 +8715,7 @@ INT_10_0_CRTC_LOOP:
 	MOV	AH, VID_CSTXT <>			; otherwise use for text/low gfx
 INT_10_0_COLOR_BYTE:
 	MOV	BX, OFFSET CRT_MODE
-	XLAT						; AL = control byte data
+	XLAT	CS:[BX]				; AL = control byte data
 	POP	DS					; DS = BDA
 			ASSUME DS:_BDA
 	ADD	DX, CGA_CTRL-CGA_IDX		; DX = 6845 control reg port (3D8H)
