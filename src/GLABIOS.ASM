@@ -129,7 +129,7 @@ VER_NAME		EQU	'GLaBIOS'
 VER_NUM		EQU	'0.2.6'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'07/03/24' 		; must be MM/DD/YY format
+VER_DATE		EQU	'07/03/24' 		; must be MM/DD/YY per Intel CSM
 	ENDIF
 COPY_YEAR		EQU	'2022-24'		; Copyright year range
 
@@ -260,6 +260,8 @@ FDC_ADV_SEEK	=	1		; Advanced floppy seeking performance
 						;   to avoid unnecessary seek commands
 FDC_ZERO_BDA	=	0		; clear FDC FIFO buffer between ops
 						;   Some HD ROMs appropriate this memory
+FDC_ERR_SEC_CT	=	0		; On error, 0=always return 0 sectors
+						;   1=return partial/successful sector count
 KB_HLT_WAIT		=	1		; Halt CPU during KB wait
 MBR_CHECK		=	0		; Verify magic number of DOS MBR at boot
 						;   note: DOS 1.0 does not use MBR, so
@@ -630,7 +632,6 @@ POST_CLS		=	1			; clear screen after POST
 POST_THEME		=	3			; "boring" mode
 POST_BANNER		=	0			; hide GLaBIOS banner
 	ENDIF
-
 
 ;----------------------------------------------------------------------------;
 ; Enable 186 instructions if V20
@@ -6418,11 +6419,11 @@ INT_09 PROC
 	PUSHX	BX, CX, DX, DI, SI			; save working registers
 			ENDIF
 	PUSHX	DS, ES					; save segment registers
-	MOV	DX, SEG _BDA 				; DX = BIOS Data Area
+	MOV	CX, SEG _BDA 				; CX = BIOS Data Area, CH = 0
 	MOV	AL, AH					; AL = original scan code
 	CMP	AL, 0FFH 					; check for Detection Error/Overrun
 	JZ	INT_KB_MEEP_DONE				; if overrun, meep and exit
-	MOV	DS, DX					; DS = BIOS Data Area
+	MOV	DS, CX					; DS = BIOS Data Area
 	MOV	DX, CS					; ES = BIOS code segment
 	MOV	ES, DX
 	MOV	DX, KB_FLAGS				; DL=KB_FLAGS1, DH=KB_FLAGS2
@@ -6699,15 +6700,13 @@ INT_KB_IS_ALT_000:
 ;
 INT_KB_NOT_ALT_000:
 	MOV	DI, OFFSET INT_KB_ALT_SKIP
-	MOV	CX, 11					; L_INT_KB_ALT_SKIP
+	MOV	CL, 10					; L_INT_KB_ALT_SKIP
 	XCHG	AH, AL
 	REPNE SCASB						; is in table?
 	XCHG	AH, AL
 	JNZ	KB_INT_IS_ALT_DONE			; if not found, continue
 INT_KB_DONE_1:
 	JMP	SHORT INT_KB_DONE				; if found, skip
-
-;ALT_MOD_LEN	EQU $-INT_KB_NOT_ALT_000+L_INT_KB_ALT_SKIP	; 30 bytes
 
 INT_KB_ALT ENDP
 
@@ -6721,7 +6720,7 @@ INT_KB_CTRL_NO_ALT PROC
 ; a lookup table since they do not follow a predictable pattern.
 ;
 	XCHG	AX, BX					; BH = scan code, BL = ASCII
-	MOV	CX, L_INT_KB_CTRL_ASC_TBL		; length of table
+	MOV	CL, L_INT_KB_CTRL_ASC_TBL		; length of table
 	MOV	SI, OFFSET INT_KB_CTRL_ASC_TBL
 INT_KB_CTRL_ASC_TBL_LOOP:
 	LODS	WORD PTR CS:[SI]				; AH = scan code, AL = new ASCII
@@ -7092,7 +7091,7 @@ CAS_CRC_ADD ENDP
 			ENDIF
 
 ;
-; 5 BYTES HERE / 4 BYTES HERE 5150
+; 7 BYTES HERE / 6 BYTES HERE 5150
 ;
 BYTES_HERE	INT_13
 
@@ -7535,7 +7534,9 @@ FDC_RWV_SEND_WAIT:
 	CALL	FDC_SEND_PARAM
 	JC	FDC_RWV_ERR
 	CALL	FDC_WAIT_STATUS			; wait for WIF and get status
-	JC	FDC_RWV_ERR				; check for timeout error
+			IF FDC_ERR_SEC_CT NE 1
+	JC	FDC_RWV_ERR				; if error, report 0 sectors read
+			ENDIF
 							; fall through for FDC SEC COUNT
 
 ;----------------------------------------------------------------------------;
@@ -7562,8 +7563,8 @@ FDC_SEC_COUNT:
 	JE	FDC_SEC_COUNT_SAME		; if not, ended on the same head/track
 
 ;----------------------------------------------------------------------------;
-; FDC has ended on a different head or track. Calculate the correct number of
-; sectors spanned.
+; Command has ended on a different head or track. Calculate the correct
+; number of sectors spanned.
 ;
 	CMP	DH, _FDC_LAST_ST.HEAD		; end on same head but different track?
 	JNE	FDC_SEC_COUNT_SAME_CYL		; if so, has spanned a full head
@@ -7769,7 +7770,7 @@ FDC_DRIVE_STARTED:
 	JC	FDC_RECAL_ERR
 	MOV	AL, CL 				; AL = drive number
 	CALL	FDC_SEND 				; send command, CF if error
-	JC	FDC_RECAL_ERR			; (necessary?)
+	;JC	FDC_RECAL_ERR			; (necessary?)
 	CALL	FDC_WAIT_SENSE 			; wait for WIF, sense and get status in AL
 	JC	FDC_RECAL_ERR
 	XOR 	AL, FDC_ST0 <01B, 1>		; select abnormal term, seek complete
@@ -7969,7 +7970,6 @@ FDC_RECV_ALL_LOOP:
 	JC	FDC_RECV_ALL_DONE			; CF if failure
 	STOSB						; write to BDA
 
-			IF FDC_ADV_SEEK NE 1
 ;----------------------------------------------------------------------------;
 ; Additional delay for FDC to settle
 ;
@@ -7981,17 +7981,6 @@ FDC_RECV_ALL_LOOP:
 FDC_RECV_DELAY:					; [7+19(AX-1)] clocks
 	DEC	AX					; [3]
 	JNZ	FDC_RECV_DELAY			; [4+16(AX-1)]
-
-			ELSE
-
-;----------------------------------------------------------------------------;
-; Additional delay for FDC to settle
-;
-		REPT 2
-	IN	AL, DX				; DX = 03F4H
-		ENDM
-
-			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Check for additional bytes to be read from FDC registers
