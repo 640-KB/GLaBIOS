@@ -629,7 +629,7 @@ POST_OPT_ROM	=	0			; hide option ROM loading
 POST_VIDEO_TYPE	=	0			; hide the video adapter type on POST
 POST_WARM_COLD	=	0			; hide boot WARM or COLD
 POST_CLS		=	1			; clear screen after POST
-POST_THEME		=	3			; "boring" mode
+POST_THEME		=	0			; disable all color
 POST_BANNER		=	0			; hide GLaBIOS banner
 	ENDIF
 
@@ -10381,6 +10381,7 @@ POST_END_COL_STR PROC
 ; Output: SI = end of string
 ;----------------------------------------------------------------------------;
 OUT_SZ_ATTR PROC
+			IF POST_THEME NE 0	; enable color/attribute display
 	PUSH	AX
 
 ;----------------------------------------------------------------------------;
@@ -10401,6 +10402,7 @@ OUT_SZ_ATTR_SET:
 	MOV	AX, DBW <9, VID_SP>	; write empty char with attr CX # of times
 	INT	10H
 	POP	AX				; Fall through to OUT_SZ and RET
+			ENDIF			; POST_THEME NE 0
 
 ;----------------------------------------------------------------------------;
 ; Display a zero-terminated string in BIOS at CS:[SI]
