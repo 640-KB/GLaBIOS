@@ -2261,6 +2261,7 @@ PRINTLN_SZ	MACRO	SZ, SAVE_REGS
 ; 	-3 bytes if ATTR is BL
 ;----------------------------------------------------------------------------;
 SET_SZ_ATTR	MACRO	ATTR, LN, SAVE_REGS
+			IF POST_THEME NE 0	; display color
 		IFNB	<SAVE_REGS>
 	PUSH	AX
 	PUSH	BX
@@ -2277,6 +2278,7 @@ SET_SZ_ATTR	MACRO	ATTR, LN, SAVE_REGS
 	POP	BX
 	POP	AX
 		ENDIF	; IFNB
+			ENDIF			; END display color
 		ENDM
 
 ;----------------------------------------------------------------------------;
@@ -10384,13 +10386,13 @@ OUT_SZ_ATTR PROC
 			IF POST_THEME NE 0	; enable color/attribute display
 	PUSH	AX
 
+			IF MDA_ATTR LT 2	; filter MDA attributes
 ;----------------------------------------------------------------------------;
 ; Filter MDA attributes - display with intensity attribute only
 ;
 MDA_COLOR_FIX:
 	CALL	INT_10_IS_TXT		; CF if MDA
 	JNC	OUT_SZ_ATTR_SET		; skip if not MDA
-			IF MDA_ATTR LT 2	; preserve all attributes
 			IF MDA_ATTR EQ 1	; only intensity
 	AND	BL, MASK MDIN OR MASK MDFG ; remove MDA blink and background attr
 	OR	BL, MASK MDFG		; remove MDA underline attr
