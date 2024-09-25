@@ -3227,7 +3227,11 @@ INIT_PIT1_TEST:
 	JZ	INIT_PIT1_TEST_DONE	; if so, success
 	DEC	SI				; if not, undo INC and keep reading PIT
 INIT_PIT1_TEST_READ:
+		IF DRAM_REFRESH GT 0	; is DRAM refresh enabled?
 	MOV	AL, PIT_CW <1,0>		; latch Counter 1 command
+		ELSE
+	MOV	AL, PIT_CW <0,0>		; latch Counter 0 command
+		ENDIF
 	OUT	PIT_CTRL, AL		; write command to CTC
 	IN	AL, DX			; read timer LSB
 	MOV	AH, AL			; save LSB
