@@ -3900,24 +3900,18 @@ SETTINGS_SAVE:
 ;  - If not 0, determine correct 6845 video mode and do INT 10H reset
 ;----------------------------------------------------------------------------;
 	GET_EFLAG  VID				; AX = 00=error(ZF), 01=CGA 40, 10=CGA 80, 11=MDA
-	XCHG	AX, DX				; AL = EQUIP_FLAGS, DX = BDA initial video mode
 	JNZ	VID_MODE_OK				; jump if mode valid or video option ROM loaded
 	MOV	BL, BEEP_SL <3,3>			; Beep 3 long, 3 short
 HALT_BEEP_2:
 	JMP	HALT_BEEP				; NEAR jump to beep
 VID_MODE_OK:
-	TEST	AL, MASK VID			; is SW1 mode 00?
+	TEST	DL, MASK VID			; is SW1 mode 00?
 	JZ	RESET_VIDEO_DONE			; if custom video ROM, skip reset
-	DEC	DX
-	MOV	AX, 1					; CGA 40x25 color, AH = 0 (for INT 10h below)
-	JZ	RESET_VIDEO				; ZF if CGA 40
-	MOV	AL, 3					; CGA 80x25 color
-	DEC	DX					; ZF if CGA 80
-	JZ	RESET_VIDEO				; jump if CGA, fall through if Mono
-	MOV	AL, 7					; else Mono
+	MOV	BX, OFFSET VID_MODE_TBL[-1]	; AL = BDA video type, BX = mode table
+	XLAT	CS:[BX]				; AL = INT 10H video mode
 
 ;----------------------------------------------------------------------------;
-; Clear screen and reset the video display.
+; Clear screen and reset the video display
 ;
 RESET_VIDEO:
 	INT	10H					; AH = 0 - Set Video Mode
@@ -5966,8 +5960,13 @@ POST_CGA		DB	'CGA', 0
 POST_MDA		DB	'Mono', 0
 			ENDIF
 
+;----------------------------------------------------------------------------;
+; POST Initial INT 10H Video Mode to BIOS video equipment type
 ;
-; 3 BYTES HERE
+VID_MODE_TBL	DB	1, 3, 7	; Color 40x25, Color 80x25, Mono 80x25
+
+;
+; 0 BYTES HERE
 ;
 BYTES_HERE	INT_16
 
