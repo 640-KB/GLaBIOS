@@ -4118,7 +4118,6 @@ TOGGLE_TURBO ENDP
 ;
 ; Input: (required)
 ;	SI = on first call: sign bit set (from POST_MEMORY string offset)
-; Size: 43 bytes
 ;----------------------------------------------------------------------------;
 TD3300_MEM_CLEAR PROC
 	XOR	AX, AX				; ensure AL is 0
@@ -4146,15 +4145,14 @@ TD3300_MEM_CLEAR_HI:
 	OUT	TD_MEM, AL				; switch to upper bank
 	MOV	AX, KBP < 128 >			; restart at segment 2000H (128K)
 	MOV	DH, HIGH KBP < 512 >		; end at segment 8000H (512K)
-TD3300_MEM_CLEAR_DONE:
 	JMP	NEAR PTR ZERO_ALL_RAM_1		; continue RAM test
 
 ;----------------------------------------------------------------------------;
-; Don't clear RAM on warm boot if DIP switches set for 1024K.
+; Don't clear upper RAM on warm boot if DIP switches set for 1024K.
 ;
 TD3300_NO_CLEAR:
 	MOV	BX, 1024 - 16			; fake 1024K display count
-	JMP	SHORT TD3300_MEM_CLEAR_DONE	; (save 1 byte with short jump)
+	JMP	NEAR PTR ZERO_ALL_RAM		; display RAM count and exit test
 TD3300_MEM_CLEAR ENDP
 			ENDIF
 			ENDIF
