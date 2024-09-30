@@ -129,7 +129,7 @@ VER_NAME		EQU	'GLaBIOS'
 VER_NUM		EQU	'0.2.6'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'09/03/24' 		; must be MM/DD/YY per Intel CSM
+VER_DATE		EQU	'09/28/24' 		; must be MM/DD/YY per Intel CSM
 	ENDIF
 COPY_YEAR		EQU	'2022-24'		; Copyright year range
 
@@ -388,6 +388,7 @@ FDC_HLT_WAIT	=	0			; halting CPU on FDC and KB wait
 KB_HLT_WAIT		=	0			;  seems to cause issues on TD3300A
 TURBO_TYPE		=	TURBO_STD		; always use Standard
 TURBO_SWITCH	=	1			; boot under hardware Turbo control
+TD_WS_SETUP		=	0			; set wait state register on boot (0 ws)
 TD_UPMEM		=	1			; clear and display upper memory bank
 		IF TD_UPMEM EQ 1
 RAM_DIGITS		=	4			; display RAM as four digits
@@ -1670,7 +1671,17 @@ PPI_CR RECORD	PPEN:1=1,PPAM:2=00b,PPAD:1=1,PPCU:1=1,PPBM:1,PPBD:1,PPCL:1=1
 ;        0| 		- TDWRO	Board ROM (# of wait states 0-1)
 ;----------------------------------------------------------------------------;
 TD_WS_CR	RECORD	TDWSI:2=3,TDWSR:2=3,TDWIO:2=1,TDWRA:1=0,TDWRO:1=1
-;TD_WS_CR	RECORD	TDWSI:2=2,TDWSR:2=1,TDWIO:2=0,TDWRA:1=0,TDWRO:1=1
+
+TD_WS_R_1	EQU	TD_WS_CR <>				; TD1 - default power on state
+TD_WS_R_2	EQU	TD_WS_CR < 2, 1, 0, 0, 1 >	; TD2 - faster
+TD_WS_R_3	EQU	TD_WS_CR < 0, 1, 0, 0, 0 >	; TD3 - even faster
+TD_WS_R_4	EQU	TD_WS_CR < 0, 0, 0, 0, 0 >	; TD4 - fastest (0 ws all)
+
+;----------------------------------------------------------------------------;
+; If TD_WS_SETUP=1, set below wait state register configuration on boot.
+;
+;TD_WS_R	EQU	TD_WS_R_1		; default power on
+TD_WS_R	EQU	TD_WS_R_3		; 0 I/O slot ws, 1 I/O RAM ws, 0 board WS
 
 ;----------------------------------------------------------------------------;
 ; TD3300A Speed (Turbo/Normal) Register (90H)
@@ -1684,7 +1695,6 @@ TD_TURBO_CR	RECORD	TDSX:6,TDSH:1=0,TDSS:1	; hardware switch enabled
 			ELSE
 TD_TURBO_CR	RECORD	TDSX:6,TDSH:1=1,TDSS:1	; hardware switch disabled
 			ENDIF
-			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; TD3300A Upper Memory bank switch Register (E0H)
@@ -1693,6 +1703,8 @@ TD_TURBO_CR	RECORD	TDSX:6,TDSH:1=1,TDSS:1	; hardware switch disabled
 ;        0| 		- TDUB	map 2000h-F000h: 0=lower bank,1=upper bank
 ;----------------------------------------------------------------------------;
 TD_MEM_CR	RECORD	TDUX:7,TDUB:1
+
+			ENDIF		; END ARCH_TYPE EQ ARCH_TD3300
 
 			IF ARCH_TYPE EQ ARCH_UM82
 ;----------------------------------------------------------------------------;
@@ -1916,6 +1928,24 @@ CALL_NS 	MACRO CALL_JMP, JMP_SHORT
 CALL_JMP_PTR:
 	DW	OFFSET CALL_JMP_RET
 CALL_JMP_RET:
+		ENDM
+
+;----------------------------------------------------------------------------;
+; JMP_FIX - MASM workaround for forward SHORT or NEAR jumps
+;----------------------------------------------------------------------------;
+; Input:
+;	LBL	= forward jump destination
+;	DEST	= Offset in BIOS segment for destination LBL
+;----------------------------------------------------------------------------;
+JMP_FIX 	MACRO	LBL, DEST
+		LOCAL	D
+D	=	OFFSET LBL - BIOS_TOP	; use to determine correct offset for DEST
+						; since cannot use this with forward labels
+			IF ( ( DEST - 0E000H ) - ( $ - BIOS_TOP ) ) LT 80H
+	JMP	SHORT LBL
+			ELSE
+	JMP	NEAR PTR LBL
+			ENDIF
 		ENDM
 
 ;----------------------------------------------------------------------------;
@@ -3102,19 +3132,6 @@ RESET_PPI:
 	OUT	TD_MEM, AL			; set TD3300 memory bank 0
 				ENDIF
 
-;----------------------------------------------------------------------------;
-; This sequence is the "magic incantation" to set the TD3300 wait state. It is
-; probably not a good idea to turn on interrupts here, nor is it to set this
-; in the BIOS. Code left in for reference.
-;
-;	CLI					; set up wait states
-;	IN	AL, TD_WS			; read and throw away
-;	MOV	AL, TD_WS_CR		; set new default wait states
-;	OUT	TD_WS, AL			; write to register
-;	STI					; write two STIs for TD3300 to accept
-;	STI
-;	CLI
-
 	IN	AL, TD_TURBO		; read current turbo register
 				IF BOOT_SPEED EQ BOOT_TURBO
 	MOV	AL, TD_TURBO_CR <,,0>	; switch to turbo
@@ -3879,6 +3896,22 @@ SETTINGS_SAVE:
 	CALL	TOGGLE_TURBO			; set speed according to PPI (reversed)
 			ENDIF
 
+			IF ARCH_TYPE EQ ARCH_TD3300
+			IF TD_WS_SETUP EQ 1
+;----------------------------------------------------------------------------;
+; Set up TD3300A wait state register. This sequence is the "magic incantation"
+; to set the TD3300 chipset wait state configuration.
+;
+	;CLI					; disable interrupts (already off)
+	IN	AL, TD_WS			; read and throw away
+	MOV	AL, TD_WS_R			; set new default wait states
+	OUT	TD_WS, AL			; write to register
+	STI					; write two STIs for TD3300 to accept
+	STI
+	CLI					; interrupts should be off
+			ENDIF
+			ENDIF
+
 ;----------------------------------------------------------------------------;
 ; [21] Video BIOS Option ROM scan
 ;----------------------------------------------------------------------------;
@@ -3955,7 +3988,8 @@ HELLO_WORLD:
 ;----------------------------------------------------------------------------;
 ; Jump over INT 02h fixed ORG to continue...
 ;
-	JMP	 NEAR PTR POST_DETECT_PORTS
+	JMP_FIX	POST_DETECT_PORTS, 0E2E7H	; hack to use SHORT jump if possible
+
 
 			IF IS_TURBO
 ;----------------------------------------------------------------------------;
@@ -8266,8 +8300,8 @@ INT_1E	DBT 	<DNB <12, 15>, 0010B, 37, 2, 8, 42, 0FFH, 80, 0F6H, 25, 4>
 INT_17 PROC
 		ASSUME DS:_BDA
 	STI 						; enable interrupts
-	CMP	DX, 2					; is greater than 2?
-	JA	INT_17_IRET 			; if so, exit
+	CMP	DX, LENGTH LPT_ADDR		; is port number valid?
+	JAE	INT_17_IRET 			; if not, exit
 	PUSHX	DX, DI, CX, AX, DS		; call-preserve working regs
 	MOV	CX, SEG _BDA 			; CH = 0, CL = 40H
 	MOV	DS, CX				; DS = BDA
@@ -8418,7 +8452,7 @@ SHOW_CURSOR PROC
 ; Clobbers CX
 ;----------------------------------------------------------------------------;
 HIDE_CURSOR PROC
-	MOV	CX, 2000H			; hide cursor
+	MOV	CX, DBW < 00100000b >	; hide cursor (CH bit 5 = 1)
 
 ;----------------------------------------------------------------------------;
 ; Set Video Cursor type
