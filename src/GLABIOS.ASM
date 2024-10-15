@@ -100,7 +100,7 @@ ARCH_VEN888		EQU	'V'			; Vendex 888-XT
 ARCH_LASER		EQU	'L'			; VTech Laser Turbo XT
 ARCH_BOOK88		EQU	'B'			; Book 8088
 ARCH_CPQ		EQU	'Q'			; Compaq Portable XT
-ARCH_VIRTUALXT	EQU	'A'			; VirtualXT Emulator
+ARCH_VIRTUALXT	EQU	'J'			; VirtualXT Emulator
 
 ;
 ; CPU Instruction Set Target
