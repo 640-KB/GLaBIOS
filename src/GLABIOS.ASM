@@ -100,6 +100,7 @@ ARCH_VEN888		EQU	'V'			; Vendex 888-XT
 ARCH_LASER		EQU	'L'			; VTech Laser Turbo XT
 ARCH_BOOK88		EQU	'B'			; Book 8088
 ARCH_CPQ		EQU	'Q'			; Compaq Portable XT
+ARCH_VIRTUALXT	EQU	'A'			; VirtualXT Emulator
 
 ;
 ; CPU Instruction Set Target
@@ -169,6 +170,7 @@ ARCH_TYPE		EQU	ARCH_TURBO		; Standard Turbo
 ;ARCH_SUB_TYPE	EQU	ARCH_M88		; micro_8088/NuXT (TYPE ARCH_FE2010)
 ;ARCH_SUB_TYPE	EQU	ARCH_MIST		; PCXT_MiSTer (TYPE ARCH_EMU)
 ;ARCH_SUB_TYPE	EQU	ARCH_MARTY		; MartyPC Emulator (TYPE ARCH_TURBO)
+;ARCH_SUB_TYPE	EQU	ARCH_VIRTUALXT	; VirtualXT Emulator (TYPE ARCH_TURBO)
 ;ARCH_SUB_TYPE	EQU	ARCH_VEN888		; Vendex 888-XT (TYPE ARCH_TURBO)
 	ENDIF
 
@@ -559,6 +561,20 @@ TURBO_TYPE		=	TURBO_STD		; use high = turbo
 		IF MAX_RAM_AUTO EQ 1		; select max RAM from video switch
 POST_TEST_PIT_1	=	00			; disable to free code space
 		ENDIF
+	ENDIF
+	
+	IF ARCH_SUB_TYPE EQ ARCH_VIRTUALXT
+;----------------------------------------------------------------------------;
+; Configuration for the VirtualXT emulator
+;
+TURBO_TYPE		=	TURBO_STD		; standard PPI 61h (1=turbo, 0=normal)
+MAX_RAM 		=	MAX_RAM_CGA		; 736 KB Max detectable low RAM
+MAX_RAM_AUTO	=	1				; select max RAM from video switch
+CGA_SNOW_REMOVE	=	0				; disable CGA snow removal
+RAM_TEST_LONG	=	0				; disable long RAM test
+RAM_PARITY		=	0				; disable RAM parity checking
+BASIC_ROM		=	0				; BASIC ROM support at disabled
+FDC_ENABLE		=	0				; disable INT 13h floppy support
 	ENDIF
 
 	IF ARCH_SUB_TYPE EQ ARCH_VEN888
