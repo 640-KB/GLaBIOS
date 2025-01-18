@@ -130,9 +130,9 @@ VER_NAME		EQU	'GLaBIOS'
 VER_NUM		EQU	'0.2.6'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'09/28/24' 		; must be MM/DD/YY per Intel CSM
+VER_DATE		EQU	'01/18/25' 		; must be MM/DD/YY per Intel CSM
 	ENDIF
-COPY_YEAR		EQU	'2022-24'		; Copyright year range
+COPY_YEAR		EQU	'2022-25'		; Copyright year range
 
 ;----------------------------------------------------------------------------;
 ; BEGIN Configurable Build Options
@@ -562,19 +562,19 @@ TURBO_TYPE		=	TURBO_STD		; use high = turbo
 POST_TEST_PIT_1	=	00			; disable to free code space
 		ENDIF
 	ENDIF
-	
+
 	IF ARCH_SUB_TYPE EQ ARCH_VIRTUALXT
 ;----------------------------------------------------------------------------;
 ; Configuration for the VirtualXT emulator
 ;
 TURBO_TYPE		=	TURBO_STD		; standard PPI 61h (1=turbo, 0=normal)
 MAX_RAM 		=	MAX_RAM_CGA		; 736 KB Max detectable low RAM
-MAX_RAM_AUTO	=	1				; select max RAM from video switch
-CGA_SNOW_REMOVE	=	0				; disable CGA snow removal
-RAM_TEST_LONG	=	0				; disable long RAM test
-RAM_PARITY		=	0				; disable RAM parity checking
-BASIC_ROM		=	0				; BASIC ROM support at disabled
-FDC_ENABLE		=	0				; disable INT 13h floppy support
+MAX_RAM_AUTO	=	1			; select max RAM from video switch
+CGA_SNOW_REMOVE	=	0			; disable CGA snow removal
+RAM_TEST_LONG	=	0			; disable long RAM test
+RAM_PARITY		=	0			; disable RAM parity checking
+BASIC_ROM		=	0			; BASIC ROM support at disabled
+FDC_ENABLE		=	0			; disable INT 13h floppy support
 	ENDIF
 
 	IF ARCH_SUB_TYPE EQ ARCH_VEN888
@@ -1944,24 +1944,6 @@ CALL_NS 	MACRO CALL_JMP, JMP_SHORT
 CALL_JMP_PTR:
 	DW	OFFSET CALL_JMP_RET
 CALL_JMP_RET:
-		ENDM
-
-;----------------------------------------------------------------------------;
-; JMP_FIX - MASM workaround for forward SHORT or NEAR jumps
-;----------------------------------------------------------------------------;
-; Input:
-;	LBL	= forward jump destination
-;	DEST	= Offset in BIOS segment for destination LBL
-;----------------------------------------------------------------------------;
-JMP_FIX 	MACRO	LBL, DEST
-		LOCAL	D
-D	=	OFFSET LBL - BIOS_TOP	; use to determine correct offset for DEST
-						; since cannot use this with forward labels
-			IF ( ( DEST - 0E000H ) - ( $ - BIOS_TOP ) ) LT 80H
-	JMP	SHORT LBL
-			ELSE
-	JMP	NEAR PTR LBL
-			ENDIF
 		ENDM
 
 ;----------------------------------------------------------------------------;
@@ -4004,7 +3986,7 @@ HELLO_WORLD:
 ;----------------------------------------------------------------------------;
 ; Jump over INT 02h fixed ORG to continue...
 ;
-	JMP_FIX	POST_DETECT_PORTS, 0E2E7H	; hack to use SHORT jump if possible
+	JMP	NEAR PTR POST_DETECT_PORTS
 
 
 			IF IS_TURBO
@@ -10169,7 +10151,7 @@ INT_10_GET_CUR_ADDR ENDP
 ;	     | `-------- 1 = 640x200 B/W graphics (unused on MDA)
 ;	     `--------- 1 = blink, 0 = no blink
 ; MDA:
-;	|7|6|5|4|3|2|1|0|  3B8 CRT Control Port
+;	|7|6|5|4|3|2|1|0|  3B8H CRT Control Port
 ;	     | | | | | `---- 1 = 80x25 text
 ;	     | | | `------- unused
 ;	     | | `-------- 1 = enable video signal
