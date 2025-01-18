@@ -289,7 +289,7 @@ INIT_AT_KBC		=	0		; Init AT type KB controller
 INIT_V40		=	0		; Init V40 config registers
 OEM_FONT		=	0		; 1=use OEM style font, 0=clone style
 POST_CARD		=	0		; enable POST codes on port 80H
-MUTE_TANDY		=	1		; mute buzzing on Tandy 3 Voice
+MUTE_TANDY		=	0		; mute buzzing on Tandy 3 Voice
 
 ;----------------------------------------------------------------------------;
 ; Hardware hacks!
