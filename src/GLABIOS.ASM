@@ -289,6 +289,7 @@ INIT_AT_KBC		=	0		; Init AT type KB controller
 INIT_V40		=	0		; Init V40 config registers
 OEM_FONT		=	0		; 1=use OEM style font, 0=clone style
 POST_CARD		=	0		; enable POST codes on port 80H
+MUTE_TANDY		=	1		; mute buzzing on Tandy 3 Voice
 
 ;----------------------------------------------------------------------------;
 ; Hardware hacks!
@@ -4495,6 +4496,17 @@ NEXT_LPT_PORT:
 	LOOP	LPT_DETECT_LOOP
 
 POST_DETECT_PORTS ENDP
+
+		IF MUTE_TANDY EQ 1
+;----------------------------------------------------------------------------;
+; Mute Tandy 3 Voice Sound card (SN76489AN) buzzing on boot
+;----------------------------------------------------------------------------;
+	MOV	DX, 0C0H				; port can be 0C0H, 01E0H, 02C0H
+			IRP	B, < 0FFH, 0BFH, 0DFH, 09FH >
+	MOV	AL, B
+	OUT	DX, AL
+			ENDM
+		ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Reset Keyboard Interface
