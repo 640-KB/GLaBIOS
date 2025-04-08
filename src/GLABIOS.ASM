@@ -11654,13 +11654,13 @@ INT_10_4 PROC
 ; into light pen register when LPSTB pulses high.
 ;
 	SUB	DX, CGA_STAT-CGA_IDX	; DX = 3x4h index port
-	MOV	AL, 10h			; light pen index (MSB)
+	MOV	AL, 10H			; light pen index (MSB)
 	OUT	DX, AL			; select index
 	INC	DX				; DX = 3x5h data port
 	IN	AL, DX			; read MSB
 	MOV	AH, AL			; save MSB
 	DEC	DX				; DX = 3x4h index port
-	MOV	AL, 11h			; light pen index (LSB)
+	MOV	AL, 11H			; light pen index (LSB)
 	OUT	DX, AL			; select index
 	INC	DX				; DX = 3x5h data port
 	IN	AL, DX			; read LSB
@@ -11730,8 +11730,8 @@ INT_10_4_DONE:
 ;----------------------------------------------------------------------------;
 ; Light pen strobe reset
 ;
-INT_10_4_RESET:
 	ADD	DX, CGA_PEN_RST-CGA_DATA	; pen latch register
+INT_10_4_RESET:
 	OUT	DX, AL			; reset light pen latch
 
 INT_10_4_EXIT:
