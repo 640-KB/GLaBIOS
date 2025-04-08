@@ -4259,14 +4259,21 @@ UM82_MEM_SIZE ENDP
 ; V40 PC register initialization table
 ; Format: data byte, low byte of register port (high byte is FF)
 ;
+V40_INIT_OPTIONAL	= 0		; init optional unused registers
 V40_REG LABEL BYTE
 	DB	00000000B,	0FEH 	; FFFE: OPCN - INT Select
 	DB	00000110B,	0FDH 	; FFFD: OPSEL - Enable TCU/ICU, Disable DMAU/SCU
 					;	Only Enable The Interrupt Controller And Timer
 	DB	00H, 		0FCH	; FFFC: OPHA - On-chip Peripheral High Address Register
 					;	Any 256K Block Except Overlap with Registers
+			IF V40_INIT_OPTIONAL EQ 1
+	DB	00000000B,	0FBH	; FFFB: DULA - DMA Lower Address Register
+			ENDIF
 	DB	00100000B,	0FAH	; FFFA: IULA - 8259 Lower Address Register
 	DB	01000000B,	0F9H 	; FFF9: TULA - 8254 Lower Address Register
+			IF V40_INIT_OPTIONAL EQ 1
+	DB	11010000B,	0F8H 	; FFF8: SULA - Serial Port Lower Address Register
+			ENDIF
 	DB	00000000B		; FFF6: WCY2 - Number of wait cycles for DMA and refresh
 	DB	LOW V40_WCR2	;	00 seems safe for SRAM since no refresh happens
 			IF NOT PPI_B_BOOT AND MASK PBTB 	; Boot to Turbo/0-WS speed?
@@ -4286,7 +4293,11 @@ V40_REG LABEL BYTE
 					;	video cards and option BIOSes
 	DB	00H,		0F2H	; FFF2: RFC - Refresh Control
 					;	00 (disabled refresh) for SRAM
+			IF V40_INIT_OPTIONAL EQ 1
+	DB	00010100B,	0F0H 	; FFF0: TCKS - Timer Pin Selection
+			ELSE
 	DB	00011100B,	0F0H 	; FFF0: TCKS - Timer Pin Selection
+			ENDIF
 					; 	Bits 4-2 set sources for timers (1 for TCLK)
 					;	1=Pin, 0=internal, Bits 1-0 Prescale Div For Internal
 L_V40_REG	=	($-V40_REG)/2
