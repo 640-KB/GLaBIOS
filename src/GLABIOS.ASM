@@ -6,7 +6,7 @@
 ;
 ; A scratch-built, open-source 8088 PC/clone BIOS alternative.
 ;
-; Copyright (c) 2022-2024, 640KB and contributors
+; Copyright (c) 2022-2025, 640KB and contributors
 ;
 ;----------------------------------------------------------------------------;
 ;
@@ -290,6 +290,7 @@ INIT_V40		=	0		; Init V40 config registers
 OEM_FONT		=	0		; 1=use OEM style font, 0=clone style
 POST_CARD		=	0		; enable POST codes on port 80H
 MUTE_TANDY		=	0		; mute buzzing on Tandy 3 Voice
+MUSHROOM_HACK	=	0		; workaround delay if PIT is stopped
 
 ;----------------------------------------------------------------------------;
 ; Hardware hacks!
@@ -5076,7 +5077,7 @@ FOUND_ROM:
 	PUSH	DI					; save ROM scan ending segment
 	PUSH	DS					; ROM init segment
 	PUSH	SI					; ROM init offset (always 03H)
-	MOV	BP, SP				; DS:BP = FAR pointer to ROM init
+	MOV	BP, SP				; SS:BP = FAR pointer to ROM init
 	CALL	DWORD PTR [BP]			; FAR CALL to option ROM init
 	CLI						; ensure interrupts are still disabled
 	POP	BX					; rebalance stack
@@ -5484,6 +5485,20 @@ IO_WAIT_MS_LOOP:
 	MOV	CX, AX			; CX = last read
 	CALL	IO_WAIT_LATCH		; AX = current counter reading
 	SUB	CX, AX			; CX = # of ticks elapsed since last reading
+
+		IF MUSHROOM_HACK EQ 1
+;----------------------------------------------------------------------------;
+; If the PIT has not changed, the counter may be stopped. Use an estimate
+; value to simulate the countdown.
+;
+	JNE	PIT_CHANGED			; continue if PIT did change
+		IF IS_TURBO
+	SUB	CX, 75			; assume 75 ticks for a turbo PC
+		ELSE
+	SUB	CX, 100			; assume 100 ticks for standard
+		ENDIF
+PIT_CHANGED:
+		ENDIF
 	SUB	BX, CX			; subtract change in ticks from countdown
 	SBB	DX, 0				; borrow out of high word (if necessary)
 	JAE	IO_WAIT_MS_LOOP		; loop while countdown >= 0
@@ -5499,6 +5514,7 @@ IO_WAIT_MS_DONE:
 ; Output: AX = current counter
 ; Time: 123 clock cycles (including CALL)
 ;----------------------------------------------------------------------------;
+
 IO_WAIT_LATCH PROC
 	MOV	AL, PIT_CW <0, 0>		; Counter 0, Latch (00b)
 	PUSHF					; save current IF
@@ -7425,7 +7441,7 @@ INT_13_2_5_SETUP_DMA:
 ; 	01 			; Mode: Single mode select
 ; 	  0  			; Address increment
 ;	   0 			; Auto-initialization disable
-;	    xx		; 00=verify, 01=write, 10=read, 11=unused
+;	    xx		; 00=verify, 10=write, 01=read, 11=unused
 ;	      10		; Channel 2 select
 ;  ES:BX = pointer to buffer
 ;
