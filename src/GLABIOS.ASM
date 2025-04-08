@@ -1718,7 +1718,7 @@ TD_TURBO_CR	RECORD	TDSX:6,TDSH:1=1,TDSS:1	; hardware switch disabled
 ; TD3300A Upper Memory bank switch Register (E0H)
 ;----------------------------------------------------------------------------;
 ; 7654321 |			- TDUX	Unused
-;        0| 		- TDUB	map 2000h-F000h: 0=lower bank,1=upper bank
+;        0| 		- TDUB	map 2000H-8000H: 0=lower bank,1=upper bank
 ;----------------------------------------------------------------------------;
 TD_MEM_CR	RECORD	TDUX:7,TDUB:1
 
@@ -2886,18 +2886,18 @@ _OPT_ROM	ENDS
 ;----------------------------------------------------------------------------;
 _BIOS		SEGMENT AT 0F000H
 		ORG	0E000H
-_BIOS_TOP	LABEL WORD
+_BIOS_TOP	LABEL FAR
 		ORG	0E05BH
-_BOOT		LABEL WORD				; BIOS boot offset
+_BOOT		LABEL FAR				; BIOS boot offset
 		ORG	0FFF0H
-_POWER_ON	LABEL WORD				; CPU power-on jump address
+_POWER_ON	LABEL FAR				; CPU power-on jump address
 _BIOS		ENDS
 
 ;----------------------------------------------------------------------------;
 ; F600:0000 - ROM BASIC segment
 ;----------------------------------------------------------------------------;
 _BASIC	SEGMENT AT 0F600H
-BASIC_TOP	LABEL WORD 				; ROM BASIC load offset
+BASIC_TOP	DW	? 				; ROM BASIC top of code
 _BASIC	ENDS
 
 ;----------------------------------------------------------------------------;
@@ -2933,7 +2933,8 @@ BIOS    	SEGMENT
 ;----------------------------------------------------------------------------;
 		ORG	0FFF0H
 POWER_ON	PROC	FAR
-	JMP	FAR	PTR _BOOT 		; always jump to power on routine
+	JMP	_BOOT 			; FAR jump to power on routine
+POWER_ON	ENDP
 
 		ORG	0FFF5H
 REL_DATE 	DB	VER_DATE		; Release date
@@ -2943,7 +2944,6 @@ ISA_TYPE	DB	ARCH_ID		; Architecture model
 
 		ORG	0FFFFH		; BIOS ROM checksum byte 
 		DB	?			; (computed at build time)
-POWER_ON	ENDP
 
 ;----------------------------------------------------------------------------;
 ; F000:E000: Top of BIOS ROM 8K segment
