@@ -29,7 +29,7 @@ Copyright &copy; 2022-2024, [640KB](mailto:640kb@glabios.org) and contributors.
 - Turbo XTs (DTK, most clones)
 - [Faraday FE2010A](https://github.com/skiselev/micro_8088/blob/master/Documentation/Faraday-XT_Controller-FE2010A.md)-based PCs ([Headstart Plus](http://oldcomputer.info/pc/hs_plus/index.htm)/VTI Vendex 33-XT/PC-10 and others)
 - TD3300A-based PCs (Juko ST, UNIQUE, Auva, etc)
-- UMC UM82C088/ALi M1101 chipset
+- UMC UM82C088/ALi M1101/TACT80101FT chipset
 - [micro_8088](https://github.com/skiselev/micro_8088) / [NuXT](https://monotech.fwscart.com/)
 - [EMM Homebrew 8088](https://www.homebrew8088.com/) with 8088, V20 or V40
 - Vendex 888-XT/PB88/Samsung
