@@ -65,7 +65,7 @@ If you aren't familiar with the reference, ask a gamer.
 
 **OR try it LIVE!**
 
-- [MartyPC](https://dbalsom.github.io/martypc/web/player.html?title=freedos)
+- [MartyPC](https://martypc.net/)
 - [VirtualXT](https://phix.itch.io/virtualxt)
 
 ### Building GLaBIOS
