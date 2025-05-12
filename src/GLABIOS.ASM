@@ -8925,14 +8925,14 @@ INT_10_3_CUR_PAGE PROC
 ;	DL = column
 ;----------------------------------------------------------------------------;
 INT_10_3 PROC
-	PUSH	AX
+	XCHG	AX, DX			; save AX
 	MOV	AL, BH			; AL = video page
 	CBW					; AX = video page
 	XCHG	AX, DI			; DI = video page
 	SHL	DI, 1				; word align index
+	XCHG	AX, DX			; restore AX
 	MOV	DX, VID_CURS_POS[DI]
 	MOV	CX, VID_CURS_TYPE
-	POP	AX
 	RET
 INT_10_3 ENDP
 INT_10_3_CUR_PAGE ENDP
@@ -9074,13 +9074,12 @@ INT_10_CHECK_BOUNDS:
 	DEC	DX				; fixup for 0-based column index (0-79, etc)
 INT_10_BOUNDS_OK:
 	MUL	DH				; AX = memory offset of col 0 of new bottom row
-	MOV	DH, AL			; save AL
+	XCHG	AX, SI			; SI = memory offset
 
 ;----------------------------------------------------------------------------;
 ; Is graphics mode?
 ;
 	CALL	INT_10_IS_TXT		; NZ if CGA GFX, ZR if CGA/MDA Text
-	MOV	AL, DH			; restore AL
 	MOV	DH, 0				; DX = lower right column position
 	PUSH	DS				; save BDA data SEG
 	JNZ	INT_10_SCR_GFX
@@ -9101,7 +9100,7 @@ INT_10_BOUNDS_OK:
 ;  new_bottom = old_bottom - rect_height
 ;
 INT_10_SCR_TXT:
-	ADD	DX, AX			; DX = byte offset of new bottom row and col
+	ADD	DX, SI			; DX = byte offset of new bottom row and col
 	SHL	DX, 1				; WORD-align memory offset
 	ADD	DX, VID_SEG			; DX = memory offset bottom row/col in video page
 	MOV	SI, DX			; SI = memory offset of new rect bottom (midpoint)
@@ -9225,7 +9224,7 @@ INT_10_6_DONE:
 ; INT 10,6/7 - Scroll up or down in graphics mode
 ;----------------------------------------------------------------------------;
 ; Input:
-;	AX = memory offset of col 0 of new bottom row
+;	SI = memory offset of col 0 of new bottom row
 ;	BH = attribute to be used on blank line
 ;	BL = (scratch)
 ;	BP (high) = flags (ZF if scroll up, NZ if scroll down)
@@ -9237,9 +9236,9 @@ INT_10_6_DONE:
 ; Perform BitBlt operation within video RAM.
 ;----------------------------------------------------------------------------;
 INT_10_SCR_GFX PROC
-	SHL	AX, 1				; BYTE (char) align memory offset for line
-	SHL	AX, 1				;  (default for 640x200)
-	ADD	DX, AX
+	SHL	SI, 1				; BYTE (char) align memory offset for line
+	SHL	SI, 1				;  (default for 640x200)
+	ADD	DX, SI
 	XCHG	DX, DI			; DI = memory offset of new rect bottom
 	INC	DX				; DX = original row/col
 	INC	DH				; use 0-based indexes for 1-based counters
@@ -9301,9 +9300,8 @@ INT_10_SCR_GFX_MOVE_LOOP:
 	MOV	CL, DL			; # of pixels to copy
 	REP	MOVSB				; copy odd field
 	MOV	SI, CGA_MEM_FLD		; vid mem offset for interlaced field
-	MOV	DI, SI
-	ADD	SI, AX			; add to line offset
-	ADD	DI, BX
+	LEA	DI, [BX][SI]		; add to line offset
+	ADD	SI, AX
 	MOV	CL, DL			; # of pixels to copy
 	REP	MOVSB				; copy even field
 	ADD	AX, BP			; move to next line
@@ -9325,8 +9323,7 @@ INT_10_SCR_GFX_CLR:
 INT_10_SCR_GFX_CLR_LOOP:
 	MOV	CL, DL			; # of pixels to clear
 	REP	STOSB				; clear odd field
-	MOV	DI, CGA_MEM_FLD		; vid mem offset for interlaced field
-	ADD	DI, SI
+	LEA	DI, CGA_MEM_FLD[SI]	; vid mem offset for interlaced field
 	MOV	CL, DL			; # of pixels to clear
 	REP	STOSB				; clear even field
 	ADD	SI, BP			; move to next line
@@ -10664,7 +10661,7 @@ WORD_HEX ENDP
 DWORD_HEX ENDP
 
 ;
-; 31 BYTES HERE
+; 37 BYTES HERE
 ;
 BYTES_HERE	INT_12
 
