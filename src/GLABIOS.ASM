@@ -8716,38 +8716,62 @@ INT_10_0_1:
 ;
 	CMP_EFLAG VID, VID_MDA			; is switch MDA (ON, ON)?
 	MOV	AL, CL				; 0 = CGA disable video signal
-	MOV	SI, O_INT_1D_80			; SI = CGA 80 CRTD offset
+	MOV	SI, O_INT_1D_80			; SI = CGA 80 CRTD offset (10H)
 	MOV	BH, VID_DEF_COLS			; default 80 columns
 	MOV	CH, HIGH SIZE MDA_MEM		; Total MDA video memory = 1000H (4K)
 	MOV	AH, CH				; MDA/CGA 80x25 page size = 1000H (4K)
+	MOV	DX, MDA_CTRL			; MDA Mode Select Register (03B8H)
 	MOV	DI, DBW <VID_ATTR<>, VID_SP>	; fill memory with attr and space
 	JNE	INT_10_0_IS_CGA			; jump if not MDA
+
+;----------------------------------------------------------------------------;
+; Is MDA (mode 7)
+;
 	INC	AX					; 1 = MDA disable video signal value
 	MOV	BP, SEG _MDA_MEM			; BP = MDA memory segment (0B000H)
-	MOV	DX, MDA_CTRL			; MDA Mode Select Register (03B8H)
 	MOV	BL, 7					; only valid MDA display mode is 7
-	MOV	SI, O_INT_1D_MDA			; SI = MDA CRTD offset
+	MOV	SI, O_INT_1D_MDA			; SI = MDA CRTD offset (30H)
 	JMP	SHORT INT_10_0_DETECT_DONE	; MDA mode selected, continue
+
+;----------------------------------------------------------------------------;
+; Is CGA (modes 0-6)
+;
 INT_10_0_IS_CGA:
 	MOV	CH, HIGH CGA_MEM_SZ		; Total CGA video memory = 4000H (16K)
-	MOV	DX, CGA_CTRL			; CGA Mode Select Register (3D8H)
+	MOV	DL, LOW CGA_CTRL			; CGA Mode Select Register (03D8H)
 	MOV	BP, SEG _CGA_MEM			; BP = CGA memory segment (0B800H)
 	TEST	BL, 0100B				; text or gfx mode?
 	JZ	INT_10_0_IS_CGA_TEXT		; jump if text
-INT_10_0_IS_CGA_GFX:
-	MOV	SI, O_INT_1D_GFX			; SI = CGA GFX CRTD offset
+
+;----------------------------------------------------------------------------;
+; Is CGA graphics (modes 4-6)
+;
+	SHL	SI, 1					; SI = CGA GFX CRTD offset (20H)
 	MOV	AH, HIGH CGA_MEM_SZ		; CGA gfx page size = 4000H (16K)
 	XOR	DI, DI				; DI = memory fill 0's
 	TEST	BL, 0010B				; is 80 or 40 col text?
 	JNZ	INT_10_0_DETECT_DONE		; jump if 80
 	JMP	SHORT INT_10_0_IS_40_COL	; else set 40 columns
+
+;----------------------------------------------------------------------------;
+; Is CGA text (modes 0-3)
+;
 INT_10_0_IS_CGA_TEXT:
 	TEST	BL, 0010B				; is 80 or 40 col text?
 	JNZ	INT_10_0_DETECT_DONE		; jump if 80
+
+;----------------------------------------------------------------------------;
+; Is CGA 40 col text (modes 0-1)
+;
 	MOV	AH, HIGH SIZE CGA_MEM_40	; CGA 40x25 page size = 800H (2K)
 	XOR	SI, SI				; SI = CGA 40 CRTD offset (00H)
+
+;----------------------------------------------------------------------------;
+; Is CGA 40 col text/gfx (modes 0-1, 4-5)
+;
 INT_10_0_IS_40_COL:
 	SHR	BH, 1					; BH = 40 columns
+
 INT_10_0_DETECT_DONE:
 	MOV	WORD PTR VID_MODE, BX		; write BDA video mode and columns
 	MOV	ES, BP				; ES = video memory segment
@@ -8784,6 +8808,8 @@ INT_10_0_CRTC_LOOP:
 	INC	AX					; next register index
 	INC	SI					; next byte in table
 	LOOP	INT_10_0_CRTC_LOOP
+	POP	DS					; DS = BDA
+			ASSUME DS:_BDA
 
 ;----------------------------------------------------------------------------;
 ; Send mode and color bytes to display adapter
@@ -8796,8 +8822,6 @@ INT_10_0_CRTC_LOOP:
 INT_10_0_COLOR_BYTE:
 	MOV	BX, OFFSET CRT_MODE
 	XLAT	CS:[BX]				; AL = control byte data
-	POP	DS					; DS = BDA
-			ASSUME DS:_BDA
 	ADD	DX, CGA_CTRL-CGA_IDX		; DX = control reg port (3D8H)
 	MOV	WORD PTR VID_MODE_REG, AX	; write mode and color to BDA
 	OUT	DX, AX				; write mode and color to adapter
