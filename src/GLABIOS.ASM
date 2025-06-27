@@ -7361,7 +7361,9 @@ INT_13_0_RESET_DONE:
 	JC	INT_13_0_DONE
 	MOV	AL, DBT.SRT				; [1] step rate time, head unload time
 	CALL	FDC_SEND_PARAM
-	JC	INT_13_0_DONE
+			IF CPU_TYPE	EQ CPU_V20
+	JC	INT_13_0_DONE			; TODO: need 2 more bytes for 8088
+			ENDIF
 	MOV	AL, DBT.HLT_ND			; [2] head load time (01H), DMA mode (ND)
 	CALL	FDC_SEND_PARAM
 
@@ -7793,11 +7795,11 @@ FDC_RECAL PROC
 ;----------------------------------------------------------------------------;
 ; Things you must do:
 ;	- is motor already on? Skip wait for spin up
-;	- wait only for writes?
+;	- wait only for writes
 ;	- check if recalibration is necessary
 ;----------------------------------------------------------------------------;
 FDC_MOTOR_ON:
-	MOV	CL, DL 				; move to CL for shift
+	MOV	CL, DL 				; move drive number to CL for shift
 
 ;----------------------------------------------------------------------------;
 ; Convert drive number to motor run format
@@ -7805,21 +7807,21 @@ FDC_MOTOR_ON:
 	MOV	AX, 110H 				; AH -> RUN_ST, AL -> FDC byte
 	SHL	AX, CL 				; shift drive flags
 	CLI 						; disable interrupts
+	MOV	_FD_MOTOR_CT, 255			; restart timer to max for operation
 	MOV	CH, _FD_MOTOR_ST			; get current RUN_ST
 	TEST	CH, AH 				; is drive already running?
 	JNZ	FDC_DRIVE_STARTED			; skip startup if so
 	OR	AL, CL 				; combine drive number to FDC byte
 	OR	AL, MASK FDDMA OR MASK FDCEN	; set DMA and controller enable flags
 	PUSH	DX					; preserve DX
-	MOV	DX, FDC_CTRL			; turn on motor
-	OUT	DX, AL				; port 3F2H, FDC Digital Output
+	MOV	DX, FDC_CTRL			; port 3F2H, FDC Digital Output
+	OUT	DX, AL				; turn on motor
 	POP	DX
 	MOV	AL, CH 				; AL = FD_MOTOR_ST
 	MOV	CH, AH				; CH = RUN_ST drive bit field
 	AND	AL, NOT MASK FMOT 		; clear motor status of FD_MOTOR_ST
 	OR	AL, AH				; combine nibbles, SF if write
-	CBW						; restart timer to max for operation
-	MOV	WORD PTR FD_MOTOR_ST, AX	; write to motor status and timer
+	MOV	FD_MOTOR_ST, AL			; write to motor status
 	JNS	FDC_DRIVE_STARTED 		; delay for motor spinup if write op
 
 ;----------------------------------------------------------------------------;
@@ -8173,7 +8175,7 @@ INT_1E_PARAM PROC
 INT_1E_PARAM ENDP
 
 ;
-; 2 BYTES HERE
+; 0 BYTES HERE
 ;
 BYTES_HERE	INT_0E
 
