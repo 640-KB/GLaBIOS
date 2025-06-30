@@ -6863,13 +6863,19 @@ INT_KB_CTRL_ALT:
 ; Handle Ctrl-Alt-Del (Warm reboot)
 ;
 INT_KB_CTRL_ALT_DEL:
-	CALL	BEEP						; BEEP on ctrl-alt-del
 			IF WARM_ENABLE EQ 1
 	MOV	WARM_FLAG, WARM_BOOT			; set warm boot flag
 			ELSE
 	MOV	WARM_FLAG, COLD_BOOT			; clear warm boot flag
 			ENDIF
+
+			IF CPU_TYPE	EQ CPU_V20
+	PUSH	OFFSET BOOT					; ret address is warm reboot
+	JMP	BEEP						; beep and return to reboot
+			ELSE
+	CALL	BEEP						; BEEP on ctrl-alt-del
 	JMP	BOOT						; warm reboot
+			ENDIF
 
 			IF IS_TURBO
 ;----------------------------------------------------------------------------;
