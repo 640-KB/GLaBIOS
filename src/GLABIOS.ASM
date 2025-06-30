@@ -1241,7 +1241,7 @@ FDC_SF RECORD	FWIF:1,FSTBD:3,FCAL3:1,FCAL2:1,FCAL1:1,FCAL0:1
 ; 84218421
 ; 7 	    |			- FWRT	1=write operation
 ;  654    |			- FMTBD	unused
-;     3210|			- FMOT	1=drive 3 motor on
+;     3210|			- FMOT	drives 0-3 motor-on bitfield
 ;----------------------------------------------------------------------------;
 FDC_MF RECORD	FWRT:1,FMTBD:3,FMOT:4
 
@@ -7362,9 +7362,7 @@ INT_13_0_RESET_DONE:
 	JC	INT_13_0_DONE
 	MOV	AL, DBT.SRT				; [1] step rate time, head unload time
 	CALL	FDC_SEND_PARAM
-			IF CPU_TYPE	EQ CPU_V20
-	JC	INT_13_0_DONE			; TODO: need 2 more bytes for 8088
-			ENDIF
+	JC	INT_13_0_DONE
 	MOV	AL, DBT.HLT_ND			; [2] head load time (01H), DMA mode (ND)
 	CALL	FDC_SEND_PARAM
 
@@ -7425,10 +7423,20 @@ FDC_DMA_BOUND:
 ; Things you should do:
 ;	- Check if drive is valid? Check if exists in BDA and not a hard drive
 ;----------------------------------------------------------------------------;
+FDC_CMD_TBL LABEL BYTE
+	DB	FDC_CB <1,,1,FDC_CMD_RD>	; 2 FDC Read - MT, MFM, Skip deleted
+	DB	FDC_CB <1,,0,FDC_CMD_WR>	; 3 FDC Write - Multi-Track, MFM
+	DB	FDC_CB <1,,1,FDC_CMD_RD>	; 4 FDC Verify - MT, MFM, Skip deleted
+	DB	FDC_CB <0,,0,FDC_CMD_FMT>	; 5 FDC Format - Single-Track, MFM
+
 INT_13_2_5 PROC
 	XCHG	AL, AH				; AL = function, AH = sectors to read
 	PUSH	AX					; save function, sector count
 	PUSH	DX					; save head, drive
+
+;----------------------------------------------------------------------------;
+; Get DMA mode byte
+;
 	MOV	DH, DMA_MR <1,0,0,1,2> 		; set DMA read mode 1 (AH = 2)
 	CMP	AL, 2					; is read?
 	JE	INT_13_2_5_SETUP_DMA		; if so, proceed to setup
@@ -7439,6 +7447,7 @@ INT_13_2_5 PROC
 	OR	_FD_MOTOR_ST, MASK FWRT		; turn on write flag
 INT_13_2_5_SETUP_DMA:
 	MOV	AL, DH				; AL = DMA mode, AH = sectors to read
+
 	CALL	FDC_SEEK 				; Turn on motor, CH = track, DL = drive
 	JC	INT_13_2_5_SEEK_ERR		; exit if seek error
 							; fall through to set up DMA
@@ -7536,18 +7545,12 @@ INT_13_2_5_SEEK_ERR:
 	JC	INT_13_0_DONE			; exit if DMA error with AL = 0
 
 ;----------------------------------------------------------------------------;
-; Set FDC command byte
+; Get FDC command byte
 ;
-	MOV	BL, FDC_CB <1,,0,FDC_CMD_WR>	; FDC Write Data - Multi-Track, MFM
-	CMP	AL, 3 				; is write (AH=3)?
-	JE	FDC_RWVF				; jump if write
-	MOV	BL, FDC_CB <0,,0,FDC_CMD_FMT>	; FDC Format Track - Single-Track, MFM
-	CMP	AL, 5 				; is format (AH=5)?
-	JE	FDC_RWVF 				; jump if format
-	MOV	BL, FDC_CB <1,,1,FDC_CMD_RD>	; FDC Read/Verify - MT, MFM, Skip deleted
-							; else read (AH=2,4)
-FDC_RWVF:
-	XCHG	AX, BX				; AL = FDC cmd byte, BL = function
+	PUSH	AX					; AL = function (2-5), AH = sectors
+	MOV	BX, OFFSET FDC_CMD_TBL[-2]	; BX = cmd byte table (2-indexed)
+	XLAT	CS:[BX]				; AL = FDC cmd byte
+	POP	BX					; BL = function, BH = sectors
 
 ;----------------------------------------------------------------------------;
 ; FDC_RWVF: read, write, verify or format sectors
@@ -7757,7 +7760,7 @@ FDC_CHECK_SEEK:
 ;
 FDC_SEEK_SETTLE:
 			IF ARCH_TYPE NE ARCH_EMU
-	MOV	AX, DBT.HDST			; AH=0 JIC (AH=0 from FDC_WAIT_SENSE)
+	MOV	AX, DBT.HDST			; AL = HST DBT param, AH = 0
 	CALL	INT_1E_PARAM			; AL = head settle time (ms)
 	CALL	IO_DELAY_MS_FDC			; delay AX ms
 			ENDIF
@@ -8041,7 +8044,7 @@ FDC_RECV_ALL PROC
 	PUSH	DS					; ES = BDA segment
 	POP	ES
 	INC	DI					; DI = FDC_LAST_ST (FDC Last Result)
-	MOV	CX, 7					; loop up to 7 FDC bytes
+	MOV	CX, SIZE FDC_CSB			; loop up to 7 FDC bytes
 FDC_RECV_ALL_LOOP:
 	CALL	FDC_RECV				; AL = next byte, AH = 0 if success
 	JC	FDC_RECV_ALL_DONE			; CF if failure
@@ -8176,7 +8179,7 @@ INT_1E_PARAM PROC
 INT_1E_PARAM ENDP
 
 ;
-; 0 BYTES HERE
+; 2 BYTES HERE
 ;
 BYTES_HERE	INT_0E
 
