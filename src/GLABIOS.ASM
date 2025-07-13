@@ -291,6 +291,7 @@ OEM_FONT		=	0		; 1=use OEM style font, 0=clone style
 POST_CARD		=	0		; enable POST codes on port 80H
 MUTE_TANDY		=	0		; mute buzzing on Tandy 3 Voice
 MUSHROOM_HACK	=	0		; workaround delay if PIT is stopped
+FE_CONF_LOCK	=	1		; lock FE2010 config register after init
 
 ;----------------------------------------------------------------------------;
 ; Hardware hacks!
@@ -4211,7 +4212,9 @@ TD3300_MEM_CLEAR ENDP
 ;----------------------------------------------------------------------------;
 FE2010_SETUP_MEM PROC
 	MOV	AL, FE2010_CONF_REG		; get register
-	;OR	AL, MASK FLCK			; lock config until reboot (TODO: test this)
+			IF FE_CONF_LOCK EQ 1
+	OR	AL, MASK FLCK			; lock config until reboot
+			ENDIF
 	CMP	DH, HIGH KBP < 512 >		; is memory size 8000H? (512K)
 	JA	FE2010_SETUP_OUT			; is > 512K (already set for 640K)
 	MOV	AH, MASK FME1			; set for 512K
@@ -7256,11 +7259,13 @@ INT_13 PROC
 	JE	INT_13_1 				; AH = 1, jump to Status
 	PUSHX	DX, CX, BX				; save caller registers
 	MOV	_FD_LAST_OP, FDC_ST_OK		; clear last operation
+			IF FDC_ENABLE EQ 1
 	JB	INT_13_0 				; AH = 0, jump to Reset
 	CMP	DL, 3 				; is drive number > 3?
 	JA	INT_13_BAD_CMD 			; if so, exit
 	CMP	AH, 6 				; AH = 2 through 5?
 	JB	INT_13_2_5 				; jump to FDC RWVF command
+			ENDIF
 INT_13_BAD_CMD:
 	INC	_FD_LAST_OP				; otherwise return "bad command" (1)
 INT_13_DONE:
@@ -7461,7 +7466,6 @@ INT_13_2_5 PROC
 	OR	_FD_MOTOR_ST, MASK FWRT		; turn on write flag
 INT_13_2_5_SETUP_DMA:
 	MOV	AL, DH				; AL = DMA mode, AH = sectors to read
-
 	CALL	FDC_SEEK 				; Turn on motor, CH = track, DL = drive
 	JC	INT_13_2_5_SEEK_ERR		; exit if seek error
 							; fall through to set up DMA
@@ -7864,7 +7868,7 @@ FDC_DRIVE_STARTED:
 	JC	FDC_RECAL_ERR
 	MOV	AL, CL 				; AL = drive number
 	CALL	FDC_SEND 				; send command, CF if error
-	;JC	FDC_RECAL_ERR			; (necessary?)
+	JC	FDC_RECAL_ERR			; (necessary?)
 	CALL	FDC_WAIT_SENSE 			; wait for WIF, sense and get status in AL
 	JC	FDC_RECAL_ERR
 	XOR 	AL, FDC_ST0 <01B, 1>		; select abnormal term, seek complete
@@ -8193,7 +8197,7 @@ INT_1E_PARAM PROC
 INT_1E_PARAM ENDP
 
 ;
-; 2 BYTES HERE
+; 0 BYTES HERE
 ;
 BYTES_HERE	INT_0E
 
@@ -12310,7 +12314,11 @@ VECTOR_TABLE PROC
 	DW  OFFSET INT_16			; INT 16	Keyboard Services
 	DW  OFFSET INT_17			; INT 17	Printer
 	DW  OFFSET INT_18 		; INT 18	Unbootable/ROM BASIC
+			IF FDC_ENABLE EQ 1
 	DW  OFFSET INT_19			; INT 19	Bootstrap
+			ELSE
+	DW  OFFSET INT_RET		; INT 19	No floppy bootstrap
+			ENDIF
 	DW  OFFSET INT_1A			; INT 1A	Time of day
 	DW  OFFSET INT_RET 		; INT 1B	Ctrl Brk
 	DW  OFFSET INT_RET 		; INT 1C	Timer Tick
