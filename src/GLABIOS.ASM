@@ -292,6 +292,7 @@ POST_CARD		=	0		; enable POST codes on port 80H
 MUTE_TANDY		=	0		; mute buzzing on Tandy 3 Voice
 MUSHROOM_HACK	=	0		; workaround delay if PIT is stopped
 FE_CONF_LOCK	=	1		; lock FE2010 config register after init
+ROM_SCAN_ALIGN	=	1		; option ROM scan aligns to 2K boundaries
 
 ;----------------------------------------------------------------------------;
 ; Hardware hacks!
@@ -1082,6 +1083,16 @@ KBP	RECORD	KBPK:10, KBPS:6
 ; Convert Word to Paragraphs ( K SHL 4 )
 ;----------------------------------------------------------------------------;
 KP	RECORD	KPWP:12, KPWPX:4
+
+;----------------------------------------------------------------------------;
+; Convert KiB to Option ROM blocks (512 bytes) ( K * 2 )
+;----------------------------------------------------------------------------;
+KRB	RECORD	KRBK:15, KRBX:1
+
+;----------------------------------------------------------------------------;
+; Convert KiB in ROM blocks (512 bytes) to KB in paragraph ( K SHL 5 )
+;----------------------------------------------------------------------------;
+KRBP	RECORD	RB_P:11, KRBPX:5
 
 ;----------------------------------------------------------------------------;
 ; x86 EFLAGS
@@ -3196,7 +3207,7 @@ CHECKSUM_ROM:
 	MOV	CH, HIGH KBW < 8 >	; checksum 8KB (in 2 byte words)
 CHECKSUM:
 	LODSW 				; next two bytes into AL and AH
-	ADD	DL, AL			; DL = accumulator for sum
+	ADD	DL, AL			; DL = running checksum
 	ADD	DL, AH			; ZF if sum is 0
 	LOOP	CHECKSUM 			; loop through entire ROM
 	JNZ	HALT_ERROR			; if sum not 0, fail
@@ -3639,9 +3650,9 @@ CHECK_BASIC_ROM:
 	XCHG	AX, DI				; save last ROM's header to DI
 	CMP	AX, DI				; is same as last ROM?
 	JE	INIT_ROM_BASIC_DONE		; if so, valid ROM not present
-	MOV	AL, KB < 8 > / 512 		; 8K ROM size (in 512B blocks)
+	MOV	AX, KB < 8 > / 512 		; 8K ROM size (in 512B blocks)
 	ADD	BH, HIGH KBP < 8 >		; BX = next BASIC 8K ROM segment
-	CALL	ROM_CHECKSUM 			; checksum ROM at DS:0, size AL
+	CALL	ROM_CHECKSUM 			; checksum ROM at DS:0, size AX
 	LOOPZ	CHECK_BASIC_ROM			; loop 4 ROMs or checksum fail
 	JNZ	INIT_ROM_BASIC_DONE		; if NZ, checksum failed
 
@@ -4377,7 +4388,7 @@ SET_EFLAG_FLP ENDP
 			ENDIF
 
 ;
-; 1 BYTES HERE
+; 8 BYTES HERE
 ;
 BYTES_HERE	INT_02
 
@@ -5071,20 +5082,25 @@ CHECK_ROM:
 	CMP	AX, MAGIC_WORD			; is it an extension ROM?
 	JNE	NEXT_ROM 				; if not, check next 2K block
 FOUND_ROM:
-	LODSB						; AL = ROM size in 512B blocks
-	CMP	AL, 0					; is size "reasonable"?
-	JLE	NEXT_ROM				; if not 1-127, skip it
-	CALL	ROM_CHECKSUM 			; checksum ROM at DS:0, AX=bytes read
+	CBW						; AH = 0
+	LODSB						; AX = ROM size in 512B blocks
+	CMP	AL, 1					; is size "reasonable"?
+	JS	NEXT_ROM				; if not 1-128, skip it
+	CALL	ROM_CHECKSUM 			; checksum ROM at DS:0, ZF if ok
 			IF POST_OPT_ROM
 	CALL	ROM_SCAN_POST			; show ROM offset, size and errors
 			ENDIF
 	JNZ	NEXT_ROM				; if NZ, checksum failed, skip it
 	POP	BP					; discard previous boundary size
+			IF ROM_SCAN_ALIGN EQ 1
+	ADD	AL, KRB < 2 > - 1			; align next ROM segment to
+	AND	AL, NOT KRB < 2 > - 1		;  2K boundary
+			ENDIF
 			IF CPU_TYPE	EQ CPU_V20
-	SHR	AX, 4					; V20: 512 byte blocks to paragraph
+	SHL	AX, RB_P				; V20: 512 byte blocks to paragraph
 			ELSE
-	MOV	CL, 4					; 8088: 512 byte blocks to paragraph
-	SHR	AX, CL
+	MOV	CL, RB_P				; 8088: 512 byte blocks to paragraph
+	SHL	AX, CL
 			ENDIF
 	PUSH	AX					; replace next boundary with ROM size
 
@@ -5123,20 +5139,20 @@ BIOS_ROM_SCAN ENDP
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	DS = segment for ROM
-;	AL = ROM size in 512k blocks (1-127)
+;	AX = ROM size in 512 blocks
 ; Output:
 ;	ZF if checksum is valid
-;	AX = number of bytes read
+;	AX = ROM size in 512 blocks
 ;	DX = 8 bit checksum remainder
 ;
 ; Size: 20 bytes
 ;----------------------------------------------------------------------------;
 ROM_CHECKSUM PROC
 			ASSUME DS:NOTHING
+	PUSH	AX				; save ROM size
 	PUSH	CX
 	PUSH	SI
-	CBW					; AH = 0
-	CWD					; DL = 0 (accumulator for sum)
+	CWD					; DL = 0 (running checksum)
 	MOV	SI, DX			; start at offset 0
 	XCHG	AL, AH			; convert 512 byte blocks to 16 bit words
 	XCHG	AX, CX			; CX = size in 2 byte WORDs
@@ -5145,9 +5161,9 @@ CHECKSUM_LOOP:
 	ADD	DL, AL			; add both to sum
 	ADD	DL, AH			; ZF if sum is 0
 	LOOP	CHECKSUM_LOOP		; loop through entire ROM
-	XCHG	AX, SI			; AX = bytes read
 	POP	SI
 	POP	CX
+	POP	AX
 	RET
 ROM_CHECKSUM ENDP
 
@@ -5639,7 +5655,7 @@ CAS_READ_WORD ENDP
 			ENDIF
 
 ;
-; 40 BYTES HERE / 6 BYTES HERE 5150
+; 36 BYTES HERE / 15 BYTES HERE 5150
 ;
 BYTES_HERE	INT_19
 
@@ -10709,7 +10725,7 @@ WORD_HEX ENDP
 DWORD_HEX ENDP
 
 ;
-; 37 BYTES HERE
+; 39 BYTES HERE
 ;
 BYTES_HERE	INT_12
 
@@ -11590,18 +11606,18 @@ HELLO_RAND_TAGLINE ENDP
 ; ROM scan loading - display segment, size and checksum error
 ;----------------------------------------------------------------------------;
 ; Input:
-;	AX = BIOS size in bytes
+;	AX = BIOS size in 512 byte blocks
 ;	DI = Option ROM scan end segment
 ;	DL = ROM checksum value
 ;
-; Clobbers: BX, DX
+; Clobbers: BX, DX, BP
 ;
-; Size: 105 bytes
+; Size: 99 bytes
 ;----------------------------------------------------------------------------;
 ROM_SCAN_POST PROC
-	PUSH	AX						; must call-preserve these
-	PUSH	SI
-	PUSHF
+	XCHG	AX, BP					; preserve AX ROM size
+	PUSH	SI						; working register
+	PUSHF							; and flags
 
 ;----------------------------------------------------------------------------;
 ; Ensure this is not scanning a display option ROM - could crash if video
@@ -11613,12 +11629,10 @@ ROM_SCAN_POST PROC
 ;----------------------------------------------------------------------------;
 ; Display ROM column
 ;
-	PUSH	AX						; save ROM size
 	POST_COL_1  S_OPT_ROM, POST_CLR_VAL2	; start ROM column label
 	MOV	AX, DS					; AX = ROM segment
 	CALL	WORD_HEX					; display as hex
 	POST_COL_END					; end column 1
-	POP	AX
 
 ;----------------------------------------------------------------------------;
 ; Display Size or Checksum error column
@@ -11626,12 +11640,9 @@ ROM_SCAN_POST PROC
 	POPF							; restore checksum flag
 	PUSHF							; re-save flag
 	JNZ	ROM_SCAN_POST_CHK				; jump if checksum error
-	PUSH	AX						; save ROM size again
 	POST_COL_2  S_OPT_SIZE, POST_CLR_VAL2	; start 'Size' column 2
-	POP	AX
-	XCHG	AH, AL					; convert bytes to KB
-	SHR	AL, 1
-	SHR	AL, 1
+	MOV	AX, BP					; restore ROM size
+	SHR	AX, 1						; convert to KB
 	CALL	OUT_DECU					; write size as decimal
 	PRINT_SZ	S_OPT_K				; display KB unit
 
@@ -11641,7 +11652,7 @@ ROM_SCAN_POST_DONE:
 ROM_SCAN_POST_EXIT:
 	POPF							; restore checksum result flag
 	POP	SI
-	POP	AX
+	XCHG	AX, BP					; restore AX
 	RET
 
 ;----------------------------------------------------------------------------;
@@ -11831,7 +11842,7 @@ INT_10_4 ENDP
 		ENDIF
 
 ;
-; 79 BYTES HERE / 28 BYTES HERE 5150
+; 85 BYTES HERE / 28 BYTES HERE 5150
 ;
 BYTES_HERE	GFX_CHARSET
 
