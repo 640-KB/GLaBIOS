@@ -292,6 +292,7 @@ MUTE_TANDY		=	0		; mute buzzing on Tandy 3 Voice
 MUSHROOM_HACK	=	0		; workaround delay if PIT is stopped
 FE_CONF_LOCK	=	1		; lock FE2010 config register after init
 ROM_SCAN_ALIGN	=	1		; option ROM scan aligns to 2K boundaries
+OEM_KB_EXT		=	1		; allow EAh reset byte on ext. keyboard
 
 ;----------------------------------------------------------------------------;
 ; Hardware hacks!
@@ -2041,13 +2042,20 @@ IO_DELAY_LONG	MACRO
 ; Variable delay with slowdown for Turbo builds
 ;----------------------------------------------------------------------------;
 ; Input: CX delay in 30 clock cycle increments
+;	R = additional delay factor
 ; Output: CX = 0
 ;----------------------------------------------------------------------------;
-IO_DELAY_TURBO	MACRO
+IO_DELAY_TURBO	MACRO	R
 		LOCAL _DONE
 _DONE:
 		IF IS_TURBO
+			IFNB <R>
+			REPT R
 	IO_DELAY_SHORT
+			ENDM
+			ELSE
+	IO_DELAY_SHORT
+			ENDIF
 		ENDIF
 	LOOP	_DONE					; long delay for I/O
 		ENDM
@@ -2431,6 +2439,8 @@ BEEP_ON MACRO 	TONE
 
 ;----------------------------------------------------------------------------;
 ; Beep off Man
+;----------------------------------------------------------------------------;
+; Input: BL = new PPI state (presumably off)
 ;----------------------------------------------------------------------------;
 BEEP_OFF MACRO
 	CALL	BEEP_OFF_P
@@ -6359,7 +6369,7 @@ BEEP_PROC PROC
 ;  (then how does the speaker work?)
 ; Note 2: cannot use stack since HALT_BEEP could occur before stack
 ;
-; Size: 60 bytes
+; Size: 57 bytes
 ;----------------------------------------------------------------------------;
 HALT_BEEP PROC
 	MOV	DX, CS 				; SS to CS
@@ -6371,40 +6381,38 @@ HALT_BEEP PROC
 HALT_BEEP_START:
 	MOV	DX, BP 				; restore original beep pattern
 	MOV	SI, BEEP_ERR_LOW			; low C5
-	XOR	CX, CX				; low beep on 100%
-HALT_BEEP_START_ODD:
-	MOV	DI, CX				; save counter length
+	XOR	DI, DI				; low beep on 100%
 HALT_BEEP_REP:
 	MOV	AX, SI				; restore beep tone
-	CALL_NS  BEEP_ON_P, 1			; turn on speaker / beep
+	CALL_NS  BEEP_ON_P, 1			; turn on speaker/beep, BL = old PPI state
 	MOV	CX, DI				; reset counter
-	IO_DELAY					; delay for beep
-	CALL_NS  BEEP_OFF_P, 1			; turn off speaker
+	IO_DELAY_TURBO				; delay for beep (longer if turbo)
+	XCHG	AX, BX				; AL = old PPI state (speaker off)
+	OUT	PPI_B, AL				; write back to PPI port B
 	SUB	CX, DI				; set for remainder of counter
-	IO_DELAY					; delay for silence
+	IO_DELAY_TURBO				; delay for silence (longer if turbo)
 	DEC	DL					; dec beep repeat count
 	JNZ	HALT_BEEP_REP			; jump if more of this length
 	XCHG	DL, DH				; swap beep counts
 	TEST	DX, DX				; both cycles done?
 	JZ	HALT_BEEP_START			; if so, restart beep pattern
-	MOV	CH, 100H * 1/3			; else, short beep on 33%
+	MOV	DI, DBW < 100H * 1/3 >		; else, short beep on 33%
 	MOV	SI, BEEP_ERR_HIGH			; high F5
-	JMP	SHORT HALT_BEEP_START_ODD	; start short cycle
+	JMP	HALT_BEEP_REP			; start short cycle
 HALT_BEEP ENDP
 
 ;----------------------------------------------------------------------------;
 ; Make a beepin' beep
 ;----------------------------------------------------------------------------;
 ; Play a (correctly pitched) A6 for 250ms
+; Clobbers: BX
 ;----------------------------------------------------------------------------;
 BEEP PROC
 	PUSH	AX
-	PUSH	BX
 	BEEP_ON
 	MOV	AL, 2				; 1/4 second pause
 	CALL	IO_WAIT_MS_125
 	BEEP_OFF
-	POP	BX
 	POP	AX
 	RET
 BEEP ENDP
@@ -6430,17 +6438,16 @@ MEEPMEEP PROC
 
 ;----------------------------------------------------------------------------;
 ; One very short beep
+; Clobbers: BX, CX
 ;----------------------------------------------------------------------------;
 MEEP PROC
 	PUSH	AX
-	PUSH	BX
 	BEEP_ON
 	MOV	CH, MEEP_DELAY
 	IO_DELAY				; delay while meeping
 	BEEP_OFF
 	MOV	CH, MEEP_DELAY
 	IO_DELAY				; delay between beeps
-	POP	BX
 	POP	AX
 	RET
 MEEP ENDP
@@ -6457,7 +6464,7 @@ MEEPMEEP_Z ENDP
 ;
 ; http://www.cs.binghamton.edu/~reckert/220/8254_timer.html
 ;
-; Clobbers BL, AL
+; Clobbers AX, BX
 ; Cannot use stack since this could be called before it is working.
 ;----------------------------------------------------------------------------;
 BEEP_ON_P PROC
@@ -6465,31 +6472,24 @@ BEEP_ON_P PROC
 	MOV	AL, PIT_CW <2, 11B, 3>		; Select Timer 2, LE, Mode 3 (square)
 	OUT	PIT_CTRL, AL			; Send to PIT control word (43H)
 	XCHG	AX, BX				; restore tone
-BEEP_ON_1 PROC
 	OUT	PIT_CH2, AL				; send low byte to timer
 	MOV	AL, AH 				; select high byte
 	OUT	PIT_CH2, AL				; send high byte to timer
 	IN	AL, PPI_B				; read current PPI port B status
 	MOV	BL, AL				; save original PPI state
-	OR	AL, MASK PBSP OR MASK PBST	; enable speaker and time gates
-	OUT	PPI_B, AL				; write back to port B
-	RET
-BEEP_ON_1 ENDP
-BEEP_ON_P ENDP
+	OR	BL, MASK PBSP OR MASK PBST	; enable speaker and time gates
 
 ;----------------------------------------------------------------------------;
-; Turn off speaker
+; Write to PPI (turn speaker on/off)
 ;----------------------------------------------------------------------------;
-; Input:
-;	BL = original (speaker off) PPI state
+; Input: BL = new PPI state
 ;
-; Clobbers: AL
-;----------------------------------------------------------------------------;
 BEEP_OFF_P PROC
-	MOV	AL, BL				; restore original PPI state
+	XCHG	AX, BX				; AL = new PPI state
 	OUT	PPI_B, AL				; write back to port B
 	RET
 BEEP_OFF_P ENDP
+BEEP_ON_P ENDP
 
 BEEP_PROC ENDP
 
@@ -6567,6 +6567,12 @@ INT_09_POST PROC
 	PUSH	AX
 	POST_FLAG_CLR PKI				; clear POST test int flag
 	IN	AL, PPI_A				; read keyboard scan from PPI
+			IF OEM_KB_EXT EQ 1
+;----------------------------------------------------------------------------;
+; XT 101 keyboards can return 0EAh on initial power on reset
+;
+	AND	AL, NOT 0EAH XOR 0AAH		; transform EAh -> AAh
+			ENDIF
 	CMP	AL, 0AAH
 	JNE	INT_09_POST_DONE			; jump if not expected AAh
 	POST_FLAG_SET PKI				; set POST keyboard test pass flag
@@ -6630,7 +6636,7 @@ L_INT_KB_CTRL_ASC_TBL	EQU ($-INT_KB_CTRL_ASC_TBL)/2		; 12 total
 L_INT_KB_CTRL_SCAN_TBL	EQU ($-INT_KB_CTRL_SCAN_TBL)/2-1	; 6
 
 ;
-; 0 BYTES HERE
+; 4 BYTES HERE
 ;
 BYTES_HERE	INT_09
 
