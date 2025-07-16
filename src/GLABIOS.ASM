@@ -3043,11 +3043,20 @@ BYTES_HERE	BOOT
 		ORG	0E05BH
 BOOT	PROC	NEAR
 
+			IF INIT_V40 EQ 1 OR INIT_AT_KBC EQ 1
+;----------------------------------------------------------------------------;
+; Cold boot chipset setup for V40 and AT KBC
+;
+	CLI
+	JMP	COLD_INIT
+COLD_INIT_DONE:
+			ENDIF
+
 			IF ARCH_SUB_TYPE EQ ARCH_NEST
 ;----------------------------------------------------------------------------;
-; Set up D-11 chipset first only on cold boot
+; Cold boot chipset setup for D-11
 ;
-	CLI 							; disable CPU interrupts
+	CLI
 	IN	AL, N3_CTRL
 	OR	AL, MASK D11SX OR MASK D11B
 	OUT	N3_CTRL, AL
@@ -3057,14 +3066,8 @@ BOOT_WARM LABEL NEAR
 ;----------------------------------------------------------------------------;
 ; Warm boot (Ctrl-Alt-Del)
 ;
-	CLI
-			IF INIT_V40 EQ 1 OR INIT_AT_KBC EQ 1
-;----------------------------------------------------------------------------;
-; Early Chipset Setup V40 and AT KBC
-;----------------------------------------------------------------------------;
-	JMP	EARLY_INIT
-EARLY_INIT_DONE:
-			ENDIF
+	CLI					; disable CPU interrupts
+	CLD
 
 ;----------------------------------------------------------------------------;
 ; POST Hardware/System Tests
@@ -4399,7 +4402,7 @@ UM82_MEM_SIZE ENDP
 
 			IF INIT_V40 EQ 1 OR INIT_AT_KBC EQ 1
 ;----------------------------------------------------------------------------;
-; Early hardware init
+; Cold boot hardware init
 ;----------------------------------------------------------------------------;
 ; Set up any special hardware that must be initialized at power on.
 ;----------------------------------------------------------------------------;
@@ -4453,7 +4456,7 @@ V40_REG LABEL BYTE
 L_V40_REG	=	($-V40_REG)/2
 			ENDIF		; /IF INIT_V40 EQ 1
 
-EARLY_INIT PROC
+COLD_INIT PROC
 
 			IF INIT_V40 EQ 1
 ;----------------------------------------------------------------------------;
@@ -4491,11 +4494,11 @@ SETUP_AT_KBC ENDP
 			ENDIF
 
 ;----------------------------------------------------------------------------;
-; Done with EARLY_INIT - continue POST
+; Done with COLD_INIT - continue POST
 ;
-	JMP	EARLY_INIT_DONE	; continue POST
+	JMP	COLD_INIT_DONE	; continue POST
 
-EARLY_INIT ENDP
+COLD_INIT ENDP
 			ENDIF
 
 			IF FD_AUTO_DETECT EQ 1
