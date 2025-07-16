@@ -35,9 +35,6 @@
 ;  "Programmer's Guide to PC Video Systems", Second Edition, Wilton
 ;  (Many more inline...)
 ;
-;  Font bitmaps by "VileR", (CC BY-SA 4.0)
-;  https://int10h.org/oldschool-pc-fonts/readme/#legal_stuff
-;
 ;  @Raffzahn, Contributor and Meckerhut.
 ;
 ;  https://github.com/640-KB/GLaBIOS#further-credits-to
@@ -88,19 +85,20 @@ ARCH_5150		EQU	'P'			; 5150
 ARCH_5160		EQU	'X'			; 5160 v1
 ARCH_5160v2		EQU	'Y'			; 5160 v2/3
 ARCH_TURBO		EQU	'T'			; Standard Turbo or clone
-ARCH_TD3300		EQU	'S'			; TD3300A (ST-xx/UNIQUE/Auva)
+ARCH_TD3300		EQU	'S'			; TD3300A, VDL C1, D-11
 ARCH_FE2010		EQU	'F'			; Faraday FE2010A
 ARCH_EHB		EQU	'H'			; EMM Computers/Homebrew8088
 ARCH_EMU		EQU	'E'			; 86Box/Emulator
 ARCH_M88		EQU	'M'			; micro_8088/NuXT
 ARCH_MIST		EQU	'I'			; PCXT_MiSTer
-ARCH_UM82		EQU	'U'			; UMC UM82C088 / ALi M1101
+ARCH_UM82		EQU	'U'			; UMC UM82C088, ALi M1101, TACT80101FT
 ARCH_MARTY		EQU	'C'			; MartyPC Emulator
 ARCH_VEN888		EQU	'V'			; Vendex 888-XT
 ARCH_LASER		EQU	'L'			; VTech Laser Turbo XT
 ARCH_BOOK88		EQU	'B'			; Book 8088
 ARCH_CPQ		EQU	'Q'			; Compaq Portable XT
 ARCH_VIRTUALXT	EQU	'J'			; VirtualXT Emulator
+ARCH_NEST		EQU	'N'			; Juko Nest N3 (D-11 chipset)
 
 ;
 ; CPU Instruction Set Target
@@ -130,7 +128,7 @@ VER_NAME		EQU	'GLaBIOS'
 VER_NUM		EQU	'0.2.6'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'06/30/25'		; must be MM/DD/YY per Intel CSM
+VER_DATE		EQU	'07/15/25'		; must be MM/DD/YY per Intel CSM
 	ENDIF
 COPY_YEAR		EQU	'2022-25'		; Copyright year range
 
@@ -172,6 +170,7 @@ ARCH_TYPE		EQU	ARCH_TURBO		; Standard Turbo
 ;ARCH_SUB_TYPE	EQU	ARCH_MARTY		; MartyPC Emulator (TYPE ARCH_TURBO)
 ;ARCH_SUB_TYPE	EQU	ARCH_VIRTUALXT	; VirtualXT Emulator (TYPE ARCH_TURBO)
 ;ARCH_SUB_TYPE	EQU	ARCH_VEN888		; Vendex 888-XT (TYPE ARCH_TURBO)
+;ARCH_SUB_TYPE	EQU	ARCH_NEST		; Juko Nest N3 (TYPE ARCH_TD3300)
 	ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -400,6 +399,16 @@ TD_UPMEM		=	1			; clear and display upper memory bank
 RAM_DIGITS		=	4			; display RAM as four digits
 POST_TEST_PIC_REG	=	0			; disable PIC reg test (code space)
 		ENDIF
+
+	IF ARCH_SUB_TYPE EQ ARCH_NEST
+;----------------------------------------------------------------------------;
+; Configuration for Juko Nest N3/D-11 chipset
+;
+TD_WS_SETUP		=	1			; set wait state register on boot
+UNSAFE_REFRESH	=	1			; go big or go home
+DRAM_REFRESH	=	655
+N3_UMA		=	1			; enable UMA bank (E000) on boot
+	ENDIF
 	ENDIF
 
 	IF ARCH_TYPE EQ ARCH_UM82
@@ -850,6 +859,10 @@ POST_CARD_PORT	EQU	80H			; can be 60H, 80H, 300H, 313H
 TD_WS			EQU	70H			; RAM, I/O wait state control
 TD_TURBO		EQU	90H			; Write 2 for Turbo, 3 for Normal
 TD_MEM		EQU	0E0H			; Memory bank switch
+
+; Nest D-11
+N3_CTRL		EQU	90H			; D-11 control register
+N3_MEM		EQU	0C0H			; set upper memory bank for seg E000 (A-F)
 
 ; UM82C088 Speed / Status registers
 UM82_SPEED		EQU	0C0H			; write any value to toggle speed mode
@@ -1691,7 +1704,7 @@ PPI_CR RECORD	PPEN:1=1,PPAM:2=00b,PPAD:1=1,PPCU:1=1,PPBM:1,PPBD:1,PPCL:1=1
 
 			IF ARCH_TYPE EQ ARCH_TD3300
 ;----------------------------------------------------------------------------;
-; TD3300A Wait State Config Register (70H)
+; TD3300A/D-11 Wait State Config Register (70H)
 ;----------------------------------------------------------------------------;
 ; 84218421
 ; 76 	    |			- TDWSI	Slot I/O  (# of wait states 0-3)
@@ -1709,9 +1722,18 @@ TD_WS_R_4	EQU	TD_WS_CR < 0, 0, 0, 0, 0 >	; TD4 - fastest (0 ws all)
 
 ;----------------------------------------------------------------------------;
 ; If TD_WS_SETUP=1, set below wait state register configuration on boot.
+; The Nest/D-11 seems to have issues when I/O WS is set to 1 reading from a
+; port address not present that is seemingly related to the number of cards
+; installed, which can lead to misdetection of interfaces. So the I/O WS
+; is set to 2 during POST and then to 1 for BOOT.
 ;
+			IF ARCH_SUB_TYPE EQ ARCH_NEST
+TD_WS_R	EQU	TD_WS_R_2		; POST: 2 I/O slot ws, 1 I/O RAM ws, 1 board WS
+TD_WS_RB	EQU	TD_WS_R_3		; BOOT: 1 I/O slot ws, 0 I/O RAM ws, 0 board WS
+			ELSE
 ;TD_WS_R	EQU	TD_WS_R_1		; default power on
 TD_WS_R	EQU	TD_WS_R_3		; 0 I/O slot ws, 1 I/O RAM ws, 0 board WS
+			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; TD3300A Speed (Turbo/Normal) Register (90H)
@@ -1733,6 +1755,20 @@ TD_TURBO_CR	RECORD	TDSX:6,TDSH:1=1,TDSS:1	; hardware switch disabled
 ;        0| 		- TDUB	map 2000H-8000H: 0=lower bank,1=upper bank
 ;----------------------------------------------------------------------------;
 TD_MEM_CR	RECORD	TDUX:7,TDUB:1
+
+;----------------------------------------------------------------------------;
+; D-11 (Nest N3) Control Register (90H)
+; Not confirmed to be accurate!
+;----------------------------------------------------------------------------;
+; 76      |    - D11UM    11=enable UMA/EMS bank switching by 0C0H (0AH-0FH)
+;   5     |    - D11X     Unused?
+;    4    |    - D11SX    Select xtal (1=high speed, 0=low)
+;     3   |    - D11Y     Unused?
+;      2  |    - D11SC    Clock multiplier 1=2x (low xlat+med), 0=1x
+;       1 |    - D11SF    Speed flag (read/writeable)
+;        0|    - D11SS    R: state of HW switch W: 1=low osc, 0=high osc
+;----------------------------------------------------------------------------;
+D11_CR	RECORD	D11UM:2,D11X:1,D11SX:1,D11B:1,D11SC:1,D11SF:1,D11SS:1
 
 			ENDIF		; END ARCH_TYPE EQ ARCH_TD3300
 
@@ -3006,9 +3042,22 @@ BYTES_HERE	BOOT
 ;----------------------------------------------------------------------------;
 		ORG	0E05BH
 BOOT	PROC	NEAR
-	CLI 					; disable CPU interrupts
-	CLD					; clear direction flag
 
+			IF ARCH_SUB_TYPE EQ ARCH_NEST
+;----------------------------------------------------------------------------;
+; Set up D-11 chipset first only on cold boot
+;
+	CLI 							; disable CPU interrupts
+	IN	AL, N3_CTRL
+	OR	AL, MASK D11SX OR MASK D11B
+	OUT	N3_CTRL, AL
+			ENDIF
+
+BOOT_WARM LABEL NEAR
+;----------------------------------------------------------------------------;
+; Warm boot (Ctrl-Alt-Del)
+;
+	CLI
 			IF INIT_V40 EQ 1 OR INIT_AT_KBC EQ 1
 ;----------------------------------------------------------------------------;
 ; Early Chipset Setup V40 and AT KBC
@@ -3143,6 +3192,33 @@ RESET_PPI:
 	OUT	PPI_B, AL			; send to 8255 Port B
 
 			IF ARCH_TYPE EQ ARCH_TD3300
+			IF ARCH_SUB_TYPE EQ ARCH_NEST
+;----------------------------------------------------------------------------;
+; Nest N3 setup part 2 - WARM or COLD
+; - Enable/Disable UMA at E000 according to N3_UMA
+; - Set initial speed according to BOOT_SPEED
+;
+	IN	AL, N3_CTRL
+				IF BOOT_SPEED EQ BOOT_TURBO	; BOOT_TURBO
+				IF N3_UMA
+	OR	AL, MASK D11SX OR MASK D11B OR MASK D11UM	OR MASK D11SF ; enable upmem
+	AND	AL, NOT MASK D11SS				; clear speed bit
+				ELSE
+	OR	AL, MASK D11SX OR MASK D11B OR MASK D11SF	; set speed flag
+	AND	AL, NOT MASK D11SS AND NOT MASK D11UM	; clear speed bit, disable upmem
+				ENDIF
+				ELSE					; BOOT_NORMAL
+				IF N3_UMA
+	OR	AL, MASK D11UM OR MASK D11SX			; enable upper memory
+				ELSE
+	OR	AL, MASK D11SX					; enable speed
+	AND	AL, NOT MASK D11UM				; disable upper memory
+				ENDIF
+	XOR	AL, MASK D11SS					; flip hardware speed bit to set
+				ENDIF
+	OUT	N3_CTRL, AL
+
+			ELSE
 ;----------------------------------------------------------------------------;
 ; Set up TD3300 Turbo, wait states and bank switching. If TD_UPMEM, it will
 ; be set later.
@@ -3159,7 +3235,8 @@ RESET_PPI:
 	MOV	AL, TD_TURBO_CR <,,1>	; switch to normal (4.77)
 				ENDIF
 	OUT	TD_TURBO, AL		; write new register
-			ENDIF			; ENDIF ARCH_TD3300
+			ENDIF			; ENDIF EQ ARCH_NEST
+			ENDIF			; ENDIF EQ ARCH_TD3300
 
 			IF ARCH_TYPE EQ ARCH_LASER
 ;----------------------------------------------------------------------------;
@@ -3924,7 +4001,7 @@ SETTINGS_SAVE:
 ;
 	;CLI					; disable interrupts (already off)
 	IN	AL, TD_WS			; read and throw away
-	MOV	AL, TD_WS_R			; set new default wait states
+	MOV	AL, TD_WS_R			; set new default POST wait states
 	OUT	TD_WS, AL			; write to register
 	STI					; write two STIs for TD3300 to accept
 	STI
@@ -4026,6 +4103,7 @@ TOGGLE_TURBO PROC
 	CLI						; interrupts off
 
 		IF ARCH_TYPE EQ ARCH_TD3300
+			IF ARCH_SUB_TYPE NE ARCH_NEST
 ;----------------------------------------------------------------------------;
 ; TD3300A Port 90h Turbo switch
 ; If port 90 == 1, send 2 (0010b) Normal -> Turbo
@@ -4041,6 +4119,23 @@ TOGGLE_TURBO_TD_1:
 	OUT	TD_TURBO, AL			; write to board
 	CMP	AL, MASK TDSH OR MASK TDSS	; turbo on? (NZ = turbo)
 
+			ELSE
+;----------------------------------------------------------------------------;
+; D-11 Turbo toggle
+; Bit 1 (D11SF) is used to keep state of current speed, since software-set
+; speed is not readable. XOR software-controlled speed bit (D11SS) with speed
+; flag big (D11SF) and flip.
+;
+	IN	AL, N3_CTRL
+	OR 	AL, MASK D11SX			; set speed bit
+	MOV	AH, AL				; save state bit
+	SHR	AH, 1					; shift to low bit
+	AND	AH, MASK D11SS			; isolate speed bit
+	XOR	AL, AH				; flip if needed
+	XOR	AL, MASK D11SF			; flip flag
+	OUT	N3_CTRL, AL
+	TEST	AL, MASK D11SF			; turbo on? (NZ = turbo)
+			ENDIF				; NOT ARCH_NEST
 		ELSE					; NOT ARCH_TD3300
 
 ;----------------------------------------------------------------------------;
@@ -4174,6 +4269,11 @@ TOGGLE_TURBO ENDP
 ;	SI = on first call: sign bit set (from POST_MEMORY string offset)
 ;----------------------------------------------------------------------------;
 TD3300_MEM_CLEAR PROC
+
+			IF ARCH_SUB_TYPE NE ARCH_NEST
+;----------------------------------------------------------------------------;
+; TD3300A implementation
+;----------------------------------------------------------------------------;
 	XOR	AX, AX				; ensure AL is 0
 	OUT	TD_MEM, AL				; switch to lower bank (AL=0)
 	TEST	SI, SI				; done clearing TD high memory?
@@ -4207,9 +4307,37 @@ TD3300_MEM_CLEAR_HI:
 TD3300_NO_CLEAR:
 	MOV	BX, 1024 - 16			; fake 1024K display count
 	JMP	NEAR PTR ZERO_ALL_RAM		; display RAM count and exit test
+
+			ELSE
+;----------------------------------------------------------------------------;
+; D-11/Nest implementation. Swap each 64K bank into E000, clear and test.
+;----------------------------------------------------------------------------;
+	MOV	AX, SI				; AL = current page to test (0AH-0FH)
+	CMP	AL, 0FH				; past last page?
+	JA	TD_DONE_ZERO_ALL_RAM		; exit if done
+	OUT	N3_MEM, AL 				; select next UMA page
+
+;----------------------------------------------------------------------------;
+; On Nest, Motherboard RAM select DIP switches are not connected to PPI so
+; upper RAM size must instead be detected.
+;
+	PUSH	BX					; preserve BX
+	MOV	AX, 0E000H				; first, address line test
+	MOV	ES, AX				; Test 16K segment at ES:0
+	CALL	MEM_ADDR_TEST			; test if RAM installed, ZF if so
+	POP	BX
+	JNZ	TD_DONE_ZERO_ALL_RAM		; exit if RAM not detected
+
+	INC	SI					; next page
+	MOV	AX, ES				; AX = window at segment E000H
+	MOV	DH, HIGH 0F000H			; end at segment F000H
+	JMP	NEAR PTR ZERO_ALL_RAM_1		; continue RAM test
+TD_DONE_ZERO_ALL_RAM:
+	JMP	NEAR PTR TD_MEM_CLEAR_DONE	; return, RAM test complete
+			ENDIF				; END NE ARCH_NEST
 TD3300_MEM_CLEAR ENDP
-			ENDIF
-			ENDIF
+			ENDIF				; END EQ TD_UPMEM
+			ENDIF				; END EQ ARCH_TD3300
 
 			IF ARCH_TYPE EQ ARCH_FE2010
 ;----------------------------------------------------------------------------;
@@ -4725,6 +4853,18 @@ DMA_STATUS_OK:
 	MOV	DI, OPT_ROM_END			; end below 0FE00H
 	CALL	BIOS_ROM_SCAN			; scan for option ROMs, AL = 0
 
+			IF ARCH_SUB_TYPE EQ ARCH_NEST
+			IF TD_WS_SETUP EQ 1
+;----------------------------------------------------------------------------;
+; Set up Nest/D-11 running W/S configuation
+;
+	IN	AL, TD_WS			; read and throw away
+	MOV	AL, TD_WS_RB		; set new default BOOT wait states
+	OUT	TD_WS, AL			; write to register
+	STI					; write two STIs for TD3300 to accept
+			ENDIF
+			ENDIF
+
 ;----------------------------------------------------------------------------;
 ; [31] Enable interrupts
 ;----------------------------------------------------------------------------;
@@ -5017,7 +5157,11 @@ POST_STRINGS PROC
 ; POST Test Strings
 ;
 POST_CPU		DB	'CPU',  0			; 'CPU' followed by default
+					IF ARCH_SUB_TYPE EQ ARCH_NEST
+			DB	'8086', 0			;  *must be after POST_CPU
+					ELSE
 			DB	'8088', 0			;  *must be after POST_CPU
+					ENDIF
 POST_FPU		DB	'FPU',  0			; 'FPU' followed by default
 			DB	'8087', 0			;  *must be after POST_FPU
 POST_HD		DB	':',    0			; HD size letter display
@@ -5029,7 +5173,11 @@ POST_MEMORY		DB	'RAM',  0			; RAM Memory test
 					ENDIF
 			DB	'000 ', POST_K_UNIT	;  and KB or KiB
 			DB	' OK',  0
+					IF ARCH_SUB_TYPE EQ ARCH_NEST
+POST_V20		DB	'V30'
+					ELSE
 POST_V20		DB	'V20'
+					ENDIF
 					IF INIT_V40 EQ 1
 			DB	'/V40'			; could be a V40
 					ENDIF
@@ -5217,6 +5365,18 @@ DETECT_MEMORY PROC
 			ENDIF
 
 ;----------------------------------------------------------------------------;
+; Set up Nest/D-11 for UMA bank switching
+;
+			IF ARCH_SUB_TYPE EQ ARCH_NEST
+			IF TD_UPMEM EQ 1
+	IN	AL, N3_CTRL				; get current register
+	PUSH	AX					; save register
+	OR	AL, MASK D11UM			; enable upper memory
+	OUT	N3_CTRL, AL
+			ENDIF
+			ENDIF
+
+;----------------------------------------------------------------------------;
 ; Detect RAM size in 16K blocks
 ;
 	MOV	DX, KBP < 16 >			; Start at second 16KB block para
@@ -5257,6 +5417,11 @@ BLOCK_LOOP_DONE:
 	POST_COL_END				; end post column
 	XOR	BX, BX				; BX = 0, memory test counter
 	MOV	ES, BX				; start at segment 0000
+			IF ARCH_SUB_TYPE EQ ARCH_NEST
+			IF TD_UPMEM EQ 1
+	MOV	SI, 0AH				; start UMA test at bank 0AH
+			ENDIF
+			ENDIF
 ZERO_ALL_RAM:
 	XOR	AX, AX				; zero AX
 	ADD	BX, 16				; increment memory count value
@@ -5316,8 +5481,15 @@ DONE_ZERO_ALL_RAM:
 ;----------------------------------------------------------------------------;
 	JMP	TD3300_MEM_CLEAR			; handle bank clearing
 TD_MEM_CLEAR_DONE:
-			ENDIF
-			ENDIF
+			IF ARCH_SUB_TYPE EQ ARCH_NEST
+;----------------------------------------------------------------------------;
+; Restore N3/D-11 bank register
+;
+	POP	AX					; get saved register
+	OUT	N3_CTRL, AL				; reset
+			ENDIF				; ARCH_SUB_TYPE EQ ARCH_NEST
+			ENDIF				; TD_UPMEM EQ 1
+			ENDIF				; ARCH_TYPE EQ ARCH_TD3300
 
 ;----------------------------------------------------------------------------;
 ; Done with DETECT_MEMORY
@@ -5360,6 +5532,7 @@ DETECT_MEMORY_ERR:
 	JMP	SHORT DETECT_MEMORY_ERR_DONE
 DETECT_MEMORY_ERR_2:
 	XCHG	AX, DI				; restore failed bit pattern
+	CALL	SPACE
 	CALL	WORD_HEX
 DETECT_MEMORY_ERR_DONE:
 	POST_COL_END
@@ -5382,7 +5555,7 @@ DETECT_MEMORY ENDP
 ;	ZF if okay, NZ if fail
 ;	BX = offset of failed byte/line, DI
 ;
-; Clobbers AL
+; Clobbers AL, DI
 ;
 ; Inspired by:
 ; http://www.ganssle.com/testingram.htm
@@ -6897,11 +7070,11 @@ INT_KB_CTRL_ALT_DEL:
 			ENDIF
 
 			IF CPU_TYPE	EQ CPU_V20
-	PUSH	OFFSET BOOT					; ret address is warm reboot
+	PUSH	OFFSET BOOT_WARM				; ret address is warm reboot
 	JMP	BEEP						; beep and return to reboot
 			ELSE
 	CALL	BEEP						; BEEP on ctrl-alt-del
-	JMP	BOOT						; warm reboot
+	JMP	BOOT_WARM					; warm reboot
 			ENDIF
 
 			IF IS_TURBO
@@ -6925,7 +7098,11 @@ INT_KB_CTRL_ALT_1:
 INT_KB_TOGGLE_TURBO PROC
 			IF ARCH_TYPE EQ ARCH_TD3300
 	IN	AL, TD_TURBO				; read current state
+				IF ARCH_SUB_TYPE EQ ARCH_NEST
+	TEST	AL, MASK D11SF				; turbo on? (NZ = turbo)
+				ELSE
 	CMP	AL, MASK TDSS				; turbo on? (NZ = turbo)
+				ENDIF
 			ELSE
 				IF ARCH_TYPE EQ INIT_V40
 	MOV	DX, V40_WCR1				; V40 W/S register

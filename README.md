@@ -125,7 +125,7 @@ Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org, s
 - The [Code Golf (CGCC)](https://codegolf.stackexchange.com/) community on Stack Exchange for helping me become a better ASM programmer.
 - @dbalsom (aka gloriouscow) for moral support and the incredible [MartyPC](https://github.com/dbalsom/martypc) emulator software.
 - @Raffzahn, Contributor, Advisor and Meckerhut.
-- @MadMaxx12345, @Makefile, @punishedbunny, @PickledDog and many others for testing, bug finding and feature suggestions.
+- @MadMaxx12345, @Makefile, @punishedbunny, @PickledDog, @sqpat and many others for testing, bug finding and feature suggestions.
 - Hampa Hug for the excellent [PCE software](http://www.hampa.ch/pce/pce-ibmpc.html) that helped make development and debugging much easier.
 - Dave Nault, my partner in crime for 2 semesters of college assembly language programming classes back in the day. Wherever you are buddy, hope you're doing well!
 
