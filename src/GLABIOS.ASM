@@ -617,11 +617,7 @@ BOOT_SPEED		EQU	BOOT_NORMAL
 ; If Cassette enabled, some of the following features must be disabled due to
 ; code space limitations.
 ;
-CAS_RELOCATE	=	0			; keep CAS code in contiguous block
-
 	IF CASSETTE EQ 1
-CAS_RELOCATE	=	1			; relocate cassette code
-
 ;----------------------------------------------------------------------------;
 ; One of the following features may be enabled in addition to cassette support.
 ;
@@ -629,7 +625,6 @@ LIGHT_PEN		=	1			; enable light pen
 POST_HD_PARMS	=	0			; enable POST HD size display
 POST_OPT_ROM	=	0			; enable POST option ROM display
 RANDOM_TAGLINE	=	0			; enable random tagline
-
 	ENDIF
 
 	IF POST_HD_CHECK EQ 0
@@ -5755,7 +5750,6 @@ IO_WAIT_MS_DONE:
 ; Output: AX = current counter
 ; Time: 123 clock cycles (including CALL)
 ;----------------------------------------------------------------------------;
-
 IO_WAIT_LATCH PROC
 	MOV	AL, PIT_CW <0, 0>		; Counter 0, Latch (00b)
 	PUSHF					; save current IF
@@ -5786,7 +5780,7 @@ IO_DELAY_MS_FDC ENDP
 IO_DELAY_MS_FDC	EQU IO_DELAY_MS
 		ENDIF
 
-			IF CAS_RELOCATE EQ 1
+		IF CASSETTE EQ 1
 ;----------------------------------------------------------------------------;
 ; CAS_READ_WORD: read 16 bits, add to working CRC
 ;----------------------------------------------------------------------------;
@@ -5855,8 +5849,7 @@ CAS_READ_BYTE_RET:
 
 CAS_READ_BYTE ENDP
 CAS_READ_WORD ENDP
-			ENDIF
-
+		ENDIF				; CASSETTE EQ 1
 ;
 ; 25 BYTES HERE / 22 BYTES HERE 5150
 ;
@@ -7358,7 +7351,6 @@ _CAS_PREV		EQU	BYTE PTR[SI][CAS_PREV-CAS_CRC]
 _CAS_TIME_CNT	EQU	WORD PTR[SI][CAS_TIME_CNT-CAS_CRC]
 _BIOS_BREAK		EQU	BYTE PTR[SI][BIOS_BREAK-CAS_CRC]
 
-			IF CAS_RELOCATE EQ 1
 ;----------------------------------------------------------------------------;
 ; CAS_CRC_ADD: Add current bit to CRC message
 ;----------------------------------------------------------------------------;
@@ -7397,8 +7389,7 @@ CAS_CRC_SHIFT:
 	XCHG	_CAS_CRC, AX		; store working CRC, restore AX
 	RET
 CAS_CRC_ADD ENDP
-			ENDIF
-			ENDIF
+			ENDIF			; IF CASSETTE EQ 1
 
 ;
 ; 7 BYTES HERE / 6 BYTES HERE 5150
@@ -10908,7 +10899,7 @@ WORD_HEX ENDP
 DWORD_HEX ENDP
 
 ;
-; 51 BYTES HERE
+; 50 BYTES HERE
 ;
 BYTES_HERE	INT_12
 
@@ -11555,118 +11546,6 @@ CAS_READ_CYCLE_LOOP:
 	RET
 CAS_READ_CYCLE ENDP
 CAS_READ ENDP
-
-			IF CAS_RELOCATE EQ 0
-;----------------------------------------------------------------------------;
-; CAS_READ_WORD: read 16 bits, add to working CRC
-;----------------------------------------------------------------------------;
-; Output:
-;	AX = word read (little endian)
-;	CF if error
-;----------------------------------------------------------------------------;
-CAS_READ_WORD PROC
-	CALL	CAS_READ_BYTE
-	JC	CAS_READ_BYTE_RET
-
-;----------------------------------------------------------------------------;
-; CAS_READ_BYTE: read 8 bits, add to working CRC
-;----------------------------------------------------------------------------;
-; Output:
-;	AL = byte read
-;	CF if error
-;
-; Clobbers: AH, BL, DX
-;----------------------------------------------------------------------------;
-CAS_READ_BYTE PROC
-	PUSH	CX				; save CX
-	MOV	CX, 8				; loop 8 bits
-
-;----------------------------------------------------------------------------;
-; CAS_READ_BIT: read 1 bit (2 cycles)
-;----------------------------------------------------------------------------;
-CAS_READ_BIT PROC
-CAS_READ_BIT_LOOP:
-	CALL	CAS_READ_CYCLE		; DX = read low cycle length
-	STC					; presume failure
-	JZ	CAS_READ_BYTE_EXIT	; exit if unable to read
-	PUSH	DX				; save low length
-	CALL	CAS_READ_CYCLE		; DX = read high cycle length
-	POP	AX				; AX = low length
-	STC					; presume failure
-	JZ	CAS_READ_BYTE_EXIT
-	ADD	AX, DX			; AX = full cycle length
-
-;----------------------------------------------------------------------------;
-; Determine bit value based on full cycle duration with 33% tolerance.
-;
-; 1: 2t * 1193182 (Hz) / 1007 Hz = ~ 2368 ticks
-; 0: 2t * 1193182 (Hz) / 2014 Hz = ~ 1184 ticks
-; (Note: raw timer counter readings are doubled, so must be adjusted by 2x)
-;
-; BEEP_1K7 = 1184 ticks = ~1007 Hz
-; BEEP_2K  = 592 ticks  = ~2014 Hz
-;
-; Use median of values to determine maximum length of a '1' bit cycle:
-; 1184 + 592 -> 1776 / 2 = ~ 1344 Hz = ~ 33% tolerance
-;
-	MOV	DX, BEEP_1K7 + BEEP_2K	; DX = median cycle length
-	CMP	DX, AX			; above or below median freq?
-	CALL	CAS_CRC_ADD			; add bit to working CRC
-	CMP	DX, AX			; above or below median freq?
-	ADC	BL, BL			; add bit to result
-	LOOP	CAS_READ_BIT_LOOP
-	MOV	AL, BL			; AL = result
-CAS_READ_BIT ENDP
-	CLC					; no error
-CAS_READ_BYTE_EXIT:
-	POP	CX
-CAS_READ_BYTE_RET:
-	RET
-
-CAS_READ_BYTE ENDP
-CAS_READ_WORD ENDP
-			ENDIF			; CAS_RELOCATE
-
-			IF CAS_RELOCATE EQ 0
-;----------------------------------------------------------------------------;
-; CAS_CRC_ADD: Add current bit to CRC message
-;----------------------------------------------------------------------------;
-; Input:
-;	CF = bit to add
-;	SI = OFFSET CAS_CRC
-;----------------------------------------------------------------------------;
-; This is (effectively) CRC16-CCITT as used by IBM for SDLC/HDLC. It uses a
-; 0FFFFh initial/preset value, 1021h polynomial and has an expected residue
-; value of 01D0Fh.
-;
-; cf = ( ( crc & 0x8000 ) >> 15 ) ^ CF;
-; if ( cf ) {
-;	crc = crc ^ 0x0810;
-; }
-; crc = crc << 1 | cf;
-; return crc;
-;
-; https://stackoverflow.com/questions/62771192/crc16-ccitt-calculation
-; http://bitsavers.trailing-edge.com/pdf/ibm/datacomm/GA27-3093-3_SDLC_Concepts_Jun86.pdf
-;----------------------------------------------------------------------------;
-CAS_CRC_PRE		EQU	0FFFFh	; Cassette CRC16-CCITT preset value
-CAS_CRC_RES		EQU	01D0Fh	; Cassette CRC16-CCITT residue value
-CAS_CRC_POLY 	EQU 	01021h	; Cassette CRC16-CCITT polynomial
-
-CAS_CRC_ADD PROC
-	XCHG	AX, _CAS_CRC		; get working CRC, save AX
-	RCR	AX, 1				; set up for RCL
-	RCL	AX, 1				; OF = MSB(AX) XOR CF
-	CLC					; CF = OF
-	JNO	CAS_CRC_SHIFT		; if OF: AX = AX XOR 0810h
-	XOR	AX, CAS_CRC_POLY SHR 1	; divide by polynomial (already shifted)
-	STC					; CF = OF
-CAS_CRC_SHIFT:
-	ADC	AX, AX			; add bit to working CRC value
-	XCHG	_CAS_CRC, AX		; store working CRC, restore AX
-	RET
-CAS_CRC_ADD ENDP
-			ENDIF			; CAS_RELOCATE
 
 INT_15_CASS ENDP
 			ENDIF			; ENDIF CASSETTE EQ 1
