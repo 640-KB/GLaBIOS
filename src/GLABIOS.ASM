@@ -407,6 +407,7 @@ TD_WS_SETUP		=	1			; set wait state register on boot
 UNSAFE_REFRESH	=	1			; go big or go home
 DRAM_REFRESH	=	655
 N3_UMA		=	1			; enable UMA bank (E000) on boot
+POST_CARD		=	0			; not enough code space
 	ENDIF
 	ENDIF
 
@@ -6379,7 +6380,7 @@ BEEP_PROC PROC
 ;  (then how does the speaker work?)
 ; Note 2: cannot use stack since HALT_BEEP could occur before stack
 ;
-; Size: 57 bytes
+; Size: 60 bytes
 ;----------------------------------------------------------------------------;
 HALT_BEEP PROC
 	MOV	DX, CS 				; SS to CS
@@ -6389,9 +6390,11 @@ HALT_BEEP PROC
 	AAM_I	10H					; split nibbles
 	XCHG	AX, BP				; BP(H) = short beeps, BP(L) = long beeps
 HALT_BEEP_START:
+	IO_DELAY_TURBO				; pause between sequences, CX = 0
 	MOV	DX, BP 				; restore original beep pattern
 	MOV	SI, BEEP_ERR_LOW			; low C5
-	XOR	DI, DI				; low beep on 100%
+HALT_BEEP_NEXT:
+	MOV	DI, CX				; set beep duration for this loop
 HALT_BEEP_REP:
 	MOV	AX, SI				; restore beep tone
 	CALL_NS  BEEP_ON_P, 1			; turn on speaker/beep, BL = old PPI state
@@ -6406,9 +6409,9 @@ HALT_BEEP_REP:
 	XCHG	DL, DH				; swap beep counts
 	TEST	DX, DX				; both cycles done?
 	JZ	HALT_BEEP_START			; if so, restart beep pattern
-	MOV	DI, DBW < 100H * 1/3 >		; else, short beep on 33%
+	MOV	CH, 100H * 1/3			; else, short beep on 33%
 	MOV	SI, BEEP_ERR_HIGH			; high F5
-	JMP	HALT_BEEP_REP			; start short cycle
+	JMP	HALT_BEEP_NEXT			; start short cycle
 HALT_BEEP ENDP
 
 ;----------------------------------------------------------------------------;
@@ -6646,7 +6649,7 @@ L_INT_KB_CTRL_ASC_TBL	EQU ($-INT_KB_CTRL_ASC_TBL)/2		; 12 total
 L_INT_KB_CTRL_SCAN_TBL	EQU ($-INT_KB_CTRL_SCAN_TBL)/2-1	; 6
 
 ;
-; 4 BYTES HERE
+; 1 BYTE HERE
 ;
 BYTES_HERE	INT_09
 
