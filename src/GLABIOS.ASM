@@ -125,10 +125,10 @@ TURBO_REV		EQU	2			; reversed PPI (0=turbo, 1=normal)
 ;
 VER_NAME		EQU	'GLaBIOS'
 	IFNDEF VER_NUM
-VER_NUM		EQU	'0.2.6'		; (max 5 chars)
+VER_NUM		EQU	'0.4.0'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'07/15/25'		; must be MM/DD/YY per Intel CSM
+VER_DATE		EQU	'07/17/25'		; must be MM/DD/YY per Intel CSM
 	ENDIF
 COPY_YEAR		EQU	'2022-25'		; Copyright year range
 
@@ -151,7 +151,6 @@ COPY_YEAR		EQU	'2022-25'		; Copyright year range
 	IFNDEF ARCH_TYPE
 ;ARCH_TYPE		EQU	ARCH_5150		; PC 5150
 ;ARCH_TYPE		EQU	ARCH_5160		; PC 5160 (recommended for non-Turbo)
-;ARCH_TYPE		EQU	ARCH_5160v2		; PC 5160v2 (not recommended)
 ARCH_TYPE		EQU	ARCH_TURBO		; Standard Turbo
 ;ARCH_TYPE		EQU	ARCH_TD3300		; TD3300A (ST-xx/UNIQUE/Auva)
 ;ARCH_TYPE		EQU	ARCH_FE2010		; Faraday FE2010A
@@ -165,6 +164,7 @@ ARCH_TYPE		EQU	ARCH_TURBO		; Standard Turbo
 ; Sub Architecture Types (use with the ARCH_TYPE in parentheses)
 ;
 	IFNDEF ARCH_SUB_TYPE
+;ARCH_SUB_TYPE	EQU	ARCH_5160v2		; PC 5160v2/v3 (TYPE ARCH_5160)
 ;ARCH_SUB_TYPE	EQU	ARCH_M88		; micro_8088/NuXT (TYPE ARCH_FE2010)
 ;ARCH_SUB_TYPE	EQU	ARCH_MIST		; PCXT_MiSTer (TYPE ARCH_EMU)
 ;ARCH_SUB_TYPE	EQU	ARCH_MARTY		; MartyPC Emulator (TYPE ARCH_TURBO)
@@ -340,7 +340,6 @@ DRAM_REFRESH	=	655		; "FASTV20" DRAM divisor: 1,821.65 Hz
 ; END Configurable Build Options
 ;----------------------------------------------------------------------------;
 
-
 ;----------------------------------------------------------------------------;
 ; ARCH/build-specific configuration
 ;----------------------------------------------------------------------------;
@@ -372,17 +371,15 @@ POST_TEST_DMA_TC0	=	0			; OEM 5150 BIOS does not do this test
 ;----------------------------------------------------------------------------;
 ; Configuration for 5160 boards
 ;
-	IF ARCH_TYPE EQ ARCH_5160v2
-ARCH_ID		=	0FBH			; 0xFB=XT v2/v3
-TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
-EXP_UNIT		=	1			; enable Expansion Unit
-OEM_FONT		=	1			; use OEM style font
-	ENDIF
 	IF ARCH_TYPE EQ ARCH_5160
 TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
 FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
 EXP_UNIT		=	1			; enable Expansion Unit
 OEM_FONT		=	1			; use OEM style font
+	ENDIF
+	IF ARCH_SUB_TYPE EQ ARCH_5160v2
+ARCH_ID		=	0FBH			; 0xFB=XT v2/v3
+FDC_IPL_SW		=	0			; Don't use IPL SW1 for drive count
 	ENDIF
 
 	IF ARCH_TYPE EQ ARCH_TD3300
@@ -391,6 +388,7 @@ OEM_FONT		=	1			; use OEM style font
 ;
 BASIC_ROM		= 	0			; disable to free code space
 FDC_HLT_WAIT	=	0			; halting CPU on FDC and KB wait
+FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
 KB_HLT_WAIT		=	0			;  seems to cause issues on TD3300A
 TURBO_TYPE		=	TURBO_STD		; always use Standard
 TURBO_SWITCH	=	1			; boot under hardware Turbo control
@@ -416,6 +414,7 @@ N3_UMA		=	1			; enable UMA bank (E000) on boot
 ;----------------------------------------------------------------------------;
 ; Configuration for UM82C088
 ;
+FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
 BASIC_ROM		= 	0			; disable to free code space
 		IF BASIC_ROM EQ 1			; if BASIC enabled, disable
 POST_TEST_PIC_REG	=	0			;  unnecessary tests to free code
@@ -450,6 +449,7 @@ DRAM_REFRESH	=	0			; disable DRAM refresh (for SRAM)
 RAM_PARITY		=	0			; disable memory parity check
 CGA_SNOW_REMOVE	=	0			; disable snow removal
 FE_CPU_CFG		=	110b			; boot to 9.54 MHz, 2 RAM WS
+OEM_KB_EXT		=	0			; uses AT2XTKB keyboard interface
 	ENDIF
 	ENDIF
 
@@ -625,10 +625,10 @@ CAS_RELOCATE	=	1			; relocate cassette code
 ;----------------------------------------------------------------------------;
 ; One of the following features may be enabled in addition to cassette support.
 ;
-POST_HD_PARMS	=	1			; enable POST HD size display
+LIGHT_PEN		=	1			; enable light pen
+POST_HD_PARMS	=	0			; enable POST HD size display
 POST_OPT_ROM	=	0			; enable POST option ROM display
 RANDOM_TAGLINE	=	0			; enable random tagline
-LIGHT_PEN		=	0			; enable light pen
 
 	ENDIF
 
@@ -3022,7 +3022,7 @@ TOP_BANNER	DB	LF
 				IF RANDOM_TAGLINE EQ 1
 		DB	0				; null terminate BANNER string
 				ENDIF
-TAG0		DB	"The hero we need but don't deserve"
+TAG0		DB	"The Past is the Future"
 				IF RANDOM_TAGLINE EQ 1
 		DB	0				; null terminate TAG0 string
 				ENDIF
@@ -3033,6 +3033,24 @@ COPYRIGHT	DB	CR, LF
 		DB	0
 
 BIOS_TOP 	ENDP
+
+;----------------------------------------------------------------------------;
+; Display a zero-terminated string in BIOS at CS:[SI] with ending NL
+;----------------------------------------------------------------------------;
+; Input: CS:SI = String
+; Size: 12 bytes
+;----------------------------------------------------------------------------;
+OUTLN_SZ PROC
+	CALL	OUT_SZ			; write original string in SI
+						; fall through to CRLF
+;----------------------------------------------------------------------------;
+; Write a CRLF string to console
+;----------------------------------------------------------------------------;
+CRLF PROC
+	PRINT_SZ  NL_Z, 1
+	RET
+CRLF ENDP
+OUTLN_SZ ENDP
 
 ;
 ; 0 BYTES HERE
@@ -3062,7 +3080,7 @@ BOOT	PROC	NEAR
 COLD_INIT_DONE:
 			ENDIF
 
-			IF ARCH_SUB_TYPE EQ ARCH_NEST
+			IF ARCH_TYPE EQ ARCH_TD3300 AND ARCH_SUB_TYPE EQ ARCH_NEST
 ;----------------------------------------------------------------------------;
 ; Cold boot chipset setup for D-11
 ;
@@ -3883,7 +3901,6 @@ SETTINGS_5150:
 		IF ARCH_TYPE EQ ARCH_FE2010
 ;----------------------------------------------------------------------------;
 ; Is a FE2010A PC
-; Note: FPU won't be detected if BOOT_NORMAL (too many bytes to fix) TODO why?
 ;
 ; Set AL for BDA / switch register
 ; Set AH for system config register
@@ -4866,7 +4883,7 @@ DMA_STATUS_OK:
 	MOV	DI, OPT_ROM_END			; end below 0FE00H
 	CALL	BIOS_ROM_SCAN			; scan for option ROMs, AL = 0
 
-			IF ARCH_SUB_TYPE EQ ARCH_NEST
+			IF ARCH_TYPE EQ ARCH_TD3300 AND ARCH_SUB_TYPE EQ ARCH_NEST
 			IF TD_WS_SETUP EQ 1
 ;----------------------------------------------------------------------------;
 ; Set up Nest/D-11 running W/S configuation
@@ -5380,7 +5397,7 @@ DETECT_MEMORY PROC
 ;----------------------------------------------------------------------------;
 ; Set up Nest/D-11 for UMA bank switching
 ;
-			IF ARCH_SUB_TYPE EQ ARCH_NEST
+			IF ARCH_TYPE EQ ARCH_TD3300 AND ARCH_SUB_TYPE EQ ARCH_NEST
 			IF TD_UPMEM EQ 1
 	IN	AL, N3_CTRL				; get current register
 	PUSH	AX					; save register
@@ -5430,7 +5447,7 @@ BLOCK_LOOP_DONE:
 	POST_COL_END				; end post column
 	XOR	BX, BX				; BX = 0, memory test counter
 	MOV	ES, BX				; start at segment 0000
-			IF ARCH_SUB_TYPE EQ ARCH_NEST
+			IF ARCH_TYPE EQ ARCH_TD3300 AND ARCH_SUB_TYPE EQ ARCH_NEST
 			IF TD_UPMEM EQ 1
 	MOV	SI, 0AH				; start UMA test at bank 0AH
 			ENDIF
@@ -5841,7 +5858,7 @@ CAS_READ_WORD ENDP
 			ENDIF
 
 ;
-; 36 BYTES HERE / 15 BYTES HERE 5150
+; 25 BYTES HERE / 22 BYTES HERE 5150
 ;
 BYTES_HERE	INT_19
 
@@ -6477,7 +6494,7 @@ BEEP_ON_P PROC
 	OUT	PIT_CH2, AL				; send high byte to timer
 	IN	AL, PPI_B				; read current PPI port B status
 	MOV	BL, AL				; save original PPI state
-	OR	BL, MASK PBSP OR MASK PBST	; enable speaker and time gates
+	OR	BL, MASK PBSP OR MASK PBST	; enable speaker and timer gates
 
 ;----------------------------------------------------------------------------;
 ; Write to PPI (turn speaker on/off)
@@ -10672,7 +10689,7 @@ POST_START_COL_2 ENDP
 ;----------------------------------------------------------------------------;
 POST_END_COL_NL PROC
 	CALL	POST_END_COL
-	JMP	SHORT CRLF			; write CRLF and RET
+	JMP	CRLF				; write CRLF and RET
 POST_END_COL_NL ENDP
 
 ;----------------------------------------------------------------------------;
@@ -10779,26 +10796,6 @@ MOVE_COL_SET:
 	RET
 MOVE_COL ENDP
 POST_COL ENDP
-
-;----------------------------------------------------------------------------;
-; Display a zero-terminated string in BIOS at CS:[SI] with ending NL
-;----------------------------------------------------------------------------;
-; Input: CS:SI = String
-; Size: 12 bytes
-;----------------------------------------------------------------------------;
-OUTLN_SZ PROC
-	CALL	OUT_SZ			; write original string in SI
-						; fall through to CRLF
-
-;----------------------------------------------------------------------------;
-; Write a CRLF string to console
-;----------------------------------------------------------------------------;
-CRLF PROC
-	PRINT_SZ  NL_Z, 1
-	RET
-CRLF ENDP
-
-OUTLN_SZ ENDP
 
 ;----------------------------------------------------------------------------;
 ; Write a space char to console (8 bytes)
@@ -10911,7 +10908,7 @@ WORD_HEX ENDP
 DWORD_HEX ENDP
 
 ;
-; 39 BYTES HERE
+; 51 BYTES HERE
 ;
 BYTES_HERE	INT_12
 
@@ -11772,9 +11769,10 @@ HELLO_RAND_TAGLINE PROC
 ;----------------------------------------------------------------------------;
 ; Three additional random taglines
 ;
-TAG1		DB	'Ready to believe you', 0
+TAG1		DB	'On the leading trailing edge', 0
 TAG2		DB	'Abort, Retry, Succeed', 0
 TAG3		DB	'When life gives you lemonade', 0
+;		DB	'Ready to believe you', 0
 ;		DB	'An Energy Star Foe', 0
 ;		DB	'Now 97% asbestos-free', 0
 ;		DB	'Ought to be enough for anybody', 0
@@ -12028,7 +12026,7 @@ INT_10_4 ENDP
 		ENDIF
 
 ;
-; 85 BYTES HERE / 28 BYTES HERE 5150
+; 77 BYTES HERE / 0 BYTES HERE 5150
 ;
 BYTES_HERE	GFX_CHARSET
 
