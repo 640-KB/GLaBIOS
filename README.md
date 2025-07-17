@@ -6,7 +6,7 @@ Copyright &copy; 2022-2025, [640KB](mailto:640kb@glabios.org) and contributors.
 
 ## NEW Version 0.4:
 
-[Download ROMs](https://github.com/640-KB/GLaBIOS/releases/tag/v0.4.0)
+[Download ROMs](https://github.com/640-KB/GLaBIOS/releases/tag/v0.4.0-rc)
 
 [Source Code](https://github.com/640-KB/GLaBIOS/tree/main/src)
 
