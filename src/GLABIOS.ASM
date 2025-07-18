@@ -3018,7 +3018,7 @@ TOP_BANNER	DB	LF
 				IF RANDOM_TAGLINE EQ 1
 		DB	0				; null terminate BANNER string
 				ENDIF
-TAG0		DB	"The Past is the Future"
+TAG0		DB	'Reboot the Past'
 				IF RANDOM_TAGLINE EQ 1
 		DB	0				; null terminate TAG0 string
 				ENDIF
