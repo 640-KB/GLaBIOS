@@ -392,7 +392,7 @@ FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
 KB_HLT_WAIT		=	0			;  seems to cause issues on TD3300A
 TURBO_TYPE		=	TURBO_STD		; always use Standard
 TURBO_SWITCH	=	1			; boot under hardware Turbo control
-TD_WS_SETUP		=	1			; set wait state register on boot (0 ws)
+TD_WS_SETUP		=	0			; set wait state register on boot (0 ws)
 TD_UPMEM		=	1			; clear and display upper memory bank
 		IF TD_UPMEM EQ 1
 RAM_DIGITS		=	4			; display RAM as four digits
