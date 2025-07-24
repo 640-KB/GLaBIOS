@@ -8157,11 +8157,11 @@ FDC_SEND_RECV:
 ;----------------------------------------------------------------------------;
 ; Wait for FDC I/O direction = CPU to FDC and Data Reg Ready
 ;
-	MOV	DX, FDC_STAT 			; port 3F4H - FDC Main Status Register
 	MOV	CX, 5					; CX = # of ticks to wait
 	MOV	AH, BYTE PTR TIMER.LW		; get starting tick counter low byte
 
 FDC_SEND_WAIT_POLL:
+	MOV	DX, FDC_STAT 			; port 3F4H - FDC Main Status Register
 	IN	AL, DX				; AL = FDC status register
 	TEST	AL, AL				; is DRR = I/O to/from CPU?
 	JNS	FDC_SEND_WAIT_TIMER		; if not, check if timeout has elapsed
