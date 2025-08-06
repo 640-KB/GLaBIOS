@@ -115,7 +115,7 @@ Flight Simulator 1.0
 
 ### Contact
 
-Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org, submit an [Issue](../../issues) or [Discord](https://discord.gg/fFRwarUN).
+Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org, submit an [Issue](../../issues) or [Discord](https://discord.gg/By2gtpCNFa).
 
 ## References and Credits:
 
