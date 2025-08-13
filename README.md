@@ -2,13 +2,17 @@
 ## (General Libraries and Basic Input Output System)
 A modern, scratch-built, open-source alternative BIOS for vintage PC, XT, 8088 Clone or Turbo PCs.
 
-Copyright &copy; 2022-2024, [640KB](mailto:640kb@glabios.org) and contributors.
+Copyright &copy; 2022-2025, [640KB](mailto:640kb@glabios.org) and contributors.
 
-## Stable Version 0.2:
+## NEW Version 0.4:
 
 [Download ROMs](https://github.com/640-KB/GLaBIOS/releases)
 
 [Source Code](https://github.com/640-KB/GLaBIOS/tree/main/src)
+
+## Version 0.2:
+
+[Download ROMs](https://github.com/640-KB/GLaBIOS/releases/tag/v0.2.5)
 
 ## Features
 
@@ -29,7 +33,8 @@ Copyright &copy; 2022-2024, [640KB](mailto:640kb@glabios.org) and contributors.
 - Turbo XTs (DTK, most clones)
 - [Faraday FE2010A](https://github.com/skiselev/micro_8088/blob/master/Documentation/Faraday-XT_Controller-FE2010A.md)-based PCs ([Headstart Plus](http://oldcomputer.info/pc/hs_plus/index.htm)/VTI Vendex 33-XT/PC-10 and others)
 - TD3300A-based PCs (Juko ST, UNIQUE, Auva, etc)
-- UMC UM82C088/ALi M1101 chipset
+- UMC UM82C088/ALi M1101/TACT80101FT chipset
+- [Juko NEST N3](https://theretroweb.com/motherboards/s/juko-nest-n3) 8086/V30
 - [micro_8088](https://github.com/skiselev/micro_8088) / [NuXT](https://monotech.fwscart.com/)
 - [EMM Homebrew 8088](https://www.homebrew8088.com/) with 8088, V20 or V40
 - Vendex 888-XT/PB88/Samsung
@@ -47,7 +52,7 @@ Copyright &copy; 2022-2024, [640KB](mailto:640kb@glabios.org) and contributors.
 
 ## FAQ
 
-### Why another 8088 PC BIOS in <strike>2022</strike> <strike>2023</strike> 2024?
+### Why another 8088 PC BIOS in <strike>2022</strike> <strike>2023</strike> <strike>2024</strike> 2025?
 
 There are other excellent BIOS projects out there each with it's own design goals and use cases. The goals for GLaBIOS are:
 
@@ -65,7 +70,7 @@ If you aren't familiar with the reference, ask a gamer.
 
 **OR try it LIVE!**
 
-- [MartyPC](https://dbalsom.github.io/martypc/web/player.html?title=freedos)
+- [MartyPC](https://martypc.net/)
 - [VirtualXT](https://phix.itch.io/virtualxt)
 
 ### Building GLaBIOS
@@ -110,7 +115,7 @@ Flight Simulator 1.0
 
 ### Contact
 
-Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org or submit an [Issue](../../issues).
+Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org, submit an [Issue](../../issues) or [Discord](https://discord.gg/By2gtpCNFa).
 
 ## References and Credits:
 
@@ -125,7 +130,7 @@ Please send bug reports, feedback, questions or thoughts to 640kb@glabios.org or
 - The [Code Golf (CGCC)](https://codegolf.stackexchange.com/) community on Stack Exchange for helping me become a better ASM programmer.
 - @dbalsom (aka gloriouscow) for moral support and the incredible [MartyPC](https://github.com/dbalsom/martypc) emulator software.
 - @Raffzahn, Contributor, Advisor and Meckerhut.
-- @MadMaxx12345, @Makefile, @punishedbunny, @PickledDog and many others for testing, bug finding and feature suggestions.
+- @MadMaxx12345, @Makefile, @punishedbunny, @PickledDog, @sqpat and many others for testing, bug finding and feature suggestions.
 - Hampa Hug for the excellent [PCE software](http://www.hampa.ch/pce/pce-ibmpc.html) that helped make development and debugging much easier.
 - Dave Nault, my partner in crime for 2 semesters of college assembly language programming classes back in the day. Wherever you are buddy, hope you're doing well!
 
