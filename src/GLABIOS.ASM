@@ -138,7 +138,7 @@ COPY_YEAR		EQU	'2022-25'		; Copyright year range
 ; Very important note on custom configuration:
 ;
 ; Not all options can be combined due to very limited ROM code space of 8K,
-; and fitting withing fixed compatibility ORGs.
+; and fitting within fixed compatibility ORGs.
 ;
 ; For experimenting with build options, it's highly recommended to use
 ; MASM 5.0 as it will not build if code space is exceeded. Due to differences
@@ -495,7 +495,7 @@ INT_19_BOOT_HD	=	1			; Try IPL to floppy then HD
 ;BASIC_ROM		= 	0			; can be disabled to free code space
 		IF BASIC_ROM EQ 1			; if BASIC enabled, disable PIC tests
 POST_TEST_PIC_REG	=	0			;  to free code space since PIC is
-POST_TEST_PIC_INT	=	0			;  intergrated to Gate Array A1
+POST_TEST_PIC_INT	=	0			;  integrated in Gate Array A1
 		ENDIF
 
 	ENDIF
@@ -3077,7 +3077,7 @@ _BASIC	ENDS
 ;----------------------------------------------------------------------------;
 ; FFFF:0000: 8086 power-on reset vector
 ;----------------------------------------------------------------------------;
-; The x86 CPU begins code excution at hard-coded address FFFF:0000.
+; The x86 CPU begins code execution at hard-coded address FFFF:0000.
 ; This is that address. Welcome to the party!
 ;----------------------------------------------------------------------------;
 RESET    	SEGMENT AT 0FFFFH
@@ -3104,7 +3104,7 @@ BIOS    	SEGMENT
 ;----------------------------------------------------------------------------;
 ; F000:FFF0: 8086 power-on reset vector
 ;----------------------------------------------------------------------------;
-; The x86 CPU begins code excution at hard-coded address FFFF:0000.
+; The x86 CPU begins code execution at hard-coded address FFFF:0000.
 ; This is that address. Welcome to the party!
 ;----------------------------------------------------------------------------;
 		ORG	0FFF0H
@@ -3857,7 +3857,7 @@ BIOS_INT_VECTORS_LOOP:
 ; Check for valid BASIC ROMs and set INT 18H vector if detected
 ;----------------------------------------------------------------------------;
 ; - Scan 4 x 8K ROMs starting at seg 0F600h.
-; - BASIC dectected if for all ROMs, all of the folowing are true:
+; - BASIC detected if for all ROMs, all of the following are true:
 ; 	- first two bytes not option ROM (0AA55h)
 ;	- first two bytes not the same as the previous ROM (this checks to
 ;		 make sure are not all 0000 or FFFF)
@@ -3962,7 +3962,7 @@ GET_SW_SETTINGS:
 ;----------------------------------------------------------------------------;
 ; On 5150, memory size is read from SW1 (motherboard RAM) and SW2 (I/O expansion
 ; RAM) added together. Note: motherboard RAM is always counted as 16-64K, even
-; on 64-256K revisions, with expansion RAM size (SW2) equalling size of memory
+; on 64-256K revisions, with expansion RAM size (SW2) equaling size of memory
 ; above 64K.
 ;
 SETTINGS_5150:
@@ -4164,7 +4164,7 @@ SETTINGS_SAVE:
 ; Scan 0C000H - 0C800H for video option ROMs (EGA, VGA, etc)
 ;
 ; A video option ROM should set the BDA video type flag to a non-zero value
-; If the flag is still 0 afterwards, no ROMs loaded succesfully.
+; If the flag is still 0 afterwards, no ROMs loaded successfully.
 ;----------------------------------------------------------------------------;
 	MOV	AX, SEG _VID_BIOS			; starting segment (C000H)
 	MOV	DI, SEG _OPT_ROM			; ending segment (C800H)
@@ -4407,7 +4407,7 @@ TOGGLE_TURBO ENDP
 ; The RAM between 128k-512k is bank switched to the upper bank and then
 ; cleared by resetting the currently tested and end address offsets.
 ;
-; Note: whether the the bank was actually switched is not checked so as long
+; Note: whether the bank was actually switched is not checked so as long
 ; as the RAM check passes and DIP switches are set for 1024K (on-on), it will
 ; appear to count up to 1024K. It is left to the software to verify that the
 ; bank switching is functioning.
@@ -5009,7 +5009,7 @@ DMA_STATUS_OK:
 			IF ARCH_TYPE EQ ARCH_TD3300 AND ARCH_SUB_TYPE EQ ARCH_NEST
 			IF TD_WS_SETUP EQ 1
 ;----------------------------------------------------------------------------;
-; Set up Nest/D-11 running W/S configuation
+; Set up Nest/D-11 running W/S configuration
 ;
 	IN	AL, TD_WS			; read and throw away
 	MOV	AL, TD_WS_RB		; set new default BOOT wait states
@@ -5821,7 +5821,7 @@ IO_WAIT_MS_125 PROC
 ; - Latch the PIT and draw down the countdown total on each read.
 ; - Exit when countdown underflows.
 ;
-; Note: Mode 3 (Square Wave) decements the readable counter by 2, so the
+; Note: Mode 3 (Square Wave) decrements the readable counter by 2, so the
 ; effective frequency of the counter is actually 2,386,364 Hz.
 ;
 ; Input:
@@ -6501,7 +6501,7 @@ INT_16 ENDP
 BEEP_PROC PROC
 
 ;----------------------------------------------------------------------------;
-; Repeats LONG_BEEPs then SHORT_BEEPs indefinetly
+; Repeats LONG_BEEPs then SHORT_BEEPs indefinitely
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	BL low nibble = long beeps
@@ -8756,7 +8756,7 @@ INT_17_0:
 	OUT	DX, AL			; write the character to data port
 	INC	DX				; DX to status port
 INT_17_0_TIMEOUT_LOOP:
-	XOR	DI, DI			; set abitrary timeout counter
+	XOR	DI, DI			; set arbitrary timeout counter
 INT_17_0_BUSY_LOOP:
 	IN	AL, DX			; read status port
 	TEST	AL, MASK LPBZ 		; printer busy?
@@ -9928,7 +9928,7 @@ INT_10_8 ENDP
 ;	BL = foreground color (graphics mode only)
 ;	CX = count of characters to write (CX >= 1)
 ;
-; This code is performance sensitive, so jumps are prioritizied
+; This code is performance sensitive, so jumps are prioritized
 ; and some code is duplicated to avoid jumps. For example, AH=0AH is used 
 ; far more frequently than 09H so it gets the fall through cases.
 ;----------------------------------------------------------------------------;
@@ -10074,7 +10074,7 @@ INT_10_9A_GFX_LOW:
 	AND	DX, 0011b			; zero extend 2 bit color
 
 ;----------------------------------------------------------------------------;
-; Repeat/expand 2 color bits in DL into into DX
+; Repeat/expand 2 color bits in DL into DX
 ;
 INT_10_9A_GFX_FG:
 	OR	DH, DL			; copy 2 bits
@@ -10202,7 +10202,7 @@ INT_10_9A_GFX_HIGH_WR:
 	JMP	INT_10_9A_MODE_GFX_DONE	; exit
 
 ;----------------------------------------------------------------------------;
-; Calculate graphics memory address for current current position
+; Calculate graphics memory address for current position
 ;----------------------------------------------------------------------------;
 ; Input: DS = BDA
 ; Output:
@@ -11360,7 +11360,7 @@ CAS_WRITE_LEADER_LOOP:
 CAS_WRITE_BLOCKS PROC
 
 ;----------------------------------------------------------------------------;
-; CAS_WRITE_BLOCK: loop until 256 bytes transfered
+; CAS_WRITE_BLOCK: loop until 256 bytes transferred
 ;----------------------------------------------------------------------------;
 ; - Fetch byte if not exhausted
 ; - Byte loop (BIT)
@@ -11703,7 +11703,7 @@ CAS_READ_EXIT:
 ; Time a single cycle of a bit
 ; Output:
 ;	AX = counter reading
-;	DX = lendth of cycle in counter ticks
+;	DX = length of cycle in counter ticks
 ;	NZ if success
 ;	ZF if failure (cycle exceeded maximum possible length)
 ;----------------------------------------------------------------------------;
