@@ -219,6 +219,7 @@ POST_BANNER		=	1		; show banner and version
 WARM_ENABLE		=	1		; 1=enable WARM boot or 0=always COLD boot
 RANDOM_TAGLINE	=	1		; randomize pithy tagline
 UNITS_IEC		=	0		; 0=period-correct "KB" or 1=modern IEC "KiB"
+POST_VID_HGC	=	0		; show/detect MDA vs HGC (Herc) on POST
 
 ;----------------------------------------------------------------------------;
 ; Enable/Disable POST tests (not all tests can be enabled due to 8K ROM space)
@@ -1714,6 +1715,20 @@ V40_WCY1	RECORD	IOW:2, UMW:2, MMW:2, LMW:2
 VID_STAT	RECORD	VSX:4, VSVS:1, VSPE:1, VSPT:1, VSHS:1
 
 ;----------------------------------------------------------------------------;
+; HGC/Hercules Video - Port 3DA Status Register
+;----------------------------------------------------------------------------;
+; 84218421
+; 7       |			- HGSYN	vertical sync
+;  654    |			- HGMDL	000=Hercules, 001=HGC+, 101=InColor, 111=clone
+;     3210|			- same as VID_STAT
+;----------------------------------------------------------------------------;
+HGC_STAT	RECORD	HGSYN:1, HGMDL:3, HVSVS:1, HVSPE:1, HVSPT:1, HVSHS:1
+HGMDL_STD	EQU	HGC_STAT < , 000b >	; Hercules standard
+HGMDL_PLUS	EQU	HGC_STAT < , 001b >	; Hercules Plus
+HGMDL_INCLR	EQU	HGC_STAT < , 101b >	; Hercules InColor
+HGMDL_CLONE	EQU	HGC_STAT < , 111b >	; Clone or unknown (all other values)
+
+;----------------------------------------------------------------------------;
 ; 6845 Video - 3D9 Color Select Register (Text)
 ;----------------------------------------------------------------------------;
 ; 84218421
@@ -3084,7 +3099,7 @@ RESET		ENDS
 		ASSUME	DS:BIOS, SS:BIOS, CS:BIOS, ES:BIOS
 BIOS    	SEGMENT
 
-	ROM_FILL				; optionally empty ROM space with FF
+	ROM_FILL				; optionally fill empty ROM space with FF
 
 ;----------------------------------------------------------------------------;
 ; F000:FFF0: 8086 power-on reset vector
@@ -3844,7 +3859,7 @@ BIOS_INT_VECTORS_LOOP:
 ;----------------------------------------------------------------------------;
 ; - Scan 4 x 8K ROMs starting at seg 0F600h.
 ; - BASIC dectected if for all ROMs, all of the folowing are true:
-; 	- first two bytes not option ROM (0AAFFh)
+; 	- first two bytes not option ROM (0AA55h)
 ;	- first two bytes not the same as the previous ROM (this checks to
 ;		 make sure are not all 0000 or FFFF)
 ;	- 8K ROM block has a valid checksum at offset 1FFE
@@ -6362,7 +6377,11 @@ PORT_TEST ENDP
 POST_VGA		DB	'VGA', 0
 POST_EGA		DB	'EGA', 0
 POST_CGA		DB	'CGA', 0
+		IF POST_VID_HGC EQ 1
+POST_MDA		DB	'MDA', 0
+		ELSE
 POST_MDA		DB	'Mono', 0
+		ENDIF
 			ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -10623,7 +10642,36 @@ POST_SYS_VIDEO PROC
 BIOS_VIDEO:
 	CALL	INT_10_IS_TXT			; CF = 1 if MDA mode 7
 	MOV	SI, OFFSET POST_MDA		; default "MDA"
-	JC	POST_SYS_VIDEO_DONE
+			IF POST_VID_HGC EQ 1
+	JNC	CHECK_CGA				; Not MDA/HGC
+
+;----------------------------------------------------------------------------;
+; Check if HGC/Hercules
+; http://www.pennelynn.com/Documents/CUJ/HTML/90HTML/199001B5.HTM
+;
+	MOV	DX, MDA_STAT			; Herc/MDA status port (03BAH)
+		IF IS_TURBO
+	MOV	CH, HIGH 1800H			; timeout (faster CPUs)
+		ELSE
+	MOV	CH, HIGH 1000H			; timeout (slower CPUs)
+		ENDIF
+	IN	AL, DX				; read status
+	AND	AL, MASK HGSYN			; isolate sync bit
+	MOV	AH, AL				; save initial sync bit
+HGC_LOOP:
+	IN	AL, DX				; read status
+	AND	AL, MASK HGSYN			; isolate sync bit
+	XOR	AL, AH				; is still same?
+	LOOPZ HGC_LOOP				; loop until changed or timeout
+	JZ	POST_SYS_VIDEO_DONE		; jump if MDA
+	MOV	SI, OFFSET POST_HGC		; otherwise "HGC"
+	JMP	SHORT POST_SYS_VIDEO_DONE
+POST_HGC	DB	'HGC', 0
+
+CHECK_CGA:
+			ELSE				; POST_VID_HGC EQ 0
+	JC	POST_SYS_VIDEO_DONE		; jump if MDA
+			ENDIF				; ENDIF POST_VID_HGC EQ 1
 	MOV	SI, OFFSET POST_CGA		; otherwise "CGA"
 	JMP	SHORT POST_SYS_VIDEO_DONE
 
