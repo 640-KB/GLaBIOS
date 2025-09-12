@@ -1106,6 +1106,16 @@ KRB	RECORD	KRBK:15, KRBX:1
 KRBP	RECORD	RB_P:11, KRBPX:5
 
 ;----------------------------------------------------------------------------;
+; Convert Byte to half Bits
+;----------------------------------------------------------------------------;
+BHB	RECORD	BHB1:12, BHBX:4
+
+;----------------------------------------------------------------------------;
+; Convert Byte to Bits
+;----------------------------------------------------------------------------;
+BBIT	RECORD	BBIT1:13, BBIT2:3
+
+;----------------------------------------------------------------------------;
 ; x86 EFLAGS
 ;----------------------------------------------------------------------------;
 EFLAGS86	RECORD FSF:1,FZF:1,FR1:1,FAF:1,FR2:1,FPF:1,FR3:1=1,FCF:1
@@ -11255,7 +11265,7 @@ CAS_WRITE PROC
 	PUSH	CX				; save outer byte loop counter
 CAS_WRITE_LEADER:
 	STC					; leader output bit is 1
-	MOV	CX, 256 * 8			; leader is 2048 bits
+	MOV	CX, BBIT < 256 >		; leader is 2048 bits
 CAS_WRITE_LEADER_LOOP:
 	CALL	CAS_WRITE_BIT		; set timer to correct bit, wait for full cycle
 	LOOP	CAS_WRITE_LEADER_LOOP
@@ -11338,7 +11348,7 @@ CAS_WRITE_BLOCKS ENDP
 ;
 CAS_WRITE_TRAILER:
 	STC					; trailer output bit is 1
-	MOV	CL, 4 * 8			; trailer is 4 bytes
+	MOV	CL, BBIT < 4 >		; trailer is 4 bytes, in bits
 CAS_WRITE_TRAILER_LOOP:
 	CALL	CAS_WRITE_BIT		; set timer to CF bit, wait for full cycle
 	LOOP	CAS_WRITE_TRAILER_LOOP
@@ -11492,7 +11502,7 @@ CAS_READ_HEADER_START:
 ;----------------------------------------------------------------------------;
 ; Continue reading until a valid cycle detected or timeout
 ;
-	MOV	CX, 1000 * 8 * 2		; timeout is 1000 bytes
+	MOV	CX, BHB < 1000 >		; timeout is 1000 bytes, in half bits
 CAS_READ_HEADER_LOOP:
 	TEST	_BIOS_BREAK, MASK KBRK	; Test BIOS break flag
 	JNZ	CAS_READ_ERR_1		; Break key was hit
@@ -11509,7 +11519,7 @@ CAS_READ_HEADER_LOOP:
 ;		- if 1, continue reading until sync bit (0) detected
 ;	- if < 32 bytes and 0 read, start over from beginning
 ;
-	MOV	CX, 32 * 8 * 2		; leader must be at least 32 bytes
+	MOV	CX, BHB < 32 >		; leader must be at least 32 bytes
 CAS_READ_HEADER_LOOP_1:
 	TEST	_BIOS_BREAK, MASK KBRK	; Test BIOS break flag
 CAS_READ_ERR_1:				; (short jump hack)
