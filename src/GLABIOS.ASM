@@ -266,6 +266,7 @@ FDC_ZERO_BDA	=	0		; clear FDC FIFO buffer between ops
 FDC_ERR_SEC_CT	=	0		; On error, 0=always return 0 sectors
 						;   1=return partial/successful sector count
 KB_HLT_WAIT		=	1		; Halt CPU during KB wait
+KB_BUF_READ_BDA	=	0		; 1=use BDA KB st/end ptrs, 0=fixed offsets
 MBR_CHECK		=	0		; Verify magic number of DOS MBR at boot
 						;   note: DOS 1.0 does not use MBR, so
 						;   will not boot if this is enabled
@@ -765,6 +766,7 @@ POST_M_UNIT		EQU	<'MB'>		; MB size
 CR 			EQU	0DH 			; Carriage return
 LF 			EQU	0AH 			; Line feed
 BS			EQU	08H			; Backspace ASCII
+TAB			EQU	09H			; Tab ASCII
 BELL			EQU	07H			; BELL ASCII
 SYN			EQU	16H			; SYN C0 control char
 VL			EQU	0B3H			; vertical line
@@ -2980,7 +2982,7 @@ LPT_TIME		DB	4 DUP(?) 		; 78H  Time-out value for LPT1-4 (in # of 64K LOOPs)
 COM_TIME_B		EQU	$-_BDA		;	 Low byte hack to force short sign-extend encoding
 COM_TIME		DB	4 DUP(?) 		; 7CH  Time-out value for COM1-4
 KB_BUF_ST		DW	?			; 80H  Keyboard buffer start
-			DW	?			; 82H  Keyboard buffer end
+KB_BUF_EN		DW	?			; 82H  Keyboard buffer end
 		ORG	08BH
 FD_LR			DB	?			; 8BH  Last diskette data rate selected
 		ORG	08FH
@@ -6482,9 +6484,15 @@ KB_WAIT_READ_1:
 	JE	KB_WAIT_READ 		; if so, buffer is empty
 	XCHG	AX, SI 			; SI = tail
 	LODSW 				; AX = buffer[tail], SI = next
+		IF KB_BUF_READ_BDA EQ 1
+	CMP	SI, KB_BUF_EN		; is next >= end of buffer?
+	JB	KB_GET_READ 		; if not, get tail value
+	MOV	SI, KB_BUF_ST		; otherwise, wrap next to buffer top
+		ELSE
 	CMP	SI, KB_BUF_END_B		; is next >= end of buffer?
 	JB	KB_GET_READ 		; if not, get tail value
 	MOV	SI, OFFSET KB_BUF 	; otherwise, wrap next to buffer top
+		ENDIF
 KB_GET_READ:
 	MOV	KB_BUF_HD, SI 		; head ptr = next
 INT_16_DONE:
@@ -7069,9 +7077,15 @@ KB_INT_IS_PAUSE:
 KB_INT_PUT_BUFFER:
 	MOV	DI, KB_BUF_TL 				; DI = tail ptr
 	LEA	SI, [DI][2]					; SI = next (maybe)
+		IF KB_BUF_READ_BDA EQ 1
+	CMP	SI, KB_BUF_EN				; is next >= end of buffer?
+	JB	KB_INT_CHECK_FULL 			; if not, check if buffer is full
+	MOV	SI, KB_BUF_ST				; otherwise, wrap to first address
+		ELSE
 	CMP	SI, KB_BUF_END_B				; is next >= end of buffer?
 	JB	KB_INT_CHECK_FULL 			; if not, check if buffer is full
 	MOV	SI, OFFSET KB_BUF 			; otherwise, wrap to first address
+		ENDIF
 KB_INT_CHECK_FULL:
 	CMP	SI, KB_BUF_HD 				; next == head?
 	JE	INT_KB_MEEP_DONE				; Beep if ZF - buffer is full
@@ -7117,13 +7131,12 @@ CHECK_TOP_ROW_NUM:
 ; Note: AH must be preserved
 ;
 CHECK_ALT_ON:
-	SUB	BL, '0'					; ASCII convert and test
-	JB	INT_KB_NOT_ALT_000			; jump if less than 0
-	CMP	BL, 9
-	JA	INT_KB_NOT_ALT_000			; jump if above 9
-
-INT_KB_IS_ALT_000:
 	XCHG	AX, BX					; AL = input byte, save AX
+	SUB	AL, '0'					; ASCII convert and test
+	JB	INT_KB_NOT_ALT_000			; jump if less than 0
+	CMP	AL, 9
+	JA	INT_KB_NOT_ALT_000			; jump if above 9
+INT_KB_IS_ALT_000:
 	MOV	AH, KB_ALT					; AH = partial working byte
 	AAD							; AL = AL + ( AH * 10 )
 	MOV	KB_ALT, AL					; save new working byte to BDA
@@ -7135,6 +7148,7 @@ INT_KB_IS_ALT_000:
 ; Uses table INT_KB_ALT_SKIP
 ;
 INT_KB_NOT_ALT_000:
+	XCHG	AX, BX					; restore AX
 	MOV	DI, OFFSET INT_KB_ALT_SKIP
 	MOV	CL, 10					; L_INT_KB_ALT_SKIP
 	XCHG	AH, AL
@@ -7404,10 +7418,10 @@ KEY_SCAN_TBL	LABEL BYTE
 	DB	2 DUP(0), 2 DUP(1BH) 		; 00-01H	None, Escape
 	DB	'!1@2#3$4%5^6' 			; 02-		(Top row keys)
 	DB	'&7*8(9)0_-+='			;   -0DH
-	DB	8, 8, 0, 9 				; 0E-0FH	Backspace, Tab
+	DB	BS, BS, 0, TAB 			; 0E-0FH	Backspace, Tab
 	DB	'QqWwEeRrTtYy' 			; 10-		(Second row keys)
 	DB	'UuIiOoPp{[}]' 			;    1BH
-	DB	2 DUP(0DH) 				; 1C		Enter
+	DB	2 DUP(CR) 				; 1C		Enter
 	DB	2 DUP(01DH OR 80H) 		; 1D		*Ctrl
 	DB	'AaSsDdFfGgHh'			; 1E-		(Third row keys)
 	DB	'JjKkLl:;"', "'", '~`'		;   -29H
@@ -12050,7 +12064,7 @@ INT_10_4_EXIT:
 ;
 ; Input:
 ;	AX = calibrated memory offset
-;	CL = video mode
+;	CL = video mode (4, 5 or 6)
 ; Output:
 ;	BX = pixel column (0-319 or 0-639)
 ;	CH = raster line (0-199)
@@ -12076,13 +12090,13 @@ INT_10_4_GFX:
 ;----------------------------------------------------------------------------;
 ; Multiply column according to graphics mode
 ;
-	CMP	CL, 6				; is 640x200 mode?
-	JNE	INT_10_4_LOW		; if not, jump
+	SHR	CL, 1				; is 640x200 mode 6?
+	JNP	INT_10_4_LOW		; jump if mode 4 or 5
 	SHL	AL, 1				; DL = col (DL) * 2
 INT_10_4_LOW:
 	MOV	CL, 3				; shift counter 3 for * 8
 	MOV	BX, AX			; BL = DL for pixel column
-	CBW					; zero extend BL
+	XOR	AH, AH			; zero extend to word
 	SHL	AX, CL			; BX = DL * 8
 	XCHG	AX, BX			; return as BX
 	DEC	CX				; shift counter 2 for / 4
