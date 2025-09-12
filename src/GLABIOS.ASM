@@ -125,10 +125,10 @@ TURBO_REV		EQU	2			; reversed PPI (0=turbo, 1=normal)
 ;
 VER_NAME		EQU	'GLaBIOS'
 	IFNDEF VER_NUM
-VER_NUM		EQU	'0.4.0'		; (max 5 chars)
+VER_NUM		EQU	'0.4.1'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'07/17/25'		; must be MM/DD/YY per Intel CSM
+VER_DATE		EQU	'09/12/25'		; must be MM/DD/YY per Intel CSM
 	ENDIF
 COPY_YEAR		EQU	'2022-25'		; Copyright year range
 
