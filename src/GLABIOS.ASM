@@ -1175,11 +1175,12 @@ GFLAGS RECORD	GTBD1:4,TURBO:1,V20:1,GTBD2:2
 ;      x  |			- PDMA  	DMA error
 ;       x |			- PMEM  	Memory Error
 ;        x|			- PFXX  	Reserved (do not use)
-;         |xxxxxx		- TBD
-;         |      xx	- GRND	Random number for tagline
+;         |xxxxx		- TBD
+;         |     xx	- GRND	Random number for tagline
+;         |       x	- PFXY	Reserved (do not use)
 ; 84218421
 ;----------------------------------------------------------------------------;
-PFLAGS RECORD WARM:1,PKI:1,PKEY:1,PFDC:1,PFSK:1,PDMA:1,PMEM:1,PFXX:1,PTBD:6,GRND:2
+PFLAGS RECORD WARM:1,PKI:1,PKEY:1,PFDC:1,PFSK:1,PDMA:1,PMEM:1,PFXX:1,PTBD:5,GRND:2,PFXY:1
 
 		IF FEATURE_BYTES EQ 1
 ;----------------------------------------------------------------------------;
@@ -2992,7 +2993,6 @@ RTC_WAIT		DB	?			; A0H  RTC wait function flag
 		ORG	0ACH				; ACH-B3H "Reserved" (can be used?)
 		ORG	0B0H				; B0H-B1H (used by Tandy for keyboard)
 		ORG	0E8H				; E8H-EFH "Reserved" (can be used?)
-VID_MEM_SEG_DW	LABEL DWORD			; E8H-EAH Video mem segment using LDS/LES
 CURSOR_DEFAULT	DW	?			; E8H  Power on cursor bottom:top scan line (for Turbo)
 VID_MEM_SEG		DW	?			; EAH	 Video mem segment (MDA = B000, CGA = B800)
 FE2010_CONF_REG	DB	?			; ECH  FE2010A Config Reg (63H) (alternate)
@@ -3310,8 +3310,7 @@ POST_FLAG_DONE:
 	DEC	AX				; Counter 0, Latch (00b)
 	OUT	PIT_CTRL, AL		; write command to CTC
 	IN	AL, PIT_CH0			; read low byte of Counter 0 latch
-	SHR	AL, 1				; low bit is always 0
-	AND	AL, MASK GRND		; use only last two bits
+	AND	AL, MASK GRND		; use only two least sig bits
 	OR	BP, AX			; save to low bits of BP
 			ENDIF
 
@@ -3878,7 +3877,7 @@ CHECK_BASIC_ROM:
 	XCHG	AX, DI				; save last ROM's header to DI
 	CMP	AX, DI				; is same as last ROM?
 	JE	INIT_ROM_BASIC_DONE		; if so, valid ROM not present
-	MOV	AX, KB < 8 > / 512 		; 8K ROM size (in 512B blocks)
+	MOV	AX, KRB < 8 >			; 8K ROM size (in 512B ROM blocks)
 	ADD	BH, HIGH KBP < 8 >		; BX = next BASIC 8K ROM segment
 	CALL	ROM_CHECKSUM 			; checksum ROM at DS:0, size AX
 	LOOPZ	CHECK_BASIC_ROM			; loop 4 ROMs or checksum fail
@@ -4731,6 +4730,7 @@ POST_DETECT_PORTS PROC
 ;	BX = high byte of EQUIP_FLAGS
 ;
 ; Equipment Bit is set if the lower nibble of an I/O port 201h read is zero
+; Note: bit 12 is ONLY set if TWO joysticks are connected:
 ; http://www.minuszerodegrees.net/5150_5160/post/IBM%205150%20and%205160%20-%20Bit%2012%20of%20Equipment%20Flag.htm
 ;----------------------------------------------------------------------------;
 POST_DETECT_GAM:
@@ -7860,15 +7860,8 @@ INT_13_2_5_SETUP_DMA:
 ;----------------------------------------------------------------------------;
 FDC_INIT_DMA:
 	PUSH	CX					; save track / sector
-	MOV	DX, ES 				; get and shift ES by one nibble
-			IF CPU_TYPE EQ CPU_V20
-	ROL	DX, 4					; V20 only
-			ELSE
-	MOV	CL, 4					; DL = lowest and highest nibble of ES
-	ROL	DX, CL				; DH = middle nibbles
-			ENDIF
 	OUT	DMA_MODE, AL			; write to DMA mode reg (port 0BH)
-	XOR	AL, AL				; AX = sectors to read << 8
+	XOR	AL, AL				; AX = sectors to read * 256
 	XCHG	AX, CX				; CX = sectors, AX = scratch
 	MOV	AL, DBT.FBPS			; get bytes/sector param (0=128, 1=256, 2=512, 3=1024)
 	CALL	INT_1E_PARAM			; AL = shift count (default 2 => 512)
@@ -7876,10 +7869,24 @@ FDC_INIT_DMA:
 	SHR	AX, 1					; adjust shift for bytes/sector * 128
 	SHL	AX, CL				; AX = bytes to transfer (AX * 2^CL)
 	DEC	AX					; AX = bytes to transfer - 1
+	MOV	DX, ES 				; get and shift ES by one nibble
+			IF CPU_TYPE EQ CPU_V20
+	XCHG	AX, CX				; CX = bytes to transfer - 1
+	XOR	AL, AL				; clear low nibble for DX
+	ROL4	DL					; DX = low three nibbles of ES (shifted left 1 nibble)
+	ROL4	DH					; AL = high nibble of ES
+			ELSE
+				IF CPU_TYPE EQ CPU_V20	; future 186/286+
+	ROL	DX, 4					; DX rotate high nibble (page) to low
+				ELSE
+	MOV	CL, 4					; DL = lowest and highest nibble of ES
+	ROL	DX, CL				; DH = middle nibbles
+				ENDIF
 	XCHG	AX, CX				; CX = bytes to transfer - 1
 	MOV	AL, DL				; AL = lowest and highest nibble of ES
-	AND	AL, 0FH				; AL = only high nibble of ES
 	AND	DL, 0F0H				; DX = low three nibbles of ES (shifted left 1 nibble)
+			ENDIF
+	AND	AL, 0FH				; AL = only high nibble of ES
 	ADD	BX, DX				; BX = DMA start offset for transfer
 	ADC	AL, 0					; AL = DMA page
 	MOV	DX, BX				; check that buffer offset + length does not exceed segment
@@ -9428,7 +9435,7 @@ INT_10_7 PROC
 ;----------------------------------------------------------------------------;
 INT_10_6 PROC
 	PUSHX	AX, BX, SI			; call-preserve these registers
-	LES	SI, VID_MEM_SEG_DW	; ES = video/regen RAM segment (B800 or B000)
+	MOV	ES, VID_MEM_SEG		; ES = video/regen RAM segment (B800 or B000)
 	PUSH	BP
 
 ;----------------------------------------------------------------------------;
@@ -9455,6 +9462,14 @@ INT_10_6 PROC
 ;
 	MOV	DX, CX			; if scroll up, DX becomes "top"
 
+		IF 1
+;----------------------------------------------------------------------------;
+; If full screen scroll up, skip column calculation
+;
+	MOV	SI, CX			; if CX = 0, skip column calculation
+	JCXZ	INT_10_SCR_ROW		; and scroll full row
+		ENDIF
+
 ;----------------------------------------------------------------------------;
 ; Make sure lower right column does not exceed screen width
 ;
@@ -9467,12 +9482,13 @@ INT_10_CHECK_BOUNDS:
 INT_10_BOUNDS_OK:
 	MUL	DH				; AX = memory offset of col 0 of new bottom row
 	XCHG	AX, SI			; SI = memory offset
+	MOV	DH, 0				; DX = lower right column position
 
+INT_10_SCR_ROW:
 ;----------------------------------------------------------------------------;
 ; Is graphics mode?
 ;
 	CALL	INT_10_IS_TXT		; NZ if CGA GFX, ZR if CGA/MDA Text
-	MOV	DH, 0				; DX = lower right column position
 	PUSH	DS				; save BDA data SEG
 	JNZ	INT_10_SCR_GFX
 
@@ -10342,7 +10358,7 @@ INT_10_D ENDP
 ; http://www.techhelpmanual.com/89-video_memory_layouts.html
 ;----------------------------------------------------------------------------;
 INT_10_GFX_PIXEL PROC
-	LES	DI, VID_MEM_SEG_DW	; ES = video/regen RAM segment
+	MOV	ES, VID_MEM_SEG		; ES = video/regen RAM segment
 	PUSH	BX
 	PUSH	DX
 
@@ -10548,7 +10564,7 @@ INT_10_F ENDP
 INT_10_GET_CUR_ADDR PROC
 	PUSH	DX
 	MOV	AL, BH			; AL = display page
-	LES	DI, VID_MEM_SEG_DW	; ES = video RAM segment
+	MOV	ES, VID_MEM_SEG		; ES = video RAM segment
 	CBW					; AX = page number
 	XCHG	AX, DI			; DI = page number
 	MOV	AX, VID_BUF_SZ		; AX = VID_BUF_SZ
@@ -10606,7 +10622,7 @@ INT_10 ENDP
 ;	DS = BDA (0040)
 ;
 ; Clobbers: AX, BX, CX, SI
-; Size: 193 bytes
+; Size: 194 bytes
 ;----------------------------------------------------------------------------;
 POST_SYS_CONFIG PROC
 			ASSUME DS:_BDA
@@ -10622,14 +10638,15 @@ POST_SYS_VIDEO PROC
 ;----------------------------------------------------------------------------;
 ; Check if INT 10 is using this BIOS. If so, must be CGA or MDA.
 ;
-	PUSH	DS
+	MOV	BX, DS				; BX = 0040h (SEG _BDA and IVT_10)
 	XOR	AX, AX				; AX = SEG _IVT
 	MOV	DS, AX				; set IVT segment for LDS
+
 			ASSUME DS:_IVT
-	LDS	AX, DWORD PTR IVT_10		; if BIOS, DS = 0F000H, AX = 0F065H
+	LDS	AX, DWORD PTR [BX]		; if BIOS, DS = 0F000H, AX = 0F065H
 	CMP	AX, OFFSET INT_10			; is offset the BIOS IRR for INT 10?
 	MOV	AX, DS				; save for next compare
-	POP	DS					; restore DS
+	MOV	DS, BX				; restore DS
 			ASSUME DS:_BDA
 	JNE	CHECK_VGA				; if not, jump to VGA check
 	MOV	BX, CS				; AX = BIOS code segment
@@ -11062,7 +11079,7 @@ WORD_HEX ENDP
 DWORD_HEX ENDP
 
 ;
-; 50 BYTES HERE
+; 46 BYTES HERE
 ;
 BYTES_HERE	INT_12
 
@@ -11794,15 +11811,14 @@ SHOW_DISK_PARAMS ENDP
 ;----------------------------------------------------------------------------;
 ; String is chosen from low two bits of BP
 ; Clobbers: AX
-; Size: 111 bytes
+; Size: 117 bytes
 ;----------------------------------------------------------------------------;
 HELLO_RAND_TAGLINE PROC
 	PRINT_SZ  TOP_BANNER		; display main banner
 	MOV	AX, BP			; get random bits from BP
 	POST_FLAG_CLR  GRND		; clear random bits from BP
-	AND	AX, MASK GRND		; only low 2 bits
+	AND	AX, MASK GRND		; only random bits (WORD aligned)
 	XCHG	AX, SI			; SI = string offset table
-	SHL	SI, 1				; word align
 	MOV	SI, CS:TAGS[SI]		; SI = chosen tagline offset
 	PRINT_SZ  SI			; display tagline
 	MOV	SI, OFFSET COPYRIGHT	; display copyright message
@@ -12068,7 +12084,7 @@ INT_10_4 ENDP
 		ENDIF
 
 ;
-; 77 BYTES HERE / 0 BYTES HERE 5150
+; 79 BYTES HERE / 0 BYTES HERE 5150
 ;
 BYTES_HERE	GFX_CHARSET
 
@@ -12384,7 +12400,7 @@ INT_1A_READ PROC
 	XOR	AX, AX				; reset midnight flag to 0
 	XCHG	AL, [SI]				; AL = BDA flag, BDA = 0
 INT_1A_DONE:
-	;STI 						; re-enable interrupts
+	STI 						; re-enable interrupts
 	POP	SI
 	POP	DS
 INT_1A_EXIT:
@@ -12414,7 +12430,7 @@ INT_08_PROC PROC
 ;----------------------------------------------------------------------------;
 INT_08_MOTOR_OFF:
 	MOV	AL, NOT MASK FMOT			; BDA motor off on all drives
-	AND	FD_MOTOR_ST, AL			; write to BDA
+	AND	[DI][-1], AL			; write to BDA ([DI-1] = FD_MOTOR_ST)
 	XOR	AL, NOT MASK FDSEL		; FDC motor off on all drives
 	MOV	DX, FDC_CTRL 			; FD control port
 	OUT	DX, AL 				; write to controller
@@ -12465,7 +12481,8 @@ INT_08_TICK_TIMER:				; Advance the time ticker
 ;
 INT_08_FD_MOTOR: 					; Check if there is a motor timeout
 	STI						; interrupts back on
-	DEC	FD_MOTOR_CT 			; increment counter, has reached 0?
+	MOV	DI, DS				; DI = 40H (FD_MOTOR_CT)
+	DEC	BYTE PTR [DI]			; increment counter, has reached 0?
 	JZ	INT_08_MOTOR_OFF			; if so, turn off motor
 
 ;----------------------------------------------------------------------------;
@@ -12483,7 +12500,7 @@ INT_08_EOI:
 	OUT	INT_P0, AL				; write EOI to port 0
 	POP	DI
 	POP	DS
-	POP	DX					; restore DX
+	POP	DX
 	POP	AX
 	IRET
 
