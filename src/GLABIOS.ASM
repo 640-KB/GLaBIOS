@@ -248,6 +248,7 @@ DRAM_REFRESH	=	18		; DRAM refresh divisor 1.193 MHz/18 = 66,287.87 Hz
 						; 0=Disable refresh (use only with SRAM!)
 RAM_PARITY		=	1		; Enable RAM parity checking
 RAM_TEST_LONG	=	1		; Long RAM test on cold boot
+RAM_TEST_NONE	=	0		; Don't test or clear RAM at all
 RAM_DIGITS		=	3		; Number of zero-padded digits for RAM (3 or 4)
 BASIC_ROM		=	1		; BASIC ROM support at 0F600h
 OPT_ROM_END		=	0FE00H	; Option ROM scan ending address (must be xx00)
@@ -3660,6 +3661,7 @@ INIT_EXP_CHASSIS_DONE:
 ; Input: CX = 0 from [13D]
 ;----------------------------------------------------------------------------;
 			ASSUME DS:_BDA_ABS, ES:_IVT
+			IF RAM_TEST_NONE NE 1
 BASE_RAM_TEST:
 	IN	AL, PPI_B 				; AL = PB0 flags
 	OR	AL, MASK PBIO OR MASK PBPC	; disable RAM parity and I/O ch. flags
@@ -3701,6 +3703,12 @@ BASE_RAM_TEST_DONE:
 	OR	AL, MASK PBIO OR MASK PBPC	; disable RAM parity and I/O ch. flags
 	OUT	PPI_B, AL
 			ENDIF				; END RAM_PARITY EQ 1
+			ELSE
+	JMP	SHORT BASE_RAM_TEST_DONE
+HALT_BEEP_1:
+	JMP	HALT_BEEP				; NEAR jump to HALT BEEP PROC
+BASE_RAM_TEST_DONE:
+			ENDIF
 
 ;----------------------------------------------------------------------------;
 ;
@@ -3940,8 +3948,8 @@ CPU_TYPE_DONE:
 ; 	    |   0		; IPL Floppy Disk Drive (0=floppy drive installed)
 ;  Port C - I/O RAM (x 32KB)
 ;	High| Low
-;	    |4321		; RAM size bits 1-4   when Port B bit 2 = 1
-;	     4325		; RAM size bits 5,2-4 when Port B bit 2 = 0
+;	    |4321		; RAM size bits 1-4 when Port B bit 2 = 1
+;	    |xxx5		; RAM size bit  5   when Port B bit 2 = 0
 ;----------------------------------------------------------------------------;
 ; 5160 Sense Switches:
 ;  Port C
@@ -4148,13 +4156,13 @@ SETTINGS_SAVE:
 ; Set up TD3300A wait state register. This sequence is the "magic incantation"
 ; to set the TD3300 chipset wait state configuration.
 ;
-	;CLI					; disable interrupts (already off)
-	IN	AL, TD_WS			; read and throw away
-	MOV	AL, TD_WS_R			; set new default POST wait states
-	OUT	TD_WS, AL			; write to register
-	STI					; write two STIs for TD3300 to accept
+	;CLI						; disable interrupts (already off)
+	IN	AL, TD_WS				; read and throw away
+	MOV	AL, TD_WS_R				; set new default POST wait states
+	OUT	TD_WS, AL				; write to register
+	STI						; write two STIs for TD3300 to accept
 	STI
-	CLI					; interrupts should be off
+	CLI						; interrupts should be off
 			ENDIF
 			ENDIF
 
@@ -5595,7 +5603,7 @@ ZERO_ALL_RAM:
 	JNB	DONE_ZERO_ALL_RAM			; exit if end
 ZERO_ALL_RAM_1:
 	MOV	ES, AX				; ES = last segment tested
-
+			IF RAM_TEST_NONE NE 1
 			IF RAM_TEST_LONG EQ 1
 	JWB	ZERO_ALL_START			; skip long tests on warm boot
 
@@ -5624,6 +5632,7 @@ ZERO_ALL_START:
 	MOV	CX, KBW < 16 >			; loop 16KB in WORDs
 	MOV	DI, AX				; DI = beginning of segment
 	REP	STOSW 				; write zero to next 16KB
+			ENDIF				; END RAM_TEST_NONE EQ 1
 	JMP	SHORT ZERO_ALL_RAM
 DONE_ZERO_ALL_RAM:
 
@@ -6680,7 +6689,7 @@ L_POST_ERRORS	EQU	($-POST_ERRORS)/SIZE POST_ERRORS
 
 POST_ERROR_MSG PROC
 	MOV	CX, L_POST_ERRORS+1		; # of available POST error messages
-	MOV	SI, OFFSET POST_ERRORS-2	; SI = string table pointer
+	MOV	SI, OFFSET POST_ERRORS[-2]	; SI = string table pointer
 							;  add one LOOP for WARM BOOT flag
 POST_ERROR_MSG_LOOP:
 	LODS	WORD PTR CS:[SI]			; AX = next message offset
@@ -6849,7 +6858,7 @@ INT_09 PROC
 	MOV	CX, SEG _BDA 				; CX = BIOS Data Area, CH = 0
 	MOV	AL, AH					; AL = original scan code
 	CMP	AL, 0FFH 					; check for Detection Error/Overrun
-	JZ	INT_KB_MEEP_DONE				; if overrun, meep and exit
+	JE	INT_KB_MEEP_DONE				; if overrun, meep and exit
 	MOV	DS, CX					; DS = BIOS Data Area
 	MOV	DX, CS					; ES = BIOS code segment
 	MOV	ES, DX
@@ -6893,7 +6902,7 @@ KB_INT_CHECK_FN_KEY_DONE:				; not a function key
 ; Is Ctrl-Break?
 ;
 	CMP	AL, 46H					; Scroll Lock (Break)
-	JNZ	INT_KB_CHECK_CTRL_NUM			; jump if not Break
+	JNE	INT_KB_CHECK_CTRL_NUM			; jump if not Break
 
 INT_KB_CTRL_BREAK:
 	CALL	KB_BUF_CLEAR				; clear keyboard buffer
@@ -7021,9 +7030,9 @@ KB_INT_IS_ALT:
 ; 6. Handle additional Non-ALT special case chars
 ;
 	CMP	AX, 3700H					; is Shift-PrtSc?
-	JZ	KB_INT_PRTSC				; jump if so
+	JE	KB_INT_PRTSC				; jump if so
 	CMP	AX, 4C00H					; Numeric 5 key (unshifted)
-	JZ	INT_KB_DONE					; discard and exit
+	JE	INT_KB_DONE					; discard and exit
 
 KB_INT_IS_ALT_DONE:
 
@@ -7090,7 +7099,7 @@ INT_KB_DONE:
 ;
 INT_KB_ALT PROC
 	CMP	AH, 39H					; is space bar?
-	JZ	KB_INT_IS_ALT_DONE			; continue
+	JE	KB_INT_IS_ALT_DONE			; continue
 	MOV	BX, AX
 	MOV	AL, 0						; AL will be 0 for any others
 
@@ -7207,9 +7216,9 @@ INT_KB_CTRL:
 INT_KB_CTRL_ALT:
 	CMP	AH, 53H					; is Ctrl-Alt-Del?
 			IF IS_TURBO
-	JNZ	INT_KB_CTRL_ALT_1				; if not check for turbo hotkey
+	JNE	INT_KB_CTRL_ALT_1				; if not check for turbo hotkey
 			ELSE
-	JNZ	INT_KB_CTRL_NO_DONE			; put in buffer as-is and exit
+	JNE	INT_KB_CTRL_NO_DONE			; put in buffer as-is and exit
 			ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -7240,7 +7249,7 @@ INT_KB_CTRL_ALT_1:
 ; Is Turbo speed toggle Ctrl-Alt-+ hotkey?
 ;
 	CMP	AH, 4EH					; numeric pad + key
-	JNZ	INT_KB_CTRL_NO_DONE
+	JNE	INT_KB_CTRL_NO_DONE
 
 ;	;CMP	AH, 4AH					; numeric pad - key
 ;	;JZ	INT_KB_TURBO_MINUS
@@ -7364,7 +7373,7 @@ INT_KB_FLAG_CLEAR:
 	NOT	AL						; invert mask
 	AND	_KB_FLAGS2, AL				; clear flag
 	CMP	CL, MASK K1AL				; was it ALT key?
-	JNZ	INT_KB_DONE_3				; if not, done
+	JNE	INT_KB_DONE_3				; if not, done
 
 INT_KB_IS_FLAG ENDP
 
@@ -7869,7 +7878,7 @@ FDC_INIT_DMA:
 	SHR	AX, 1					; adjust shift for bytes/sector * 128
 	SHL	AX, CL				; AX = bytes to transfer (AX * 2^CL)
 	DEC	AX					; AX = bytes to transfer - 1
-	MOV	DX, ES 				; get and shift ES by one nibble
+	MOV	DX, ES 				; DX = ES to shift by one nibble
 			IF CPU_TYPE EQ CPU_V20
 	XCHG	AX, CX				; CX = bytes to transfer - 1
 	XOR	AL, AL				; clear low nibble for DX
@@ -7888,7 +7897,7 @@ FDC_INIT_DMA:
 			ENDIF
 	AND	AL, 0FH				; AL = only high nibble of ES
 	ADD	BX, DX				; BX = DMA start offset for transfer
-	ADC	AL, 0					; AL = DMA page
+	ADC	AL, 0					; AL = DMA page with carry from offset
 	MOV	DX, BX				; check that buffer offset + length does not exceed segment
 	ADD	DX, CX				; DX = DMA end offset, test for boundary overflow
 	JC	FDC_DMA_BOUND			; error if DMA access across 64k boundary
@@ -11449,7 +11458,7 @@ CAS_WRITE_TRAILER_LOOP:
 ;----------------------------------------------------------------------------;
 CAS_WRITE_BIT PROC
 	LAHF					; preserve CF flag
-	PUSH	AX				; preserve AX
+	PUSH	AX				; preserve AL and flags
 	MOV	AX, BEEP_1K7		; set for 1 = ~1 ms  (1.007 KHz = 1,193,182/1184)
 	JC	CAS_START_TIMER		; if input bit is a 1, AX already set
 	SHR	AX, 1				; set for 0 = ~0.5ms (2.015 KHz = 1,193,182/592)
