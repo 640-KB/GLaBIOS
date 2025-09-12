@@ -293,6 +293,7 @@ MUSHROOM_HACK	=	0		; workaround delay if PIT is stopped
 FE_CONF_LOCK	=	1		; lock FE2010 config register after init
 ROM_SCAN_ALIGN	=	1		; option ROM scan aligns to 2K boundaries
 OEM_KB_EXT		=	1		; allow EAh reset byte on ext. keyboard
+FEATURE_BYTES	=	1		; include build options in build binary
 
 ;----------------------------------------------------------------------------;
 ; Hardware hacks!
@@ -1045,7 +1046,7 @@ H_SW		DB	?	; 03 - Horiz. synch width in characters
 V_TL		DB	?	; 04 - Vert. total lines
 V_SL		DB	?	; 05 - Vert. total adjust (scan lines)
 V_DR		DB	?	; 06 - Vert. displayed rows
-V_SP		DB	?	; 07 - Vert. synch position (character rows)
+V_SY		DB	?	; 07 - Vert. synch position (character rows)
 IL		DB	?	; 08 - Interlace mode
 MSL		DB	?	; 09 - Maximum scan line address
 CSL		DB	?	; 0A - Cursor start (scan line)
@@ -1168,6 +1169,67 @@ GFLAGS RECORD	GTBD1:4,TURBO:1,V20:1,GTBD2:2
 ; 84218421
 ;----------------------------------------------------------------------------;
 PFLAGS RECORD WARM:1,PKI:1,PKEY:1,PFDC:1,PFSK:1,PDMA:1,PMEM:1,PFXX:1,PTBD:6,GRND:2
+
+		IF FEATURE_BYTES EQ 1
+;----------------------------------------------------------------------------;
+; GLaBIOS build feature bytes (4)
+;----------------------------------------------------------------------------;
+; 76543210
+; xx 	    |			- F1C:	CGA_SNOW_REMOVE (0-3)
+;   xx    |			- F1TT:	TURBO_TYPE (0-3)
+;     x   |			- F1T:	IS_TURBO
+;      x  |			- F1FE:	FDC_ENABLE
+;       x |			- F1FH:	FDC_HLT_WAIT
+;        x|			- F1UF:	UNSAFE_FLOPPY
+;----------------------------------------------------------------------------;
+FEAT1	RECORD F1C:2=CGA_SNOW_REMOVE,F1TT:2=TURBO_TYPE AND 11B,F1T:1=IS_TURBO,F1FE:1=FDC_ENABLE,F1FH:1=FDC_HLT_WAIT,F1UF:1=UNSAFE_FLOPPY
+
+;----------------------------------------------------------------------------;
+;         |x		- F1P:	RAM_PARITY
+;         |	x		- F1R:	DRAM_REFRESH
+;         |	 x		- F1UR:	UNSAFE_REFRESH
+;         |	  x		- F1RA:	MAX_RAM_AUTO
+;         |	   x		- F1KW:	KB_HLT_WAIT
+;         |	    x		- F1KA:	INIT_AT_KBC
+;         |	     x	- F1B:	BASIC_ROM
+;         |	      x	- F1FA:	FD_AUTO_DETECT
+;----------------------------------------------------------------------------;
+FEAT2 RECORD F1P:1=RAM_PARITY,F1R:1=(DRAM_REFRESH NE 0) AND 1B,F1UR:1=UNSAFE_REFRESH,F1RA:1=MAX_RAM_AUTO,F1KW:1=KB_HLT_WAIT,F1KA:1=INIT_AT_KBC,F1B:1=BASIC_ROM,F1FA:1=FD_AUTO_DETECT
+
+;----------------------------------------------------------------------------;
+; x 	    |			- F2C:	CASSETTE
+;  x      |			- F2P:	LIGHT_PEN
+;   x     |			- F2T:	RANDOM_TAGLINE
+;    x    |			- F2H:	POST_HD_PARMS
+;     x   |			- F2O:	POST_OPT_ROM
+;      x  |			- F2PC:	POST_CARD
+;       x |			- F2D:	POST_TEST_DMA
+;        x|			- F2D0:	POST_TEST_DMA_TC0
+;----------------------------------------------------------------------------;
+FEAT3	RECORD F2C:1=CASSETTE,F2P:1=LIGHT_PEN,F2T:1=RANDOM_TAGLINE,F2H:1=POST_HD_PARMS,F2O:1=POST_OPT_ROM,F2PC:1=POST_CARD,F2D:1=POST_TEST_DMA,F2D0:1=POST_TEST_DMA_TC0
+
+;----------------------------------------------------------------------------;
+;         |x		- F2PR:	POST_TEST_PIC_REG
+;         |	x		- F2PI:	POST_TEST_PIC_INT
+;         |	 x		- F2CK:	POST_TEST_CHK_ROM
+;         |	  x		- F2F:	POST_TEST_FD
+;         |	   x		- F2S:	POST_TEST_SEEK
+;         |	    x		- F2K1:	POST_TEST_KB
+;         |	     x	- F2K2:	POST_TEST_KEY
+;         |	      x	- F2P1:	POST_TEST_PIT_1
+;----------------------------------------------------------------------------;
+FEAT4 RECORD F2PR:1=POST_TEST_PIC_REG,F2PI:1=POST_TEST_PIC_INT,F2CK:1=POST_TEST_CHK_ROM,F2F:1=POST_TEST_FD,F2S:1=POST_TEST_SEEK,F2K1:1=POST_TEST_KB,F2K2:1=POST_TEST_KEY,F2P1:1=POST_TEST_PIT_1
+
+;----------------------------------------------------------------------------;
+; Encode Feature Bytes as STRUC
+;
+FEAT_BYTES	STRUC
+	DB	FEAT1 <>
+	DB	FEAT2 <>
+	DB	FEAT3 <>
+	DB	FEAT4 <>
+FEAT_BYTES	ENDS
+		ENDIF
 
 ;----------------------------------------------------------------------------;
 ; BDA Keyboard Flags
@@ -2149,7 +2211,7 @@ FLAG_MEM	= EQUIP_FLAGS[1]			; high BDA flags byte
 	ROL	AL, 8-FLAG_BIT			; shift value into position
 				ELSE
 					IF FLAG_BIT EQ 4
-	ROL4	_AL					; shift value into position
+	ROL4	AL					; shift value into position
 					ELSE
 	ROR	AL, FLAG_BIT			; shift value into position
 					ENDIF
@@ -2495,6 +2557,22 @@ BYTES_HERE_&NEXT_LBL = NEXT_LBL-$
 		ENDM
 
 ;----------------------------------------------------------------------------;
+; ROM_FILL: optionally fill unused bytes in ROM with FF
+;----------------------------------------------------------------------------;
+;FILL_WORD	EQU	0FFFFH		; uncomment to enable
+
+ROM_FILL	MACRO
+		IFDEF FILL_WORD
+		ORG	0E000H		; top of ROM image
+.XLIST
+		REPT KBW < 8 >		; 8 KB of ROM
+	DW	FILL_WORD
+		ENDM
+.LIST
+		ENDIF
+		ENDM
+
+;----------------------------------------------------------------------------;
 ; x86/V20 Instruction MACROs
 ;----------------------------------------------------------------------------;
 
@@ -2531,34 +2609,43 @@ V20_F4	RECORD	VF4_OPC:2=11b, VF4_DST:3, VF4_SRC:3
 ;----------------------------------------------------------------------------;
 ; Registers used as operands for V20 MACROs
 ;
-_AL	EQU	V20_R	<, 000b>		; reg8
-_CL	EQU	V20_R <, 001b>
-_DL	EQU	V20_R <, 010b>
-_BL	EQU	V20_R <, 011b>
-_AH	EQU	V20_R <, _AL OR 100b>
-_CH	EQU	V20_R <, _CL OR 100b>
-_DH	EQU	V20_R <, _DL OR 100b>
-_BH	EQU	V20_R <, _BL OR 100b>
-_AX	EQU	V20_R <1, _AL>		; reg16
-_CX	EQU	V20_R <1, _CL>
-_DX	EQU	V20_R <1, _DL>
-_BX	EQU	V20_R <1, _BL>
-_SP	EQU	V20_R <1, _AH>
-_BP	EQU	V20_R <1, _CH>
-_SI	EQU	V20_R <1, _DH>
-_DI	EQU	V20_R <1, _BH>
+V_AL	EQU	V20_R <, 000b>		; reg8
+V_CL	EQU	V20_R <, 001b>
+V_DL	EQU	V20_R <, 010b>
+V_BL	EQU	V20_R <, 011b>
+V_AH	EQU	V20_R <, V_AL OR 100b>
+V_CH	EQU	V20_R <, V_CL OR 100b>
+V_DH	EQU	V20_R <, V_DL OR 100b>
+V_BH	EQU	V20_R <, V_BL OR 100b>
+V_AX	EQU	V20_R <1, V_AL>		; reg16
+V_CX	EQU	V20_R <1, V_CL>
+V_DX	EQU	V20_R <1, V_DL>
+V_BX	EQU	V20_R <1, V_BL>
+V_SP	EQU	V20_R <1, V_AH>
+V_BP	EQU	V20_R <1, V_CH>
+V_SI	EQU	V20_R <1, V_DH>
+V_DI	EQU	V20_R <1, V_BH>
 
 ;----------------------------------------------------------------------------;
 ; Format 1 - Opcode with Size (Byte/Word)
 ;
-V20_OP1	MACRO OP, R, IMM
-		LOCAL W
+V20_OP1	MACRO OP, REG, IMM
+		LOCAL W, R
+
+		IFDEF V_&REG				;; Is REG defined as V20 V_REG?
+	R	= V_&REG					; R = V20 register opcode
 	W	= (R AND MASK VRW) SHR VRW		; W=1 if 16, 0 if 8
 	DB	0FH, OP OR W				; register Width
 	V20_F3 <, R AND MASK ROPC >			; dest register
 			IFNB <IMM>
 	DB	IMM
 			ENDIF
+
+		ELSE						;; V_REG not defined as V20 register
+	.ERR
+	%OUT	REG& not defined
+		ENDIF
+
 		ENDM
 
 TEST1		MACRO R, IMM
@@ -2622,7 +2709,7 @@ ROR4		MACRO R8
 ;----------------------------------------------------------------------------;
 POST_FLAG_TEST MACRO	FLAG
 			IF CPU_TYPE	EQ CPU_V20 AND (WIDTH FLAG) EQ 1
-	TEST1	_BP, FLAG				; V20: is FLAG set?
+	TEST1	BP, FLAG				; V20: is FLAG set?
 			ELSE
 	TEST	BP, MASK FLAG			; Is FLAG set?
 			ENDIF
@@ -2630,7 +2717,7 @@ POST_FLAG_TEST MACRO	FLAG
 
 POST_FLAG_SET MACRO	FLAG
 			IF CPU_TYPE	EQ CPU_V20 AND (WIDTH FLAG) EQ 1
-	SET1	_BP, FLAG				; V20: Set FLAG
+	SET1	BP, FLAG				; V20: Set FLAG
 			ELSE
 	OR	BP, MASK FLAG			; Set FLAG
 			ENDIF
@@ -2638,7 +2725,7 @@ POST_FLAG_SET MACRO	FLAG
 
 POST_FLAG_FLIP MACRO	FLAG
 			IF CPU_TYPE	EQ CPU_V20 AND (WIDTH FLAG) EQ 1
-	NOT1	_BP, FLAG				; V20: Invert FLAG
+	NOT1	BP, FLAG				; V20: Invert FLAG
 			ELSE
 	XOR	BP, MASK FLAG			; Invert flag
 			ENDIF
@@ -2655,7 +2742,7 @@ USE_V20	EQU	0				; use AND instruction instead
 USE_V20	EQU	1				; use CLR1 (ZF unaffected)
 			ENDIF
 			IF CPU_TYPE	EQ CPU_V20 AND (WIDTH FLAG) EQ 1 AND USE_V20
-	CLR1		_BP, FLAG			; V20: Clear FLAG
+	CLR1		BP, FLAG			; V20: Clear FLAG
 			ELSE
 	AND	BP, NOT MASK FLAG			; Clear flag
 			ENDIF
@@ -2987,6 +3074,8 @@ RESET		ENDS
 		ASSUME	DS:BIOS, SS:BIOS, CS:BIOS, ES:BIOS
 BIOS    	SEGMENT
 
+	ROM_FILL				; optionally empty ROM space with FF
+
 ;----------------------------------------------------------------------------;
 ; F000:FFF0: 8086 power-on reset vector
 ;----------------------------------------------------------------------------;
@@ -3047,6 +3136,16 @@ CRLF PROC
 	RET
 CRLF ENDP
 OUTLN_SZ ENDP
+
+		IF FEATURE_BYTES EQ 1
+;----------------------------------------------------------------------------;
+; GLaBIOS build feature bytes (4)
+;----------------------------------------------------------------------------;
+BYTES_HERE	FEAT
+		ORG	0E05BH - SIZE FEAT_BYTES
+FEAT:
+	FEAT_BYTES <>			; encode build options
+		ENDIF
 
 ;
 ; 0 BYTES HERE
@@ -3855,13 +3954,13 @@ SETTINGS_5150:
 ;
 	IN	AL, PPI_C				; get expansion card memory size
 			IF CPU_TYPE EQ CPU_V20
-	ROR4	_DL					; DL(h) = bits 1-4 from AL
+	ROR4	DL					; DL(h) = bits 1-4 from AL
 	XCHG	AX, CX				; AL = switches
 	AND	AL, NOT MASK PBSW			; read SW2 5
 	OUT	PPI_B, AL
 	IN	AL, PPI_C				; read bit 5
 	AND	AL, 0001B				; isolate memory size bit 5
-	ROR4	_DL					; DL(h) = high bit, DL(l) = low 4
+	ROR4	DL					; DL(h) = high bit, DL(l) = low 4
 	SHL	DX, 5					; DX = blocks * 32
 			ELSE
 	AND	AL, 1111B				; isolate memory size (in 32KB)
@@ -3939,7 +4038,7 @@ SETTINGS_5160:
 	PUSH	AX		 			; save port settings
 	IN	AL, PPI_C 				; get low switches
 			IF CPU_TYPE	EQ CPU_V20
-	ROR4	_CL					; CL(h) = PPI low switches
+	ROR4	CL					; CL(h) = PPI low switches
 			ELSE
 	AND	AL, MASK MBRAM OR MASK FPU OR MASK IPL ; isolate MB RAM and FPU bits
 	MOV	CH, AL				; save to CH
@@ -3949,7 +4048,7 @@ SETTINGS_5160:
 	OUT	PPI_B, AL
 	IN	AL, PPI_C 				; get high switches
 			IF CPU_TYPE	EQ CPU_V20
-	ROR4	_CL					; CL(h) = PPI high, CL(l) = PPI low
+	ROR4	CL					; CL(h) = PPI high, CL(l) = PPI low
 	XCHG	AX, CX				; AL = RAM, FPU with drives and vid
 			ELSE
 	MOV	CL, 4
@@ -7553,7 +7652,7 @@ INT_13_0 PROC
 	MOV	AL, 3 				; otherwise set AL to drive 3
 INT_13_0_1:
 			IF CPU_TYPE	EQ CPU_V20
-	ROL4	_CH					; CH(h) = FD_MOTOR_ST(l), CH(l) = AL(l)
+	ROL4	CH					; CH(h) = FD_MOTOR_ST(l), CH(l) = AL(l)
 							;  = (FD_MOTOR_ST SHL 4) OR (AL AND 0FH)
 	MOV	AL, CH				; AL = CH
 			ELSE
@@ -10861,7 +10960,7 @@ WORD_HEX PROC
 BYTE_HEX PROC
 	PUSH	AX 				; save AL
 			IF CPU_TYPE	EQ CPU_V20
-	ROL4	_AL				; AL(low nibble) = AL(high nibble)
+	ROL4	AL				; AL(low nibble) = AL(high nibble)
 			ELSE
 		REPT	4
 	SHR	AL, 1				; shift high nibble to low nibble
