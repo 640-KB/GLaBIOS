@@ -365,7 +365,7 @@ ARCH_SUB_TYPE	EQU	0			; make sure this is defined
 ARCH_ID		=	0FFH			; 0xFF=5150
 CASSETTE		=	1			; enable INT 13h cassette
 MBR_CHECK		=	0			; disable MBR check for DOS 1.x
-;FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
+FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
 TURBO_TYPE		=	TURBO_NONE
 EXP_UNIT		=	1			; enable Expansion Unit
 OEM_FONT		=	1			; use OEM style font
