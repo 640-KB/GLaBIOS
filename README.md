@@ -44,6 +44,7 @@ Copyright &copy; 2022-2025, [640KB](mailto:640kb@glabios.org) and contributors.
 
 [Companion ROMs](https://github.com/640-KB/GLaBIOS/wiki/Companion-ROMs) are PC Option ROMs that add additional features and support to any standard BIOS (not just GLaBIOS).
 
+- **[GLaDISK](https://github.com/640-KB/GLaDISK)** - High Density Floppy drive support.
 - **[GLaTICK](https://github.com/640-KB/GLaTICK)** - ROM based support for ISA Real Time Clocks providing `INT 1Ah` services elimiating the need for DOS programs/drivers.
 
 ## FAQ
