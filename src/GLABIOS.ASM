@@ -99,6 +99,7 @@ ARCH_BOOK88		EQU	'B'			; Book 8088
 ARCH_CPQ		EQU	'Q'			; Compaq Portable XT
 ARCH_VIRTUALXT	EQU	'J'			; VirtualXT Emulator
 ARCH_NEST		EQU	'N'			; Juko Nest N3 (D-11 chipset)
+ARCH_WILDCARD	EQU	'W'			; Wildcard 88 (80C88AL)
 
 ;
 ; CPU Instruction Set Target
@@ -266,7 +267,8 @@ FDC_ZERO_BDA	=	0		; clear FDC FIFO buffer between ops
 FDC_ERR_SEC_CT	=	0		; On error, 0=always return 0 sectors
 						;   1=return partial/successful sector count
 KB_HLT_WAIT		=	1		; Halt CPU during KB wait
-KB_BUF_READ_BDA	=	0		; 1=use BDA KB st/end ptrs, 0=fixed offsets
+KB_BUF_BDA		=	0		; 1=use BDA KB buffer ptrs (40:80-83)
+						;   0=static offsets
 MBR_CHECK		=	0		; Verify magic number of DOS MBR at boot
 						;   note: DOS 1.0 does not use MBR, so
 						;   will not boot if this is enabled
@@ -355,7 +357,7 @@ ARCH_ID		=	0FEH			; 0xFE=XT v1/clone (default)
 CASSETTE		=	0			; disable cassette (default)
 
 	IFNDEF ARCH_SUB_TYPE
-ARCH_SUB_TYPE	EQU	0			; make sure this is defined
+ARCH_SUB_TYPE	EQU	0			; this must always be defined
 	ENDIF
 
 	IF ARCH_TYPE EQ ARCH_5150
@@ -365,7 +367,7 @@ ARCH_SUB_TYPE	EQU	0			; make sure this is defined
 ARCH_ID		=	0FFH			; 0xFF=5150
 CASSETTE		=	1			; enable INT 13h cassette
 MBR_CHECK		=	0			; disable MBR check for DOS 1.x
-FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
+;FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
 TURBO_TYPE		=	TURBO_NONE
 EXP_UNIT		=	1			; enable Expansion Unit
 OEM_FONT		=	1			; use OEM style font
@@ -435,6 +437,7 @@ POST_TEST_PIC_INT	=	0			;  space since PIC is integrated
 FD_AUTO_DETECT	=	1			; auto-detect number of floppy drives
 ;FE_CPU_CFG		=	110b			; boot to 9.54 MHz, 2 RAM WS
 FE_CPU_CFG		=	100b			; boot to 9.54 MHz, 4 RAM WS (safest)
+;FE_CPU_CFG		=	010b			; boot to 7.15 MHz, 2 RAM WS
 ;FE_CPU_CFG		=	011b			; boot to 7.15 MHz, 0 RAM WS
 ;FE_CPU_CFG		=	000b			; boot to 4.77 MHz, 0 RAM WS
 POST_TEST_PIT_1	=	0			; FE2010A chipset cannot read timer 1
@@ -444,6 +447,15 @@ TURBO_TYPE		=	TURBO_REV		; always use reverse
 POST_TEST_PIC_REG =	0			;  disabled to fit available code space
 POST_TEST_PIC_INT =	0			; Since PIC is integrated on FE2010A
 	ENDIF						;  these tests may be unnecessary
+
+	IF ARCH_SUB_TYPE EQ ARCH_WILDCARD
+;----------------------------------------------------------------------------;
+; Additional Configuration for Wildcard 88
+;
+;FE_CPU_CFG		=	010b			; 7.15 MHz/2 IOWS, if not -10
+POST_ERR_WAIT	=	0			; 0=only warn POST errors
+RAM_PARITY		=	0			; disable memory parity check
+	ENDIF
 
 	IF ARCH_SUB_TYPE EQ ARCH_M88
 ;----------------------------------------------------------------------------;
@@ -3022,7 +3034,8 @@ _DOS_DAT	ENDS
 ;----------------------------------------------------------------------------;
 _IPL_SEG	SEGMENT AT 0H
 		ORG	07C00H
-IPL_TOP		DB	510 DUP(?)		; MBR code then MBR magic number
+IPL_TOP	LABEL FAR
+			DB	510 DUP(?)		; MBR code then MBR magic number
 IPL_ID		DW	?			; 0AA55H if valid MBR
 _IPL_SEG	ENDS
 
@@ -3722,8 +3735,10 @@ BASE_RAM_TEST_DONE:
 ; [18] Setup BOOT R/W stack memory segment
 ;----------------------------------------------------------------------------;
 			ASSUME SS:_BOOT_STACK
-	MOV	AX, SEG STACK_TOP 		; SS:SP to temp boot stack 0030:0100
-	MOV	SS, AX
+	;MOV	AX, SEG STACK_TOP 		; SS:SP to temp boot stack 0030:0100
+	;MOV	SS, AX
+	MOV	SP, SEG STACK_TOP 		; SS:SP to temp boot stack 0030:0100
+	MOV	SS, SP
 	MOV	SP, OFFSET STACK_TOP
 
 ;----------------------------------------------------------------------------;
@@ -6035,7 +6050,7 @@ INT_19_READ_MBR:
 	CMP	IPL_ID, MAGIC_WORD		; verify bootable MBR signature
 	JNZ	INT_19_IPL_FAIL			; jump if MBR not bootable
 			ENDIF
-	JMP 	FAR PTR IPL_TOP 			; jump to IPL segment and boot!
+	JMP 	IPL_TOP 				; jump to IPL segment and boot!
 INT_19_IPL_FAIL:
 	IRET
 		ASSUME DS:NOTHING, ES:NOTHING
@@ -6484,7 +6499,7 @@ KB_WAIT_READ_1:
 	JE	KB_WAIT_READ 		; if so, buffer is empty
 	XCHG	AX, SI 			; SI = tail
 	LODSW 				; AX = buffer[tail], SI = next
-		IF KB_BUF_READ_BDA EQ 1
+		IF KB_BUF_BDA EQ 1
 	CMP	SI, KB_BUF_EN		; is next >= end of buffer?
 	JB	KB_GET_READ 		; if not, get tail value
 	MOV	SI, KB_BUF_ST		; otherwise, wrap next to buffer top
@@ -6524,9 +6539,7 @@ BEEP_PROC PROC
 ;	BL low nibble = long beeps
 ;	BL high nibble = short beeps
 ;
-; Note: must use LOOP for beep since BEEP could occur if PIT is not working
-;  (then how does the speaker work?)
-; Note 2: cannot use stack since HALT_BEEP could occur before stack
+; Note: Cannot use stack since HALT_BEEP could occur before stack
 ;
 ; Size: 60 bytes
 ;----------------------------------------------------------------------------;
@@ -7077,7 +7090,7 @@ KB_INT_IS_PAUSE:
 KB_INT_PUT_BUFFER:
 	MOV	DI, KB_BUF_TL 				; DI = tail ptr
 	LEA	SI, [DI][2]					; SI = next (maybe)
-		IF KB_BUF_READ_BDA EQ 1
+		IF KB_BUF_BDA EQ 1
 	CMP	SI, KB_BUF_EN				; is next >= end of buffer?
 	JB	KB_INT_CHECK_FULL 			; if not, check if buffer is full
 	MOV	SI, KB_BUF_ST				; otherwise, wrap to first address
