@@ -367,7 +367,7 @@ ARCH_SUB_TYPE	EQU	0			; this must always be defined
 ARCH_ID		=	0FFH			; 0xFF=5150
 CASSETTE		=	1			; enable INT 13h cassette
 MBR_CHECK		=	0			; disable MBR check for DOS 1.x
-;FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
+FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
 TURBO_TYPE		=	TURBO_NONE
 EXP_UNIT		=	1			; enable Expansion Unit
 OEM_FONT		=	1			; use OEM style font
@@ -466,7 +466,6 @@ DRAM_REFRESH	=	0			; disable DRAM refresh (for SRAM)
 RAM_PARITY		=	0			; disable memory parity check
 CGA_SNOW_REMOVE	=	0			; disable snow removal
 FE_CPU_CFG		=	110b			; boot to 9.54 MHz, 2 RAM WS
-OEM_KB_EXT		=	0			; uses AT2XTKB keyboard interface
 	ENDIF
 	ENDIF
 
@@ -1708,17 +1707,6 @@ OCW3	RECORD	O3D7:1, ESMM:2, O3D3:2=1, O3P:1, O3RR:2
 NMI	RECORD	NMIE:1, NMIX:7
 
 ;----------------------------------------------------------------------------;
-; V40 WCY1
-;----------------------------------------------------------------------------;
-; 84218421
-; 76 	    |		- IOW		I/O Wait States (0-3)
-;   54    |		- UMW		Upper Memory Block Wait States (0-3)
-;     32  |		- MMW		Middle Memory Block Wait States (0-3)
-;       10|		- LMW		Lower Memory Block Wait States (0-3)
-;----------------------------------------------------------------------------;
-V40_WCY1	RECORD	IOW:2, UMW:2, MMW:2, LMW:2
-
-;----------------------------------------------------------------------------;
 ; 6845 Video - Port 3DA Status Register
 ;----------------------------------------------------------------------------;
 ; 84218421
@@ -2067,6 +2055,64 @@ MCSP_TOG	EQU	MC_XTCTL <MCSP_AT4,,,,MCSP_5>		; toggle high/low
 MCSP_LOW	EQU	MC_XTCTL <,,,,MCSP_8 AND MCSP_10>	; clear 8/10 bit
 MCSP_SPD	EQU	MASK MCAT4 OR MASK MCSP			; speed bits
 				ENDIF
+
+;----------------------------------------------------------------------------;
+; V40 WCY1
+;----------------------------------------------------------------------------;
+; 84218421
+; 76 	    |		- IOW		I/O Wait States (0-3)
+;   54    |		- UMW		Upper Memory Block Wait States (0-3)
+;     32  |		- MMW		Middle Memory Block Wait States (0-3)
+;       10|		- LMW		Lower Memory Block Wait States (0-3)
+;----------------------------------------------------------------------------;
+V40_WCY1	RECORD	IOW:2, UMW:2, MMW:2, LMW:2
+
+;----------------------------------------------------------------------------;
+; V40 PC register initialization table
+; Format: data byte, low byte of register port (high byte is FF)
+;----------------------------------------------------------------------------;
+V40_INIT_OPTIONAL =	0	; init optional unused registers
+V40_INIT	STRUC
+	DB	00000000B,	0FEH 	; FFFE: OPCN - INT Select
+	DB	00000110B,	0FDH 	; FFFD: OPSEL - Enable TCU/ICU, Disable DMAU/SCU
+					;	Only Enable The Interrupt Controller And Timer
+	DB	00H, 		0FCH	; FFFC: OPHA - On-chip Peripheral High Address Register
+					;	Any 256K Block Except Overlap with Registers
+			IF V40_INIT_OPTIONAL EQ 1
+	DB	00000000B,	0FBH	; FFFB: DULA - DMA Lower Address Register
+			ENDIF
+	DB	00100000B,	0FAH	; FFFA: IULA - 8259 Lower Address Register
+	DB	01000000B,	0F9H 	; FFF9: TULA - 8254 Lower Address Register
+			IF V40_INIT_OPTIONAL EQ 1
+	DB	11010000B,	0F8H 	; FFF8: SULA - Serial Port Lower Address Register
+			ENDIF
+	DB	00000000B		; FFF6: WCY2 - Number of wait cycles for DMA and refresh
+	DB	LOW V40_WCR2	;	00 seems safe for SRAM since no refresh happens
+			IF NOT PPI_B_BOOT AND MASK PBTB 	; Boot to Turbo/0-WS speed?
+	DB	V40_WCY1<0,0,0,0>	;	WCY1 - All Zero wait state
+			ELSE
+	DB	V40_WCY1<3,3,3,3>	;	WCY1 - 3 W/S everywhere
+			ENDIF
+	DB	LOW V40_WCR1	; FFF5: WCY1 - WAIT Wait bits 7-6 = IO, 5-4 = Upper Mem,
+					;	3-2 = Middle Mem, 1-0 Lower Mem
+					;	0FFH: Super conservative: 3WS everywhere
+					;	025H: Bolder: Zero wait-state I/O
+					;	 00H: Full Zero wait state, best performance
+	DB	00000110B,	0F4H 	; FFF4: WMB - Memory Boundaries
+					;	Bits 6-4 are size of "high" memory, 2-0 "low"
+					;	in 32k units.  Default puts bottom 32k "low"
+					;	and above 640k in "high" for stuff like slow
+					;	video cards and option BIOSes
+	DB	00H,		0F2H	; FFF2: RFC - Refresh Control
+					;	00 (disabled refresh) for SRAM
+			IF V40_INIT_OPTIONAL EQ 1
+	DB	00010100B,	0F0H 	; FFF0: TCKS - Timer Pin Selection
+			ELSE
+	DB	00011100B,	0F0H 	; FFF0: TCKS - Timer Pin Selection
+			ENDIF
+					; 	Bits 4-2 set sources for timers (1 for TCLK)
+					;	1=Pin, 0=internal, Bits 1-0 Prescale Div For Internal
+V40_INIT	ENDS
 
 ;============================================================================;
 ;
@@ -3006,10 +3052,12 @@ EKB_FLAGS2		KBFLAGS4 <>			; 97H  Keyboard LED flags (Enhanced)
 		ORG	0A0H
 RTC_WAIT		DB	?			; A0H  RTC wait function flag
 		ORG	0ACH				; ACH-B3H "Reserved" (can be used?)
-		ORG	0B0H				; B0H-B1H (used by Tandy for keyboard)
-		ORG	0E8H				; E8H-EFH "Reserved" (can be used?)
+		;ORG	0B0H				; B0H-B1H (used by Tandy for keyboard)
+		;ORG	0B4H				; B0H-B1H (used by Tandy for keyboard)
+		;ORG	0E8H				; E8H-EFH "Reserved" (can be used?)
 CURSOR_DEFAULT	DW	?			; E8H  Power on cursor bottom:top scan line (for Turbo)
 VID_MEM_SEG		DW	?			; EAH	 Video mem segment (MDA = B000, CGA = B800)
+		ORG	0E8H				; E8H-EFH "Reserved" (can be used?)
 FE2010_CONF_REG	DB	?			; ECH  FE2010A Config Reg (63H) (alternate)
 			DB	?			; EDH
 RTC_DATA		DW	?			; EEH  GLaTICK address and RTC type
@@ -4084,15 +4132,15 @@ SETTINGS_FE2010_1:
 SETTINGS_5160:
 	AND	AL, NOT MASK PBSW			; set bit 3 = 0 for low switch select
 	OUT	PPI_B, AL
-	PUSH	AX		 			; save port settings
+	XCHG	AX, DX	 			; save port settings
 	IN	AL, PPI_C 				; get low switches
 			IF CPU_TYPE	EQ CPU_V20
 	ROR4	CL					; CL(h) = PPI low switches
 			ELSE
 	AND	AL, MASK MBRAM OR MASK FPU OR MASK IPL ; isolate MB RAM and FPU bits
-	MOV	CH, AL				; save to CH
+							; save to DL
 			ENDIF
-	POP	AX 					; get port settings
+	XCHG	AX, DX				; get port settings
 	OR	AL, MASK PBSW 			; set bit 3 = 1 for high switch select
 	OUT	PPI_B, AL
 	IN	AL, PPI_C 				; get high switches
@@ -4102,7 +4150,7 @@ SETTINGS_5160:
 			ELSE
 	MOV	CL, 4
 	SHL	AL, CL				; shift drives and video to high nibble
-	OR	AL, CH				; combine RAM, FPU with drives and vid
+	OR	AL, DL				; combine RAM, FPU with drives and vid
 			ENDIF
 
 			IF MAX_RAM_AUTO EQ 1
@@ -4584,51 +4632,9 @@ UM82_MEM_SIZE ENDP
 			IF INIT_V40 EQ 1
 ;----------------------------------------------------------------------------;
 ; V40 PC register initialization table
-; Format: data byte, low byte of register port (high byte is FF)
 ;
-V40_INIT_OPTIONAL	= 0		; init optional unused registers
-V40_REG LABEL BYTE
-	DB	00000000B,	0FEH 	; FFFE: OPCN - INT Select
-	DB	00000110B,	0FDH 	; FFFD: OPSEL - Enable TCU/ICU, Disable DMAU/SCU
-					;	Only Enable The Interrupt Controller And Timer
-	DB	00H, 		0FCH	; FFFC: OPHA - On-chip Peripheral High Address Register
-					;	Any 256K Block Except Overlap with Registers
-			IF V40_INIT_OPTIONAL EQ 1
-	DB	00000000B,	0FBH	; FFFB: DULA - DMA Lower Address Register
+V40_REG	V40_INIT <>			; data byte, low byte of register port
 			ENDIF
-	DB	00100000B,	0FAH	; FFFA: IULA - 8259 Lower Address Register
-	DB	01000000B,	0F9H 	; FFF9: TULA - 8254 Lower Address Register
-			IF V40_INIT_OPTIONAL EQ 1
-	DB	11010000B,	0F8H 	; FFF8: SULA - Serial Port Lower Address Register
-			ENDIF
-	DB	00000000B		; FFF6: WCY2 - Number of wait cycles for DMA and refresh
-	DB	LOW V40_WCR2	;	00 seems safe for SRAM since no refresh happens
-			IF NOT PPI_B_BOOT AND MASK PBTB 	; Boot to Turbo/0-WS speed?
-	DB	V40_WCY1<0,0,0,0>	;	WCY1 - All Zero wait state
-			ELSE
-	DB	V40_WCY1<3,3,3,3>	;	WCY1 - 3 W/S everywhere
-			ENDIF
-	DB	LOW V40_WCR1	; FFF5: WCY1 - WAIT Wait bits 7-6 = IO, 5-4 = Upper Mem,
-					;	3-2 = Middle Mem, 1-0 Lower Mem
-					;	0FFH: Super conservative: 3WS everywhere
-					;	025H: Bolder: Zero wait-state I/O
-					;	 00H: Full Zero wait state, best performance
-	DB	00000110B,	0F4H 	; FFF4: WMB - Memory Boundaries
-					;	Bits 6-4 are size of "high" memory, 2-0 "low"
-					;	in 32k units.  Default puts bottom 32k "low"
-					;	and above 640k in "high" for stuff like slow
-					;	video cards and option BIOSes
-	DB	00H,		0F2H	; FFF2: RFC - Refresh Control
-					;	00 (disabled refresh) for SRAM
-			IF V40_INIT_OPTIONAL EQ 1
-	DB	00010100B,	0F0H 	; FFF0: TCKS - Timer Pin Selection
-			ELSE
-	DB	00011100B,	0F0H 	; FFF0: TCKS - Timer Pin Selection
-			ENDIF
-					; 	Bits 4-2 set sources for timers (1 for TCLK)
-					;	1=Pin, 0=internal, Bits 1-0 Prescale Div For Internal
-L_V40_REG	=	($-V40_REG)/2
-			ENDIF		; /IF INIT_V40 EQ 1
 
 COLD_INIT PROC
 
@@ -4639,11 +4645,11 @@ COLD_INIT PROC
 ; Contributed by @Hak Foo
 ;----------------------------------------------------------------------------;
 SETUP_V40 PROC
-	MOV	CX, L_V40_REG		; counter = size of V40_REG
+	MOV	CX, (SIZE V40_REG) / 2	; counter = size of V40_REG (in WORDs)
 	MOV	SI, OFFSET V40_REG	; register data
-	MOV	DH, 0FFH			; high byte of DX is always FF
 V40_REG_LOOP:
 	LODS	WORD PTR CS:[SI]		; AH = low byte of reg, AL = reg value
+	CWD					; high byte of DX is always FF
 	MOV	DL, AH			; DX = next register
 	OUT	DX, AL			; write to register
 	LOOP	V40_REG_LOOP
@@ -4693,7 +4699,7 @@ SET_EFLAG_FLP ENDP
 			ENDIF
 
 ;
-; 8 BYTES HERE
+; 11 BYTES HERE
 ;
 BYTES_HERE	INT_02
 
