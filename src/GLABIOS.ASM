@@ -43,23 +43,8 @@
 ;  when a byte is wasted, God gets quite irate..."
 ;  - David W. Plummer
 ;----------------------------------------------------------------------------;
-; Build Instructions:
-;
-; Build with MASM 5.0 or MASM 6.
-;
-;  MAKE.BAT
-;
-; or
-;
-;  MASM GLABIOS;
-;  LINK GLABIOS;
-;  GLA2ROM GLABIOS.EXE GLABIOS.ROM		; Build 8K ROM
-;
-; MASM Build Options:
-;  /DVER_DATE='02/22/22'			; Must be MM/DD/YY format
-;  /DARCH_TYPE='X'				; P, X, Y or T (see ARCH_* below)
-;  /DCPU_TYPE='8'					; 8 or V (see CPU_* below)
-;
+; Build with MASM 5, MASM 6, TASM or JWasm 2.20.
+; Instructions: https://github.com/640-KB/GLaBIOS/wiki/How-to-build
 ;----------------------------------------------------------------------------;
 ; POST Error Beep messages:
 ;
@@ -129,7 +114,7 @@ VER_NAME		EQU	'GLaBIOS'
 VER_NUM		EQU	'0.4.1'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'09/12/25'		; must be MM/DD/YY per Intel CSM
+VER_DATE		EQU	'11/23/25'		; must be MM/DD/YY per Intel CSM
 	ENDIF
 COPY_YEAR		EQU	'2022-25'		; Copyright year range
 
@@ -142,7 +127,7 @@ COPY_YEAR		EQU	'2022-25'		; Copyright year range
 ; and fitting within fixed compatibility ORGs.
 ;
 ; For experimenting with build options, it's highly recommended to use
-; MASM 5.0 as it will not build if code space is exceeded. Due to differences
+; MASM 5 as it will not build if code space is exceeded. Due to differences
 ; in MASM 6, this does not work and can produce a totally broken build.
 ;----------------------------------------------------------------------------;
 
@@ -283,7 +268,7 @@ FD_AUTO_DETECT	=	0		; Auto-detect number of floppy drives
 POST_ERR_WAIT	=	1		; Wait for Any Key press to continue if
 						;   there is a POST error
 INT_19_BOOT_HD	=	0		; Try IPL to floppy then hard drive (80h)
-SW1_FLP		=	MASK FLP	; Default max number of floppy drives
+SW1_FLP		=	11b		; Default SW1 floppy drives value
 MDA_ATTR		=	1		; Display MDA character attributes
 						; 2=all, 1=intensity only, 0=filter all
 LIGHT_PEN		=	1		; INT 10h,4 light pen support
@@ -1208,7 +1193,7 @@ PFLAGS RECORD WARM:1,PKI:1,PKEY:1,PFDC:1,PFSK:1,PDMA:1,PMEM:1,PFXX:1,PTBD:5,GRND
 ;       x |			- F1FH:	FDC_HLT_WAIT
 ;        x|			- F1UF:	UNSAFE_FLOPPY
 ;----------------------------------------------------------------------------;
-FEAT1	RECORD F1C:2=CGA_SNOW_REMOVE,F1TT:2=TURBO_TYPE AND 11B,F1T:1=IS_TURBO,F1FE:1=FDC_ENABLE,F1FH:1=FDC_HLT_WAIT,F1UF:1=UNSAFE_FLOPPY
+FEAT1	RECORD F1C:2=CGA_SNOW_REMOVE,F1TT:2=TURBO_TYPE AND 11B,F1T:1=IS_TURBO AND 1b,F1FE:1=FDC_ENABLE,F1FH:1=FDC_HLT_WAIT,F1UF:1=UNSAFE_FLOPPY
 
 ;----------------------------------------------------------------------------;
 ;         |x		- F1P:	RAM_PARITY
@@ -1618,7 +1603,7 @@ DMA_CR RECORD	DACK:1,DREQ:1,DWS:1,DPRI:1,DTIM:1,DDIS:1,DHLD:1,DM2M:1
 ;       1 |		- TC1		1 = Channel 1 has reached TC
 ;        0|		- TC0		1 = Channel 0 has reached TC
 ;----------------------------------------------------------------------------;
-DMA_SR RECORD	CR3:1,CR2:1,CR1:1,CR0:1,TC3:1,TC2:1,TC1:1,TC0:1
+DMA_SR RECORD	DCR3:1,DCR2:1,DCR1:1,DCR0:1,TC3:1,TC2:1,TC1:1,TC0:1
 
 ;----------------------------------------------------------------------------;
 ; 8237 DMA Single Channel Mask Register
@@ -1695,7 +1680,7 @@ EOI	EQU		OCW2 <>		; Non-Specific EOI
 ;      2  |		- O3P		1=Poll command, 0=No Poll command
 ;       10|		- O3RR	Read Register command
 ;----------------------------------------------------------------------------;
-OCW3	RECORD	O3D7:1, ESMM:2, O3D3:2=1, O3P:1, O3RR:2
+OCW3	RECORD	O3D7:1=0, ESMM:2, O3D3:2=1, O3P:1, O3RR:2
 
 ;----------------------------------------------------------------------------;
 ; NMI Mask Register
@@ -2056,6 +2041,7 @@ MCSP_LOW	EQU	MC_XTCTL <,,,,MCSP_8 AND MCSP_10>	; clear 8/10 bit
 MCSP_SPD	EQU	MASK MCAT4 OR MASK MCSP			; speed bits
 				ENDIF
 
+				IF INIT_V40 EQ 1
 ;----------------------------------------------------------------------------;
 ; V40 WCY1
 ;----------------------------------------------------------------------------;
@@ -2113,6 +2099,7 @@ V40_INIT	STRUC
 					; 	Bits 4-2 set sources for timers (1 for TCLK)
 					;	1=Pin, 0=internal, Bits 1-0 Prescale Div For Internal
 V40_INIT	ENDS
+				ENDIF
 
 ;============================================================================;
 ;
@@ -2631,7 +2618,7 @@ BYTES_HERE_&NEXT_LBL = NEXT_LBL-$
 		IF2
 		IF BYTES_HERE_&NEXT_LBL LT 0
 		.ERR2
-	%OUT WARNING: Out of space at: NEXT_LBL (&BYTES_HERE_&NEXT_LBL)
+	BYTES_HERE_OUT	NEXT_LBL,%($-NEXT_LBL)
 		ELSE
 		IFDEF FILL_BYTE
 			REPT BYTES_HERE_&NEXT_LBL
@@ -2641,6 +2628,10 @@ BYTES_HERE_&NEXT_LBL = NEXT_LBL-$
 		ENDIF
 		ENDIF
 		ENDIF
+		ENDM
+
+BYTES_HERE_OUT MACRO LBL, SZ
+	%OUT WARNING: Out of space at: &LBL (-SZ bytes)
 		ENDM
 
 ;----------------------------------------------------------------------------;
@@ -3696,6 +3687,8 @@ DMA_SETUP_CH:
 ; enabled at application of power."
 ;
 ; Based on the above, it would appear this may not be necessary.
+;
+; Clobbers DX
 ;----------------------------------------------------------------------------;
 INIT_EXP_CHASSIS:
 	MOV	DX, EXP_UNIT_CTRL		; PC Expansion Chassis
@@ -3722,15 +3715,15 @@ INIT_EXP_CHASSIS_DONE:
 ; - Parity Error: 1 short, 4 long beeps
 ;
 ; Input: CX = 0 from [13D]
+; Output: DX = 0
 ;----------------------------------------------------------------------------;
 			ASSUME DS:_BDA_ABS, ES:_IVT
-			IF RAM_TEST_NONE NE 1
 BASE_RAM_TEST:
 	IN	AL, PPI_B 				; AL = PB0 flags
 	OR	AL, MASK PBIO OR MASK PBPC	; disable RAM parity and I/O ch. flags
 	OUT	PPI_B, AL
 	XCHG	AX, CX				; AX = 0 = MEM_CHECK pattern and
-	MOV	DS, AX				; DS and ES = IVT segment 0000
+	MOV	DS, AX				; DS = IVT segment 0000
 	MOV	SI, OFFSET WARM_FLAG_ABS	; SI = warm boot flag offset
 	MOV	DX, [SI]				; save warm boot flag
 	CALL_NS  MEM_CHECK			; clear memory and parity bits
@@ -3766,12 +3759,6 @@ BASE_RAM_TEST_DONE:
 	OR	AL, MASK PBIO OR MASK PBPC	; disable RAM parity and I/O ch. flags
 	OUT	PPI_B, AL
 			ENDIF				; END RAM_PARITY EQ 1
-			ELSE
-	JMP	SHORT BASE_RAM_TEST_DONE
-HALT_BEEP_1:
-	JMP	HALT_BEEP				; NEAR jump to HALT BEEP PROC
-BASE_RAM_TEST_DONE:
-			ENDIF
 
 ;----------------------------------------------------------------------------;
 ;
@@ -3785,7 +3772,7 @@ BASE_RAM_TEST_DONE:
 			ASSUME SS:_BOOT_STACK
 	;MOV	AX, SEG STACK_TOP 		; SS:SP to temp boot stack 0030:0100
 	;MOV	SS, AX
-	MOV	SP, SEG STACK_TOP 		; SS:SP to temp boot stack 0030:0100
+	MOV	SP, SEG _BOOT_STACK 		; SS:SP to temp boot stack 0030:0100
 	MOV	SS, SP
 	MOV	SP, OFFSET STACK_TOP
 
@@ -7629,7 +7616,7 @@ _FD_CAL_ST		EQU	_FD_LAST_OP[FD_CAL_ST-FD_LAST_OP]	; FD_CAL_ST
 _FD_TRACK		EQU	_FD_LAST_OP[FD_TRACK-FD_LAST_OP]	; FD_TRACK
 _FD_MEDIA_ST	EQU	_FD_LAST_OP[FD_MEDIA_ST-FD_LAST_OP]	; FD_MEDIA_ST
 _FD_TIMER		EQU	_FD_LAST_OP[TIMER-FD_LAST_OP]		; TIMER
-_FDC_LAST_ST	EQU	[DI][FDC_LAST_ST-FD_LAST_OP]		; FDC_LAST_ST
+_FDC_LAST_ST	EQU	([DI][FDC_LAST_ST-FD_LAST_OP])		; FDC_LAST_ST
 
 		ORG 0EC59H
 INT_13 PROC
