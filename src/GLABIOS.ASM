@@ -7065,17 +7065,6 @@ KB_INT_PRTSC:
 	INT	5H						; call print screen handler
 	JMP	SHORT INT_KB_DONE
 
-KB_INT_IS_CTRL_DONE:
-;----------------------------------------------------------------------------;
-; Test if in Ctrl-NumLock PAUSE
-; If in Pause, any remaining key will exit and be discarded
-;
-KB_INT_IS_PAUSE:
-	TEST	DH, MASK K2PA				; is in pause?
-	JZ	KB_INT_PUT_BUFFER
-	AND	KB_FLAGS2, NOT MASK K2PA		; clear pause flag
-	JMP	SHORT INT_KB_DONE				; discard key and exit int
-
 ;----------------------------------------------------------------------------;
 ; All special cases have been handled
 ; Store AX in keyboard buffer
@@ -7083,15 +7072,15 @@ KB_INT_IS_PAUSE:
 KB_INT_PUT_BUFFER:
 	MOV	DI, KB_BUF_TL 				; DI = tail ptr
 	LEA	SI, [DI][2]					; SI = next (maybe)
-		IF KB_BUF_BDA EQ 1
+			IF KB_BUF_BDA EQ 1
 	CMP	SI, KB_BUF_EN				; is next >= end of buffer?
 	JB	KB_INT_CHECK_FULL 			; if not, check if buffer is full
 	MOV	SI, KB_BUF_ST				; otherwise, wrap to first address
-		ELSE
+			ELSE
 	CMP	SI, KB_BUF_END_B				; is next >= end of buffer?
 	JB	KB_INT_CHECK_FULL 			; if not, check if buffer is full
 	MOV	SI, OFFSET KB_BUF 			; otherwise, wrap to first address
-		ENDIF
+			ENDIF
 KB_INT_CHECK_FULL:
 	CMP	SI, KB_BUF_HD 				; next == head?
 	JE	INT_KB_MEEP_DONE				; Beep if ZF - buffer is full
@@ -7110,6 +7099,17 @@ INT_KB_DONE:
 			ENDIF
 	POP	AX
 	IRET
+
+KB_INT_IS_CTRL_DONE:
+;----------------------------------------------------------------------------;
+; Test if in Ctrl-NumLock PAUSE
+; If in Pause, any remaining key will exit and be discarded
+;
+KB_INT_IS_PAUSE:
+	TEST	DH, MASK K2PA				; is in pause?
+	JZ	KB_INT_PUT_BUFFER
+	AND	KB_FLAGS2, NOT MASK K2PA		; clear pause flag
+	JMP	SHORT INT_KB_DONE				; discard key and exit int
 
 ;----------------------------------------------------------------------------;
 ; 6. Only ALT key is held (no CTRL)
@@ -7184,40 +7184,41 @@ INT_KB_CTRL_ASC_TBL_LOOP:
 	LOOPNE INT_KB_CTRL_ASC_TBL_LOOP		; if not keep looping until end
 	JNZ	INT_KB_CTRL_ASC_TBL_DONE		; no matches, restore AX and continue
 	CMP	CL, L_INT_KB_CTRL_SCAN_TBL		; was first list segment?
-	JG	INT_KB_CTRL_NO_DONE			; if so, match found and AX is set, exit
-	MOV	AH, 0						; ASCII code 0
-	XCHG	AL, AH					; AH = scan code, AL = 0
+	JG	KB_INT_IS_CTRL_DONE			; if so, use new ASCII code
+	XOR	AH, AH					; else use new scan code and ASCII 0
 INT_KB_CTRL_NO_DONE:
-	JMP	KB_INT_IS_CTRL_DONE			; AX set, exit
+	XCHG	AL, AH					; AH = scan code, AL = ASCII
+	JMP	SHORT KB_INT_IS_CTRL_DONE		; AX set, exit
 INT_KB_CTRL_ASC_TBL_DONE:
 	XCHG	AX, BX					; restore AX
+	XCHG	AL, AH					; AL = scancode for compare
 
 ;----------------------------------------------------------------------------;
 ; Skip ; ' `
 ;
-	CMP	AH, 27H					; pass < 27
+	CMP	AL, 27H					; pass < 27
 	JB	INT_KB_CTRL_ALPHA
-	CMP	AH, 29H					; pass > 29
+	CMP	AL, 29H					; pass > 29
 	JNA	INT_KB_DONE					; skip 27-29
 
 ;----------------------------------------------------------------------------;
 ; For scan codes 10H-32H return only low 5 bits of ASCII code when CTRL is held
 ;
 INT_KB_CTRL_ALPHA:
-	CMP	AH, 10H
+	CMP	AL, 10H
 	JB	INT_KB_CTRL_NO_ALT_1
-	CMP	AH, 32H
+	CMP	AL, 32H
 	JA	INT_KB_CTRL_NO_ALT_1
-	AND	AL, 00011111B				; adjust ASCII value
+	AND	AH, 00011111B				; adjust ASCII value
 	JMP	SHORT INT_KB_CTRL_NO_DONE
 INT_KB_CTRL_NO_ALT_1:
 
 ;----------------------------------------------------------------------------;
 ; If scan code between 02H-35H and hasn't been modified yet, return nothing
 ;
-	CMP	AH, 2
+	CMP	AL, 02H
 	JB	INT_KB_CTRL_NO_DONE			; pass < 2
-	CMP	AH, 35H
+	CMP	AL, 35H
 	JA	INT_KB_CTRL_NO_DONE			; pass > 35
 	JMP	SHORT INT_KB_DONE_1			; don't return 2-35?
 
@@ -7555,7 +7556,7 @@ CAS_CRC_ADD ENDP
 			ENDIF			; IF CASSETTE EQ 1
 
 ;
-; 7 BYTES HERE / 6 BYTES HERE 5150
+; 12 BYTES HERE / 11 BYTES HERE 5150
 ;
 BYTES_HERE	INT_13
 
