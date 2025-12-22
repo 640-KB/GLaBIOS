@@ -9465,9 +9465,12 @@ INT_10_7 PROC
 ; Input: same as INT 10,7 above
 ;----------------------------------------------------------------------------;
 INT_10_6 PROC
-	PUSHX	AX, BX, SI			; call-preserve these registers
+			IF CPU_TYPE EQ CPU_V20
+	PUSHA					; preserve all registers
+			ELSE
+	PUSHX	AX, BX, CX, DX, SI, BP	; call-preserve these registers
+			ENDIF
 	MOV	ES, VID_MEM_SEG		; ES = video/regen RAM segment (B800 or B000)
-	PUSH	BP
 
 ;----------------------------------------------------------------------------;
 ; Register Check:
@@ -9656,7 +9659,11 @@ INT_10_6_ENABLE_CGA:
 				ENDIF
 
 INT_10_6_DONE:
-	POPX	BP, SI, BX, AX
+			IF CPU_TYPE EQ CPU_V20
+	POPA					; preserve all registers
+			ELSE
+	POPX	BP, SI, DX, CX, BX, AX
+			ENDIF
 	RET
 
 ;----------------------------------------------------------------------------;
