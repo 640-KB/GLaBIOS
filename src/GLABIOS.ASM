@@ -253,7 +253,7 @@ FDC_ERR_SEC_CT	=	0		; On error, 0=always return 0 sectors
 						;   1=return partial/successful sector count
 KB_HLT_WAIT		=	1		; Halt CPU during KB wait
 KB_BUF_BDA		=	0		; 1=use BDA KB buffer ptrs (40:80-83)
-						;   0=static offsets
+						;   0=static offsets (-3 bytes)
 MBR_CHECK		=	0		; Verify magic number of DOS MBR at boot
 						;   note: DOS 1.0 does not use MBR, so
 						;   will not boot if this is enabled
@@ -367,6 +367,7 @@ TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
 FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
 EXP_UNIT		=	1			; enable Expansion Unit
 OEM_FONT		=	1			; use OEM style font
+KB_BUF_BDA		=	1			; use BDA KB start/end pointers
 	ENDIF
 	IF ARCH_SUB_TYPE EQ ARCH_5160v2
 ARCH_ID		=	0FBH			; 0xFB=XT v2/v3
@@ -6757,22 +6758,22 @@ INT_09_POST ENDP
 ; Clear keyboard circular buffer
 ;----------------------------------------------------------------------------;
 ; Clear/init circular buffer at KB_BUF
-; Clobbers AX, DI
+; Input: DS = BDA
+; Clobbers AX
 ;
-; Size: 16 bytes
+; Size: 10 bytes
 ;----------------------------------------------------------------------------;
 KB_BUF_CLEAR PROC
-		ASSUME ES:_BDA_ABS
-	PUSH	ES 					; save ES
-	XOR	AX, AX
-	MOV	ES, AX
-	MOV	AX, ES:KB_BUF_ST_ABS 		; AX = original start of buffer
-	MOV	DI, OFFSET KB_BUF_HD_ABS	; DI = buffer head
-	STOSW 					; write to head pointer
-	STOSW 					; write to tail pointer
-	POP	ES
+		ASSUME DS:_BDA
+			IF KB_BUF_BDA EQ 1
+	MOV	AX, KB_BUF_ST 			; AX = original start of buffer
+			ELSE
+	MOV	AX, OFFSET KB_BUF			; AX = fixed start of buffer
+			ENDIF
+	MOV	KB_BUF_HD, AX
+	MOV	KB_BUF_TL, AX
 	RET
-		ASSUME ES:NOTHING
+		ASSUME DS:NOTHING
 KB_BUF_CLEAR ENDP
 
 ;----------------------------------------------------------------------------;
