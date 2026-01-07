@@ -2,7 +2,7 @@
 ## (General Libraries and Basic Input Output System)
 A modern, scratch-built, open-source alternative BIOS for vintage PC, XT, 8088 Clone or Turbo PCs.
 
-Copyright &copy; 2022-2025, [640KB](mailto:640kb@glabios.org) and contributors.
+Copyright &copy; 2022-2026, [640KB](mailto:640kb@glabios.org) and contributors.
 
 ## Version 0.4:
 
@@ -49,7 +49,7 @@ Copyright &copy; 2022-2025, [640KB](mailto:640kb@glabios.org) and contributors.
 
 ## FAQ
 
-### Why another 8088 PC BIOS in <strike>2022</strike> <strike>2023</strike> <strike>2024</strike> 2025?
+### Why another 8088 PC BIOS in <strike>2022</strike> <strike>2023</strike> <strike>2024</strike> <strike>2025</strike> 2026?
 
 There are other excellent BIOS projects out there each with it's own design goals and use cases. The goals for GLaBIOS are:
 
