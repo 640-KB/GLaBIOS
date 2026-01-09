@@ -5345,6 +5345,7 @@ POST_MEMORY		DB	'RAM',  0			; RAM Memory test
 					ENDIF
 			DB	'000 ', POST_K_UNIT	;  and KB or KiB
 			DB	' OK',  0
+POST_286	DB	'286',  0
 					IF ARCH_SUB_TYPE EQ ARCH_NEST
 POST_V20		DB	'V30'
 					ELSE
@@ -10769,11 +10770,21 @@ POST_SYS_VIDEO ENDP
 	POST_COL_1	POST_CPU, POST_CLR_VAL1	; display 'CPU' left column
 							;  SI now points to '8088'
 CPU_CHECK_TYPE_2:
-	TEST_GFLAG  V20				; ZF = 0 if V20, ZF = 1 if 8088
-	JZ	CPU_CHECK_TYPE_2_DONE		; jump if 8088
+	MOV AX, 7000H				; Try to set flag bits 12-14 to 1's
+	PUSH AX						; Push the test value onto the stack
+	POPF						; Pop it into the flag register
+	PUSHF						; Push it back onto the stack
+	POP AX						; Pop it into AX for check
+	AND AX, 7000H				; if bits 12-14 are cleared then
+	JNZ CPU_CHECK_TYPE_V20		; the chip is a 80286
+	MOV SI, OFFSET POST_286
+	JMP CPU_CHECK_TYPE_2_DONE
+CPU_CHECK_TYPE_V20:
+	TEST_GFLAG V20				; ZF = 0 if V20, ZF = 1 if 8088
+	JZ CPU_CHECK_TYPE_2_DONE	; jump if 8088
 	MOV	SI, OFFSET POST_V20		; if not, is V20
 CPU_CHECK_TYPE_2_DONE:
-	CALL	OUT_SZ				; write CPU type
+	CALL OUT_SZ					; write CPU type
 	POST_COL_END				; end first column
 
 ;----------------------------------------------------------------------------;
