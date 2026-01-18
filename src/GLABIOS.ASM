@@ -6,7 +6,7 @@
 ;
 ; A scratch-built, open-source 8088 PC/clone BIOS alternative.
 ;
-; Copyright (c) 2022-2025, 640KB and contributors
+; Copyright (c) 2022-2026, 640KB and contributors
 ;
 ;----------------------------------------------------------------------------;
 ;
@@ -44,7 +44,7 @@
 ;  - David W. Plummer
 ;----------------------------------------------------------------------------;
 ; Build with MASM 5, MASM 6, TASM or JWasm 2.20.
-; Instructions: https://github.com/640-KB/GLaBIOS/wiki/How-to-build
+; https://github.com/640-KB/GLaBIOS/wiki/How-to-build
 ;----------------------------------------------------------------------------;
 ; POST Error Beep messages:
 ;
@@ -111,12 +111,12 @@ TURBO_REV		EQU	2			; reversed PPI (0=turbo, 1=normal)
 ;
 VER_NAME		EQU	'GLaBIOS'
 	IFNDEF VER_NUM
-VER_NUM		EQU	'0.4.1'		; (max 5 chars)
+VER_NUM		EQU	'0.8b0'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'11/23/25'		; must be MM/DD/YY per Intel CSM
+VER_DATE		EQU	'01/17/26'		; must be MM/DD/YY per Intel CSM
 	ENDIF
-COPY_YEAR		EQU	'2022-25'		; Copyright year range
+COPY_YEAR		EQU	'2022-26'		; Copyright year range
 
 ;----------------------------------------------------------------------------;
 ; BEGIN Configurable Build Options
@@ -189,11 +189,15 @@ CGA_SNOW_REMOVE	=	3		; 0: Snow, Normal Flashing, Fastest
 						; 3: No Snow, More Flashing, Quite Fast
 
 ;----------------------------------------------------------------------------;
+; Keyboard support
+;
+KB_EXT		=	1		; Enable Extended Keyboard support
+
+;----------------------------------------------------------------------------;
 ; Personality Traits
 ;
 POST_THEME		=	1		; color theme for POST screen (see below)
 POST_CLS		=	0		; clear screen after POST
-POST_GLADOS		=	0		; say "Starting GLaDOS..." on boot
 POST_CONFIG		=	1		; show CPU, FPU and ports on POST
 POST_FD_COUNT	=	1		; show floppy drive count on POST
 POST_HD_COUNT	=	1		; show hard drive count and params on POST
@@ -238,7 +242,7 @@ RAM_TEST_NONE	=	0		; Don't test or clear RAM at all
 RAM_DIGITS		=	3		; Number of zero-padded digits for RAM (3 or 4)
 BASIC_ROM		=	1		; BASIC ROM support at 0F600h
 OPT_ROM_END		=	0FE00H	; Option ROM scan ending address (must be xx00)
-FDC_ENABLE		=	1		; Enable INT 13h floppy support
+FDC_ENABLE		=	1		; Enable INT 13h floppy support (using GLaDISK)
 FDC_IPL_SW		=	0		; Use IPL switch to enable/disable floppy
 FDC_HLT_WAIT	=	1		; Halt CPU during FD access
 						;   Some chipsets (TD3300A known affected)
@@ -280,10 +284,15 @@ OEM_FONT		=	0		; 1=use OEM style font, 0=clone style
 POST_CARD		=	0		; enable POST codes on port 80H
 MUTE_TANDY		=	0		; mute buzzing on Tandy 3 Voice
 MUSHROOM_HACK	=	0		; workaround delay if PIT is stopped
+HOBBIT_HACK		=	0		; Don't clobber CX and DX on INT 10h scroll
 FE_CONF_LOCK	=	1		; lock FE2010 config register after init
 ROM_SCAN_ALIGN	=	1		; option ROM scan aligns to 2K boundaries
-OEM_KB_EXT		=	1		; allow EAh reset byte on ext. keyboard
 FEATURE_BYTES	=	1		; include build options in build binary
+EKB_EXT_RESET	=	1		; handle EAh extended keyboard reset byte
+EKB_EXT_CHK		=	0		; set/save BDA extended keyboard flags on boot
+EKB_INT_15		=	1		; enable keyboard intercept (if KB_EXT)
+EKB_INT_SR		=	1		; enable SysRq handling (if KB_EXT)
+ROM_SIZE_K		=	8		; ROM size in KiB
 
 ;----------------------------------------------------------------------------;
 ; Hardware hacks!
@@ -368,10 +377,11 @@ FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
 EXP_UNIT		=	1			; enable Expansion Unit
 OEM_FONT		=	1			; use OEM style font
 KB_BUF_BDA		=	1			; use BDA KB start/end pointers
-	ENDIF
-	IF ARCH_SUB_TYPE EQ ARCH_5160v2
+	IF ARCH_SUB_TYPE EQ ARCH_5160v2 OR KB_EXT EQ 1
 ARCH_ID		=	0FBH			; 0xFB=XT v2/v3
 FDC_IPL_SW		=	0			; Don't use IPL SW1 for drive count
+KB_EXT		=	1			; Extended Keyboard support
+	ENDIF
 	ENDIF
 
 	IF ARCH_TYPE EQ ARCH_TD3300
@@ -381,7 +391,7 @@ FDC_IPL_SW		=	0			; Don't use IPL SW1 for drive count
 BASIC_ROM		= 	0			; disable to free code space
 FDC_HLT_WAIT	=	0			; halting CPU on FDC and KB wait
 FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
-KB_HLT_WAIT		=	0			;  seems to cause issues on TD3300A
+KB_HLT_WAIT		=	0			; seems to cause issues on TD3300A
 TURBO_TYPE		=	TURBO_STD		; always use Standard
 TURBO_SWITCH	=	1			; boot under hardware Turbo control
 TD_WS_SETUP		=	0			; set wait state register on boot (0 ws)
@@ -390,6 +400,11 @@ TD_UPMEM		=	1			; clear and display upper memory bank
 RAM_DIGITS		=	4			; display RAM as four digits
 POST_TEST_PIC_REG	=	0			; disable PIC reg test (code space)
 		ENDIF
+
+		IF KB_EXT EQ 1
+POST_TEST_PIC_INT	=	0			; not enough code space
+;FDC_ENABLE		=	0			; remove FDC to enable Ext. KB
+		ENDIF					;  if using GLaDISK for floppy
 
 	IF ARCH_SUB_TYPE EQ ARCH_NEST
 ;----------------------------------------------------------------------------;
@@ -400,8 +415,8 @@ UNSAFE_REFRESH	=	1			; go big or go home
 DRAM_REFRESH	=	655
 N3_UMA		=	1			; enable UMA bank (E000) on boot
 POST_CARD		=	0			; not enough code space
-	ENDIF
-	ENDIF
+	ENDIF						; /IF ARCH_SUB_TYPE EQ ARCH_NEST
+	ENDIF						; /IF ARCH_TYPE EQ ARCH_TD3300
 
 	IF ARCH_TYPE EQ ARCH_UM82
 ;----------------------------------------------------------------------------;
@@ -463,7 +478,7 @@ CGA_SNOW_REMOVE	=	0			; disable snow removal
 DRAM_REFRESH	=	0			; disable refresh (no DRAM)
 RAM_PARITY		=	0			; disable memory parity check
 DMA_INSTALLED	=	0			; no DMA 8237A installed
-;FDC_ENABLE		=	0			; disable all INT 13h floppy tests (if no DMA)
+;FDC_ENABLE		=	DMA_INSTALLED	; disable all INT 13h floppy (if no DMA)
 ;POST_TEST_FD	=	0			; disable Seek Floppy Drives
 POST_TEST_DMA	=	0			; disable DMA Register Test (no DMA)
 POST_TEST_KB	=	0			; disable PKEY and PKI errors
@@ -506,7 +521,7 @@ POST_TEST_PIC_INT	=	0			;  integrated in Gate Array A1
 CGA_SNOW_REMOVE	=	1			; enable snow removal
 DRAM_REFRESH	=	0			; disable refresh (no DRAM)
 RAM_PARITY		=	0			; disable memory parity/IO check
-FDC_ENABLE		=	0			; disable floppy controller
+FDC_ENABLE		=	0			; disable all INT 13h floppy support
 POST_TEST_FD	=	0			; disable floppy test
 POST_TEST_KB	=	0			; disable PKEY and PKI errors
 INT_19_BOOT_HD	=	0			; Try IPL to floppy then HD
@@ -557,7 +572,7 @@ MAX_RAM_AUTO	=	1			; select max RAM from video switch
 ; Additional Configuration for PCXT_MiSTer
 ;
 TURBO_TYPE		=	TURBO_STD		; enable Turbo features
-;FDC_ENABLE		=	0			; disable all INT 13h floppy tests
+;FDC_ENABLE		=	0			; disable all INT 13h floppy support
 	ENDIF
 	ENDIF
 
@@ -616,19 +631,59 @@ BOOT_SPEED		EQU	BOOT_NORMAL
 ;----------------------------------------------------------------------------;
 ; Reconfigure features as needed
 ;----------------------------------------------------------------------------;
-; If Cassette enabled, some of the following features must be disabled due to
-; code space limitations.
-;
+
 	IF CASSETTE EQ 1
 ;----------------------------------------------------------------------------;
 ; One of the following features may be enabled in addition to cassette support.
 ;
-LIGHT_PEN		=	1			; enable light pen
+LIGHT_PEN		=	1			; enable light pen (for compatibility)
 POST_HD_PARMS	=	0			; enable POST HD size display
 POST_OPT_ROM	=	0			; enable POST option ROM display
 RANDOM_TAGLINE	=	0			; enable random tagline
 	ENDIF
 
+;----------------------------------------------------------------------------;
+; If additional space is available, such as ROM larger than 8K or INT 13h (FD)
+; support removed, relocate keyboard code.
+;
+
+	IF KB_EXT EQ 1
+;----------------------------------------------------------------------------;
+; Enabled required extended keyboard options.
+;
+EKB_EXT_RESET	=	1			; allow EAh reset byte on ext. keyboard
+EKB_EXT_CHK		=	1			; set BDA extended keyboard flags
+		IF ARCH_TYPE EQ ARCH_5150
+ARCH_ID		=	0FBH			; Upgrade machine byte if extended KB
+		ENDIF					;  and not 5150
+
+;----------------------------------------------------------------------------;
+; Extended Keyboard may be enabled in addition to other optional features by
+; using one of the following methods:
+;
+;ROM_SIZE_K		=	10			; increase ROM image to 10K
+;FDC_ENABLE		=	0			; remove FDC to enable Ext. KB
+
+KB_EXT_RELOCATE	=	ROM_SIZE_K GT 8 OR FDC_ENABLE EQ 0
+
+		IF KB_EXT_RELOCATE EQ 0
+;----------------------------------------------------------------------------;
+; These these features must be removed with extended keyboard support due to
+; lack of available code space in the ROM.
+;
+LIGHT_PEN		=	0			; remove light pen
+POST_HD_PARMS	=	0			; remove POST HD size display
+POST_OPT_ROM	=	0			; remove POST option ROM display
+RANDOM_TAGLINE	=	0			; remove random tagline
+CASSETTE		=	0			; remove cassette
+		ENDIF
+POST_VID_HGC	=	0			; remove HGC detection display
+HOBBIT_HACK		= 	0			; not enough bytes for this
+	ENDIF						; /IF KB_EXT EQ 1
+
+;----------------------------------------------------------------------------;
+; Remove unused code for disabled features
+;
 	IF POST_HD_CHECK EQ 0
 POST_HD_PARMS	=	0			; disable HD PARM display also
 	ENDIF
@@ -644,6 +699,11 @@ POST_TEST_SEEK	=	0			; remove test seek code if no floppy
 	IF DRAM_REFRESH NE 18			; if not standard DRAM refresh divisor
 POST_TEST_DMA_TC0	=	0			; disable DMA TC0 test
 	ENDIF
+
+;----------------------------------------------------------------------------;
+; If there is cold boot code needed for certain chipsets
+;
+EARLY_INIT = (INIT_V40 EQ 1 OR INIT_AT_KBC EQ 1) OR (ARCH_TYPE EQ ARCH_TD3300 AND ARCH_SUB_TYPE EQ ARCH_NEST)
 
 ;----------------------------------------------------------------------------;
 ; Secret Menu
@@ -667,6 +727,8 @@ POST_BANNER		=	0			; hide GLaBIOS banner
 	IF CPU_TYPE EQ CPU_V20
 .186
 	ENDIF
+
+ROM_TOP_OFFSET	EQU	( 64 - ROM_SIZE_K ) SHL 10	; ROM offset start
 
 
 ;----------------------------------------------------------------------------;
@@ -986,6 +1048,44 @@ VID_DEF_COLS	EQU	80			; standard video mode columns
 VID_DEF_ROWS	EQU	24			; standard video mode rows
 VID_SP		EQU	' '			; fill byte for blank video RAM char
 
+; Keyboard Related
+KB_BRK		EQU	80H			; break scan code modifier
+KB_NUM_LOCK		EQU	45H			; Num Lock
+KB_SCR_LOCK		EQU	46H			; Scroll Lock
+KB_SYSRQ		EQU	54H			; Alt-PrtSc (SysReq) (No E0)
+
+; E0 + Input scan codes
+EKB_ENTER		EQU	1CH			; Key pad Enter
+EKB_R_CTRL		EQU	1DH			; Right Ctrl
+EKB_L_SHIFT		EQU	2AH			; Left Shift
+EKB_SLASH		EQU	35H			; Key pad /
+EKB_R_SHIFT		EQU	36H			; Right Shift
+EKB_CT_PRTSC	EQU	37H			; Ctrl-PrtSc
+EKB_KP_STAR		EQU	37H			; Keypad *
+EKB_KP_PLUS		EQU	4EH			; Keypad +
+EKB_KP_MINUS	EQU	4AH			; Keypad -
+EKB_SH_PRTSC	EQU	37H			; Shift-PrtSc
+EKB_R_ALT		EQU	38H			; Right Alt
+EKB_CT_BRK		EQU	46H			; Ctrl-Pause (Ctrl-Break) E0 46 E0 C6
+EKB_HOME		EQU	47H			; Edit Home
+EKB_DELETE		EQU	53H			; Edit Delete
+EKB_INS		EQU	52H			; Edit Insert
+EKB_F11		EQU	57H			; F11 E0 input scan code
+EKB_F12		EQU	58H			; F12
+EKB_F11_EXT		EQU	85H			; F11 Extended output scan code
+EKB_F12_EXT		EQU	86H			; F12
+
+; Bonus keys (All AL=00)
+EKB_L_WIN		EQU	5BH			; Left Windows Key
+EKB_R_WIN		EQU	5CH			; Right Windows Key
+EKB_MENU		EQU	5DH			; Menu Key
+
+; Keyboard buffer filter/special codes
+EKB_FLAG_E0		EQU	0E0H			; E0 filter code (AL)
+EKB_FLAG_F0		EQU	0F0H			; F0 filter code (AL)
+EKB_SC_E0		EQU	0E0H			; Extended scan code E0
+EKB_SC_E1		EQU	0E1H			; Extended scan code E1
+EKB_FLAG_SE		EQU	0E0H			; Flag for ext. Slash or Enter key (AH)
 
 ;============================================================================;
 ;
@@ -1136,7 +1236,7 @@ EFLAGS86	RECORD FSF:1,FZF:1,FR1:1,FAF:1,FR2:1,FPF:1,FR3:1=1,FCF:1
 ;         |      0	- FPU : FPU installed
 ;         |       1	- IPL : Floppy drive(s) installed (always 1 on 5160)
 ;----------------------------------------------------------------------------;
-				IF FDC_ENABLE EQ 1
+				IF FDC_ENABLE EQ 1 OR FDC_IPL_SW EQ 0
 EQFLAGS RECORD	LPT:2,X1:1,GAM:1,COM:3,DMA:1,FLP:2,VID:2,MBRAM:2=11b,FPU:1,IPL:1=1
 				ELSE
 EQFLAGS RECORD	LPT:2,X1:1,GAM:1,COM:3,DMA:1,FLP:2,VID:2,MBRAM:2=11b,FPU:1,IPL:1=0
@@ -1269,11 +1369,11 @@ KBFLAGS1 RECORD	K1IN:1,K1CL:1,K1NL:1,K1SL:1,K1AL:1,K1CT:1,K1LS:1,K1RS:1
 ;   5	    |			- K2NL	num-lock key is depressed
 ;    4    |			- K2SL	scroll lock key is depressed
 ;     3   |			- K2PA	pause (Ctrl-NumLock) is active
-;      2  |			- K2SY	system key depressed and held
+;      2  |			- K2SQ	Sys Req key depressed and held
 ;       1 |			- K2LA	left ALT key depressed
 ;        0|			- K2LC	left CTRL key depressed
 ;----------------------------------------------------------------------------;
-KBFLAGS2 RECORD	K2IN:1,K2CL:1,K2NL:1,K2SL:1,K2PA:1,K2SY:1,K2LA:1,K2LC:1
+KBFLAGS2 RECORD	K2IN:1,K2CL:1,K2NL:1,K2SL:1,K2PA:1,K2SQ:1,K2LA:1,K2LC:1
 
 ;----------------------------------------------------------------------------;
 ; BDA Keyboard Flags - Enhanced
@@ -1670,6 +1770,8 @@ OCW1	RECORD	IRQ7:1,IRQ6:1,IRQ5:1,IRQ4:1,IRQ3:1,IRQ2:1,IRQ1:1,IRQ0:1
 ;----------------------------------------------------------------------------;
 OCW2	RECORD	O2CMD:3=001b, O2X:2, O2L:3
 EOI	EQU		OCW2 <>		; Non-Specific EOI
+
+EOI_KB	EQU	OCW2 < 011b, , IRQ1 >
 
 ;----------------------------------------------------------------------------;
 ; OCW3
@@ -2642,9 +2744,9 @@ BYTES_HERE_OUT MACRO LBL, SZ
 
 ROM_FILL	MACRO
 		IFDEF FILL_WORD
-		ORG	0E000H		; top of ROM image
+		ORG	ROM_TOP_OFFSET	; top of ROM image
 .XLIST
-		REPT KBW < 8 >		; 8 KB of ROM
+		REPT KBW < ROM_SIZE_K >	; in KB of ROM
 	DW	FILL_WORD
 		ENDM
 .LIST
@@ -2821,7 +2923,7 @@ USE_V20	EQU	0				; use AND instruction instead
 USE_V20	EQU	1				; use CLR1 (ZF unaffected)
 			ENDIF
 			IF CPU_TYPE	EQ CPU_V20 AND (WIDTH FLAG) EQ 1 AND USE_V20
-	CLR1		BP, FLAG			; V20: Clear FLAG
+	CLR1	BP, FLAG				; V20: Clear FLAG
 			ELSE
 	AND	BP, NOT MASK FLAG			; Clear flag
 			ENDIF
@@ -2960,6 +3062,8 @@ INT_LAST_ABS	DB	?			; 40:6BH POST / Interrupt happened?
 WARM_FLAG_ABS	DW	?			; 40:72H Warm Boot Flag
 		ORG	80H + _BDA_SEG
 KB_BUF_ST_ABS	DW	?			; 40:80H Keyboard buffer start ptr
+		ORG	96H + _BDA_SEG
+EKB_FLAGS1_ABS	KBFLAGS3 <>			; 96H  Keyboard mode/type (Extended)
 _BDA_ABS	ENDS
 
 ;----------------------------------------------------------------------------;
@@ -3039,8 +3143,8 @@ FD_LR			DB	?			; 8BH  Last diskette data rate selected
 FD_MODE		FDC_MODE <>			; 8FH  FDC Drive Mode (see FDC_MODE)
 FD_MEDIA_ST		FDC_STATE 4 DUP(<>)	; 90H-93H  Drive 0-3 media state
 FD_TRACK		DB	2 DUP(?)		; 94H-95H  Drive 0-1 current track
-EKB_FLAGS1		KBFLAGS3 <>			; 96H  Keyboard mode/type (Enhanced)
-EKB_FLAGS2		KBFLAGS4 <>			; 97H  Keyboard LED flags (Enhanced)
+EKB_FLAGS1		KBFLAGS3 <>			; 96H  Keyboard mode/type (Extended)
+EKB_FLAGS2		KBFLAGS4 <>			; 97H  Keyboard LED flags (Extended)
 		ORG	0A0H
 RTC_WAIT		DB	?			; A0H  RTC wait function flag
 		ORG	0ACH				; ACH-B3H "Reserved" (can be used?)
@@ -3115,6 +3219,8 @@ _OPT_ROM	ENDS
 ; F000:E000 - System BIOS ROM segment map
 ;----------------------------------------------------------------------------;
 _BIOS		SEGMENT AT 0F000H
+		ORG	ROM_TOP_OFFSET
+_ROM_TOP	LABEL FAR
 		ORG	0E000H
 _BIOS_TOP	LABEL FAR
 		ORG	0E05BH
@@ -3132,9 +3238,6 @@ _BASIC	ENDS
 
 ;----------------------------------------------------------------------------;
 ; FFFF:0000: 8086 power-on reset vector
-;----------------------------------------------------------------------------;
-; The x86 CPU begins code execution at hard-coded address FFFF:0000.
-; This is that address. Welcome to the party!
 ;----------------------------------------------------------------------------;
 RESET    	SEGMENT AT 0FFFFH
 __POWER_ON	LABEL	FAR				; FFFF:0000
@@ -3156,6 +3259,9 @@ RESET		ENDS
 BIOS    	SEGMENT
 
 	ROM_FILL				; optionally fill empty ROM space with FF
+
+		ORG	ROM_TOP_OFFSET
+ROM_TOP	LABEL NEAR			; start of physical ROM
 
 ;----------------------------------------------------------------------------;
 ; F000:FFF0: 8086 power-on reset vector
@@ -3201,32 +3307,49 @@ COPYRIGHT	DB	CR, LF
 BIOS_TOP 	ENDP
 
 ;----------------------------------------------------------------------------;
-; Display a zero-terminated string in BIOS at CS:[SI] with ending NL
+; Write a space char to console
 ;----------------------------------------------------------------------------;
-; Input: CS:SI = String
-; Size: 12 bytes
-;----------------------------------------------------------------------------;
-OUTLN_SZ PROC
-	CALL	OUT_SZ			; write original string in SI
-						; fall through to CRLF
-;----------------------------------------------------------------------------;
-; Write a CRLF string to console
-;----------------------------------------------------------------------------;
-CRLF PROC
-	PRINT_SZ  NL_Z, 1
-	RET
-CRLF ENDP
-OUTLN_SZ ENDP
+SPACE PROC
+	PUSH	AX				; no clobbery AX
+	MOV	AX, DBW <0EH, ' '>	; AH = 0Eh, AL = space char
+	JMP	INT_10H_RET			; INT 10H, POP AX and RET
+SPACE ENDP
 
 		IF FEATURE_BYTES EQ 1
 ;----------------------------------------------------------------------------;
 ; GLaBIOS build feature bytes (4)
 ;----------------------------------------------------------------------------;
 BYTES_HERE	FEAT
-		ORG	0E05BH - SIZE FEAT_BYTES
+			IF EARLY_INIT NE 0
+		ORG	0E05BH - 8 - SIZE FEAT_BYTES
+			ELSE
+		ORG	0E05BH - 6 - SIZE FEAT_BYTES
+			ENDIF
 FEAT:
 	FEAT_BYTES <>			; encode build options
 		ENDIF
+
+;----------------------------------------------------------------------------;
+; Set WARM boot flag and boot
+;----------------------------------------------------------------------------;
+BYTES_HERE	BOOT_WARM
+			IF EARLY_INIT NE 0		; adjust offset from BIOS
+		ORG	0E05BH - 8
+			ELSE
+		ORG	0E05BH - 6
+			ENDIF
+BOOT_WARM	PROC NEAR
+			ASSUME DS:_BDA
+			IF WARM_ENABLE EQ 1
+	MOV	WARM_FLAG, WARM_BOOT			; set warm boot flag
+			ELSE
+	MOV	WARM_FLAG, COLD_BOOT			; clear warm boot flag
+			ENDIF
+			IF EARLY_INIT NE 0
+	JMP	SHORT WARM_INIT				; skip early cold init
+			ENDIF
+			ASSUME DS:NOTHING
+BOOT_WARM ENDP
 
 ;
 ; 0 BYTES HERE
@@ -3266,7 +3389,7 @@ COLD_INIT_DONE:
 	OUT	N3_CTRL, AL
 			ENDIF
 
-BOOT_WARM LABEL NEAR
+WARM_INIT:
 ;----------------------------------------------------------------------------;
 ; Warm boot (Ctrl-Alt-Del)
 ;
@@ -3486,8 +3609,8 @@ CHECKSUM_ROM:
 			ASSUME DS:BIOS
 	INC	BX				; on failure, 2 short and 2 long beeps
 	MOV	DS, DX			; DS to 0F000h BIOS segment
-	MOV	SI, OFFSET BIOS_TOP 	; offset to top of BIOS ROM
-	MOV	CH, HIGH KBW < 8 >	; checksum 8KB (in 2 byte words)
+	MOV	SI, OFFSET ROM_TOP	; offset to top of BIOS ROM
+	MOV	CH, HIGH KBW < ROM_SIZE_K >	; checksum ROM (in 2 byte words)
 CHECKSUM:
 	LODSW 				; next two bytes into AL and AH
 	ADD	DL, AL			; DL = running checksum
@@ -3715,9 +3838,11 @@ INIT_EXP_CHASSIS_DONE:
 ; - Read/Write Error: 1 short, 3 long beeps
 ; - Parity Error: 1 short, 4 long beeps
 ;
-; Input: CX = 0 from [13D]
+; Input: CX = 0 from step 13D
 ; Output: DX = 0
 ;----------------------------------------------------------------------------;
+_B_WARM_FLAG	EQU	[SI]			; index addressing for smaller code
+_B_EKB_FLAGS1	EQU	BYTE PTR [SI][EKB_FLAGS1_ABS-WARM_FLAG_ABS]
 			ASSUME DS:_BDA_ABS, ES:_IVT
 BASE_RAM_TEST:
 	IN	AL, PPI_B 				; AL = PB0 flags
@@ -3726,7 +3851,14 @@ BASE_RAM_TEST:
 	XCHG	AX, CX				; AX = 0 = MEM_CHECK pattern and
 	MOV	DS, AX				; DS = IVT segment 0000
 	MOV	SI, OFFSET WARM_FLAG_ABS	; SI = warm boot flag offset
-	MOV	DX, [SI]				; save warm boot flag
+	MOV	DX, _B_WARM_FLAG			; save warm boot flag
+			IF EKB_EXT_CHK EQ 1
+	MOV	BH, _B_EKB_FLAGS1			; save extended KB flag
+	CMP	BH, MASK KEEN			; is a valid KB flag byte for ext?
+	JE	EKB_EXT_CHK_1			; if so, continue
+	XOR	BH, BH				; otherwise clear flag
+EKB_EXT_CHK_1:
+			ENDIF
 	CALL_NS  MEM_CHECK			; clear memory and parity bits
 	JNZ	BASE_RAM_ERROR
 	IN	AL, PPI_B				; read PPI channel B
@@ -3734,7 +3866,13 @@ BASE_RAM_TEST:
 	OUT	PPI_B, AL
 	AND	AL, NOT MASK PBPC 		; enable MB RAM parity for test
 	OUT	PPI_B, AL
+			IF EKB_EXT_CHK EQ 1
+	XCHG	AX, BX				; save BH (EKB_FLAGS1)
+			ENDIF
 	CALL_NS  MEM_ADDR_TEST			; test address lines
+			IF EKB_EXT_CHK EQ 1
+	XCHG	AX, BX				; restore BH
+			ENDIF
 	JZ	BASE_RAM_ZERO			; continue if no errors
 BASE_RAM_ERROR:
 	MOV	BL, BEEP_SL <1,3>			; on failure, 1 short and 3 long beeps
@@ -3746,7 +3884,10 @@ BASE_RAM_ZERO:
 	JNZ	BASE_RAM_ERROR			; ZF and AX = 0 if okay
 	CALL_NS  MEM_CHECK			; write and verify zeros
 	JNZ	BASE_RAM_ERROR
-	XCHG	[SI], DX				; restore warm boot flag, DX = 0
+	XCHG	_B_WARM_FLAG, DX			; restore warm boot flag, DX = 0
+			IF EKB_EXT_CHK EQ 1
+	XCHG	_B_EKB_FLAGS1, BH			; restore extended kb flag, BH = 0
+			ENDIF
 	INC	AX					; AL = 1
 	MOV	FD_MOTOR_CT_ABS, AL 		; set motor to turn off on next tick
 			IF RAM_PARITY EQ 1
@@ -3771,8 +3912,6 @@ BASE_RAM_TEST_DONE:
 ; [18] Setup BOOT R/W stack memory segment
 ;----------------------------------------------------------------------------;
 			ASSUME SS:_BOOT_STACK
-	;MOV	AX, SEG STACK_TOP 		; SS:SP to temp boot stack 0030:0100
-	;MOV	SS, AX
 	MOV	SP, SEG _BOOT_STACK 		; SS:SP to temp boot stack 0030:0100
 	MOV	SS, SP
 	MOV	SP, OFFSET STACK_TOP
@@ -4295,13 +4434,40 @@ HELLO_WORLD:
 ;----------------------------------------------------------------------------;
 ; Jump over INT 02h fixed ORG to continue...
 ;
-		IF ARCH_TYPE EQ ARCH_TD3300
+		;IF ARCH_TYPE EQ ARCH_TD3300
+		IF ARCH_TYPE EQ ARCH_TD3300 AND ARCH_SUB_TYPE EQ ARCH_NEST
 	JMP	SHORT POST_DETECT_PORTS
 		ELSE
 	JMP	NEAR PTR POST_DETECT_PORTS
 		ENDIF
 
 			IF IS_TURBO
+;----------------------------------------------------------------------------;
+; KB ISR Toggle Turbo mode on/off
+;----------------------------------------------------------------------------;
+INT_KB_TOGGLE_TURBO PROC
+			IF ARCH_TYPE EQ ARCH_TD3300
+	IN	AL, TD_TURBO				; read current state
+				IF ARCH_SUB_TYPE EQ ARCH_NEST
+	TEST	AL, MASK D11SF				; turbo on? (NZ = turbo)
+				ELSE
+	CMP	AL, MASK TDSS				; turbo on? (NZ = turbo)
+				ENDIF
+			ELSE
+				IF ARCH_TYPE EQ INIT_V40
+	MOV	DX, V40_WCR1				; V40 W/S register
+	IN	AL, DX					; FF = slow, 0 = Turbo
+	NOT	AL						; flip bits
+				ELSE
+	IN	AL, PPI_B					; read standard PPI register
+				ENDIF				; /IF ARCH_TYPE EQ INIT_V40
+	TEST	AL, MASK PBTB				; is in Turbo mode?
+			ENDIF					; /IF ARCH_TYPE EQ ARCH_TD3300
+	CALL	MEEPMEEP_Z					; two meeps if to high (ZF)
+								; one meep if to low (NZ)
+								; fall through to toggle speed
+INT_KB_TOGGLE_TURBO ENDP
+
 ;----------------------------------------------------------------------------;
 ; Toggle Turbo mode on/off
 ;----------------------------------------------------------------------------;
@@ -4649,22 +4815,22 @@ SETUP_V40 ENDP
 ; AT / 8042 Keyboard reset
 ;
 SETUP_AT_KBC PROC
-	MOV	AL, 0AAH		; Test Controller
-	OUT	ATKB_CMD, AL	; OUT Command Port (64h)
+	MOV	AL, 0AAH			; Test Controller
+	OUT	ATKB_CMD, AL		; OUT Command Port (64h)
 	IO_DELAY
-	IN	AL, ATKB_IO		; Read Data Port and discard (60h)
+	IN	AL, ATKB_IO			; Read Data Port and discard (60h)
 
-	MOV	AL, 01100000B	; Write Command Byte to Keyboard Controller
-	OUT	ATKB_CMD, AL	; OUT Command Port (64h)
-	INC	AX			; PC Mode, Enable Interrupt (01100001b)
-	OUT	ATKB_IO, AL		; OUT Data Port (60h)
+	MOV	AL, 01100000B		; Write Command Byte to Keyboard Controller
+	OUT	ATKB_CMD, AL		; OUT Command Port (64h)
+	INC	AX				; PC Mode, Enable Interrupt (01100001b)
+	OUT	ATKB_IO, AL			; OUT Data Port (60h)
 SETUP_AT_KBC ENDP
 			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Done with COLD_INIT - continue POST
 ;
-	JMP	COLD_INIT_DONE	; continue POST
+	JMP	COLD_INIT_DONE		; continue POST
 
 COLD_INIT ENDP
 			ENDIF
@@ -4685,6 +4851,24 @@ SET_EFLAG_FLP_RET:
 	RET
 SET_EFLAG_FLP ENDP
 			ENDIF
+
+			IF EKB_INT_SR EQ 1 AND ARCH_TYPE EQ ARCH_TD3300
+;----------------------------------------------------------------------------;
+; Handle SysRq key - The Sequel
+;----------------------------------------------------------------------------;
+EKB_INT_SYSRQ_2 PROC
+			ASSUME DS:_BDA
+	MOV	KB_FLAGS2, AL			; save KB flag
+	MOV	AL, EOI 				; End of Interrupt OCW
+	OUT	INT_P0, AL				; write EOI to port 0
+	MOV	AH, 85H				; System Request Key Pressed fn
+	XCHG	AL, DH				; restore AL
+	AND	AL, 1					; AL = 1 if break, 0 if make
+	INT	15H
+EKB_INT_SYSRQ_2_DONE:
+	RET
+EKB_INT_SYSRQ_2 ENDP
+			ENDIF				; /IF EKB_INT_SR EQ 1
 
 ;
 ; 11 BYTES HERE
@@ -4989,7 +5173,7 @@ POST_BOOT_TYPE ENDP
 	CALL	DETECT_MEMORY			; detect and display memory count
 			ASSUME ES:NOTHING		; ES clobbered by DETECT_MEMORY
 
-			IF POST_TEST_DMA_TC0 EQ 1
+			IF POST_TEST_DMA EQ 1 AND POST_TEST_DMA_TC0 EQ 1
 ;----------------------------------------------------------------------------;
 ; [27B] Verify that the 8237 DMA Channel 0 Terminal Count (TC 0) status bit 
 ; is on. This test is only done on a cold boot.
@@ -5239,11 +5423,7 @@ CLEAR_POST_SCREEN:
 			ENDIF
 
 	CALL	BEEP 					; beep to signify POST test is done
-			IF POST_GLADOS EQ 1
-	PRINT_SZ  BOOT_BEGIN			; Starting DOS...
-			ELSE
 	CALL	CRLF
-			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; [40] DO BOOTSTRAP!
@@ -5310,12 +5490,6 @@ BANNER_STRINGS PROC
 ;----------------------------------------------------------------------------;
 ; Banner Strings
 ;
-					IF POST_GLADOS EQ 1
-BOOT_BEGIN		DB	CR, LF
-			DB	'Starting GLaDOS...'
-NL2_Z			DB	LF				; two NL's, null term'd
-					ENDIF
-NL_Z			DB	CR, LF, 0			; one NL, null term'd
 BOOT_FAIL		DB	'Disk Boot Fail.'
 			DB	' You monster.'
 NL2_ANY_KEY		DB	LF
@@ -5363,9 +5537,16 @@ POST_RSEP		DB	POST_R, 0
 
 ;----------------------------------------------------------------------------;
 ; NMI strings - these must be contiguous
+; TODO FIX: some of these strings have to be shortened due to lack of space
 ;
+		IF KB_EXT EQ 1 AND (ARCH_SUB_TYPE EQ ARCH_NEST OR ARCH_TYPE EQ ARCH_UM82)
 NMI_ERR_IO		DB	'IO'				; NMI I/O Error string
-NMI_ERR_PAR		DB	' PARITY', 0		; NMI Parity Error
+NMI_ERR_PAR		DB	'PAR'				; NMI Parity Error (abbrev.)
+		ELSE
+NMI_ERR_IO		DB	'IO'				; NMI I/O Error string
+NMI_ERR_PAR		DB	' PARITY'			; NMI Parity Error
+		ENDIF
+			DB	0
 
 POST_STRINGS ENDP
 
@@ -5998,8 +6179,86 @@ CAS_READ_BYTE_RET:
 CAS_READ_BYTE ENDP
 CAS_READ_WORD ENDP
 		ENDIF				; CASSETTE EQ 1
+
+		IF KB_EXT EQ 1
+;----------------------------------------------------------------------------;
+; INT 16H Extended KB helper functions [2/2]
+;----------------------------------------------------------------------------;
+EKB_INT_16_2 PROC
+
+;----------------------------------------------------------------------------;
+; KB_PUT_BUFFER: Put key codes into KB buffer
+;----------------------------------------------------------------------------;
+; Input:
+;	AX = scan code/ASCII pair
+; Output:
+;	ZF = buffer is full, NZ = success
 ;
-; 25 BYTES HERE / 22 BYTES HERE 5150
+; Clobbers: DI, SI
+; 32 bytes
+;----------------------------------------------------------------------------;
+KB_PUT_BUFFER PROC
+	PUSH	SI
+	CLI
+	MOV	DI, KB_BUF_TL 				; DI = tail ptr
+	LEA	SI, [DI][2]					; SI = next (maybe)
+			IF KB_BUF_BDA EQ 1
+	CMP	SI, KB_BUF_EN				; is next >= end of buffer?
+	JB	KB_PUT_BUFFER_CHK 			; if not, check if buffer is full
+	MOV	SI, KB_BUF_ST				; otherwise, wrap to first address
+			ELSE
+	CMP	SI, KB_BUF_END_B				; is next >= end of buffer?
+	JB	KB_PUT_BUFFER_CHK 			; if not, check if buffer is full
+	MOV	SI, OFFSET KB_BUF 			; otherwise, wrap to first address
+			ENDIF
+KB_PUT_BUFFER_CHK:
+	CMP	SI, KB_BUF_HD 				; next == head?
+	JE	KB_PUT_BUFFER_DONE			; buffer is full, return with ZF=1
+	MOV	[DI], AX 					; buffer[head] = AX
+	MOV	KB_BUF_TL, SI 				; tail = next
+KB_PUT_BUFFER_DONE:
+	STI
+	POP	SI
+	RET
+KB_PUT_BUFFER ENDP
+
+;----------------------------------------------------------------------------;
+; Extended Ctrl + scan code replacements.
+; Table is aligned so that even offsets are E0 and odd are F0 filter codes.
+;
+EKB_CTRL_SCAN_TBL	LABEL BYTE			; E0
+	DB	48H					; x [6] Up Arrow / 8
+	DB	4AH					;   [5] Keypad -
+	DB	50H					; x [4] Down Arrow / 2
+	DB	4CH					;   [3] Keypad 5
+	DB	52H					; x [2] Ins / 0
+	DB	4EH					;   [1] Keypad +
+	DB	53H					; x [0] Del
+L_EKB_CTRL_SCAN_TBL	EQU $-EKB_CTRL_SCAN_TBL
+
+			IF EKB_INT_SR EQ 1 AND ARCH_TYPE NE ARCH_TD3300
+;----------------------------------------------------------------------------;
+; Handle SysRq key - The Sequel
+;----------------------------------------------------------------------------;
+EKB_INT_SYSRQ_2 PROC
+			ASSUME DS:_BDA
+	MOV	KB_FLAGS2, AL			; save KB flag
+	MOV	AL, EOI 				; End of Interrupt OCW
+	OUT	INT_P0, AL				; write EOI to port 0
+	MOV	AH, 85H				; System Request Key Pressed fn
+	XCHG	AL, DH				; restore AL
+	AND	AL, 1					; AL = 1 if break, 0 if make
+	INT	15H
+EKB_INT_SYSRQ_2_DONE:
+	RET
+EKB_INT_SYSRQ_2 ENDP
+			ENDIF				; /IF EKB_INT_SR EQ 1
+
+EKB_INT_16_2 ENDP
+		ENDIF					; /IF KB_EXT EQ 1
+
+;
+; 25 BYTES HERE / 22 BYTES HERE 5150 / ? BYTES EXT_KB / ? BYTES EXT_KB + ST
 ;
 BYTES_HERE	INT_19
 
@@ -6417,14 +6676,22 @@ BYTES_HERE	INT_16
 ;----------------------------------------------------------------------------;
 ; INT 16 - Keyboard BIOS Services
 ;----------------------------------------------------------------------------;
+; Standard:
 ;	INT 16,0	Wait for keystroke and read
 ;	INT 16,1	Get keystroke status
 ;	INT 16,2	Get shift status
-; Enhanced:
+;----------------------------------------------------------------------------;
+; Extended:
 ;	INT 16,5	Keyboard buffer write
 ;	INT 16,10	Wait for keystroke and read
 ;	INT 16,11	Get keystroke status
 ;	INT 16,12	Get shift status
+;
+; When a 101-key keyboard is in place, INT 16h subservice AH = 00h:
+; 1) returns all standard 83/84 keyboard Character Codes "as is"
+; 2) adjusts 101-key keyboard duplicates of 84-key keyboard characters so
+;	that they take on the same two-byte key code as their 84-key counterparts
+; 3) destroys any 101-key Character Codes not compatible with the 84-key keyboard
 ;----------------------------------------------------------------------------;
 		ORG 0E82EH
 INT_16 PROC
@@ -6435,10 +6702,25 @@ INT_16 PROC
 	PUSH	SI
 	MOV	SI, SEG _BDA
 	MOV	DS, SI 			; DS = BDA segment
+
+			IF KB_EXT EQ 1
+;----------------------------------------------------------------------------;
+; Handle extended KB services
+;
+	CMP	AH, 5				; is extended function?
+	JB	EKB_INT_16_STD		; if not, continue to standard
+	CALL	EKB_INT_16			; call extended handler
+	JMP	SHORT INT_16_DONE		; exit INT 16h
+EKB_INT_16_STD:
+			ENDIF
+
+;----------------------------------------------------------------------------;
+; Handle standard KB services
+;
 	CMP	AH, 2
-	JE	KB_SHIFT_STATUS 		; AH = 2 - Get Shift Status
-	JA	INT_16_DONE			; AH > 2 - Not valid, exit
-	JNP	KB_WAIT_READ_1		; AH = 0 - Wait for keystroke and read
+	JE	INT_16_2 			; AH = 2 - Get Shift Status
+	JA	INT_16_DONE			; AH = 3 or 4 - Not implemented, exit
+	JNP	KB_WAIT_READ		; AH = 0 - Wait for keystroke and read
 						; AH = 1 - Get keystroke (fall through)
 
 ;----------------------------------------------------------------------------;
@@ -6453,7 +6735,32 @@ INT_16 PROC
 ;	KB_BUF_HD (1Ah) = "head" next character stored in keyboard buffer
 ;	KB_BUF_TL (1Ch) = "tail" next spot available in keyboard buffer
 ;----------------------------------------------------------------------------;
-KB_KEY_STATUS PROC
+INT_16_1 PROC
+			IF KB_EXT EQ 1
+;----------------------------------------------------------------------------;
+; EXTENDED: AH = 1 - Get keystroke status
+;----------------------------------------------------------------------------;
+; Some keys may not have standard KB scan code/ASCII values, so those are
+; skipped here. Loop, removing skipped keys until valid key found or no key 
+; waiting.
+;----------------------------------------------------------------------------;
+	CALL	KB_KEY_STATUS		; NZ/ZF=0 if key, ZF/ZF=1 if no key
+	JZ	INT_16_1_EXIT		; jump if no key waiting
+	CALL	INT_16_STD_FILTER		; CF to skip and re-read
+	JNC	INT_16_1_KEY		; jump if key was not filtered
+	CALL	KB_BUF_NEXT			; else remove filtered key from buffer
+	JMP	SHORT INT_16_1		; loop until no key waiting
+INT_16_1_KEY:
+	TEST	SP, SP			; set ZF = 0
+INT_16_1_EXIT:
+	POP	SI
+	POP	DS
+	IRET_F				; IRET with current flags
+
+			ELSE
+;----------------------------------------------------------------------------;
+; STANDARD: AH = 1 - Get keystroke status
+;----------------------------------------------------------------------------;
 	MOV	SI, OFFSET KB_BUF_HD 	; SI = head ptr
 	CLI 					; disable interrupts (already off)
 	LODSW 				; AX = head, SI = tail ptr
@@ -6468,7 +6775,9 @@ KB_BUF_HAS_KEY:
 	XCHG	AX, SI 			; SI = head
 	LODSW 				; AX = buffer[head], SI = next
 	JMP	KB_KEY_STATUS_DONE
-KB_KEY_STATUS ENDP
+			ENDIF
+
+INT_16_1 ENDP
 
 ;----------------------------------------------------------------------------;
 ; AH = 0 - Wait for keystroke and read
@@ -6478,19 +6787,33 @@ KB_KEY_STATUS ENDP
 ;	AH = scan code
 ;	AL = ASCII code
 ;----------------------------------------------------------------------------;
-KB_WAIT_READ PROC
+INT_16_0 PROC
+			IF KB_EXT EQ 1
+;----------------------------------------------------------------------------;
+; EXTENDED: AH = 0 - Wait for keystroke and read
+;----------------------------------------------------------------------------;
+KB_WAIT_READ:
+	CALL	KB_WAIT_READ_KEY 		; wait until a keystroke is read
+	CALL	INT_16_STD_FILTER		; CF to skip and re-read
+	JC	KB_WAIT_READ		; loop until no new or valid chars in buffer
+
+			ELSE
+;----------------------------------------------------------------------------;
+; STANDARD: AH = 0 - Wait for keystroke and read
+;----------------------------------------------------------------------------;
+KB_WAIT_READ_LOOP:
 	STI					; enable interrupts
 		IF KB_HLT_WAIT EQ 1
 	HLT					; wait for keystroke interrupt
 		ELSE
 	NOP					; wait for any interrupt
 		ENDIF
-KB_WAIT_READ_1:
+KB_WAIT_READ:
 	MOV	SI, OFFSET KB_BUF_HD 	; SI = head ptr
 	CLI 					; disable interrupts again
 	LODSW 				; AX = head, SI = tail ptr
 	CMP	AX, [SI] 			; head == tail?
-	JE	KB_WAIT_READ 		; if so, buffer is empty
+	JE	KB_WAIT_READ_LOOP		; if so, buffer is empty
 	XCHG	AX, SI 			; SI = tail
 	LODSW 				; AX = buffer[tail], SI = next
 		IF KB_BUF_BDA EQ 1
@@ -6504,11 +6827,13 @@ KB_WAIT_READ_1:
 		ENDIF
 KB_GET_READ:
 	MOV	KB_BUF_HD, SI 		; head ptr = next
+			ENDIF
+
 INT_16_DONE:
 	POP	SI
 	POP	DS
-	IRET
-KB_WAIT_READ ENDP
+	IRET					; IRET with caller's flags
+INT_16_0 ENDP
 
 ;----------------------------------------------------------------------------;
 ; AH = 2 - Get shift status
@@ -6517,10 +6842,10 @@ KB_WAIT_READ ENDP
 ; Output:
 ;	AL = BIOS keyboard flags (from BDA 0040:0017)
 ;----------------------------------------------------------------------------;
-KB_SHIFT_STATUS PROC
+INT_16_2 PROC
 	MOV	AL, KB_FLAGS1
 	JMP	SHORT INT_16_DONE
-KB_SHIFT_STATUS ENDP
+INT_16_2 ENDP
 
 INT_16 ENDP
 
@@ -6735,12 +7060,21 @@ INT_09_POST PROC
 	PUSH	AX
 	POST_FLAG_CLR PKI				; clear POST test int flag
 	IN	AL, PPI_A				; read keyboard scan from PPI
-			IF OEM_KB_EXT EQ 1
+			IF EKB_EXT_RESET EQ 1
 ;----------------------------------------------------------------------------;
 ; XT 101 keyboards can return 0EAh on initial power on reset
 ;
+				IF EKB_EXT_CHK EQ 1
+;----------------------------------------------------------------------------;
+; If extended keyboard, set Keyboard mode/type flag in BDA
+;
+	CMP	AL, 0EAH				; is extended KB power-on byte?
+	JNE	EKB_EXT_CHK_DONE
+	MOV	EKB_FLAGS1, MASK KEEN		; set BDA ext KB flag
+EKB_EXT_CHK_DONE:
+				ENDIF
 	AND	AL, NOT 0EAH XOR 0AAH		; transform EAh -> AAh
-			ENDIF
+			ENDIF				; /IF EKB_EXT_RESET EQ 1
 	CMP	AL, 0AAH
 	JNE	INT_09_POST_DONE			; jump if not expected AAh
 	POST_FLAG_SET PKI				; set POST keyboard test pass flag
@@ -6790,18 +7124,23 @@ INT_KB_CTRL_ASC_TBL LABEL BYTE
 
 ;----------------------------------------------------------------------------;
 ; When CTRL held, modify scan codes for these scan codes (14 bytes)
+; On Extended scan codes, ASCII code replaced with 0E0H which returns
+; AL=0 for extended INT 16h functions.
 ;
-INT_KB_CTRL_SCAN_TBL LABEL BYTE
+KB_CTRL_SCAN_TBL LABEL BYTE
+	DB	72H, 37H				; Keypad * PrtSc (must be first here)
 	DB	77H, 47H 				; Ctrl Home
 	DB	84H, 49H 				; Ctrl PgUp
 	DB	73H, 4BH 				; Ctrl Left Arrow
 	DB	74H, 4DH 				; Ctrl Right Arrow
 	DB	75H, 4FH 				; Ctrl End
 	DB	76H, 51H 				; Ctrl PgDn
-	DB	72H, 37H				; Keypad * / PrtSc
+			IF KB_EXT EQ 1
+	DB	94H, 0FH				; Ctrl Tab
+			ENDIF
 
 L_INT_KB_CTRL_ASC_TBL	EQU ($-INT_KB_CTRL_ASC_TBL)/2		; 12 total
-L_INT_KB_CTRL_SCAN_TBL	EQU ($-INT_KB_CTRL_SCAN_TBL)/2-1	; 6
+L_KB_CTRL_SCAN_TBL	EQU ($-KB_CTRL_SCAN_TBL)/2-1	; 6
 
 ;
 ; 1 BYTE HERE
@@ -6844,10 +7183,28 @@ BYTES_HERE	INT_09
 ; In short, it needs to do this:
 ;    https://stanislavs.org/helppc/scan_codes.html
 ;----------------------------------------------------------------------------;
+; Use indexed addressing to SI = KB_FLAGS2 for byte savings.
+;
+_KB_FLAGS2	EQU	BYTE PTR[SI]
+_KB_FLAGS1	EQU	_KB_FLAGS2[KB_FLAGS1-KB_FLAGS2]
+_EKB_FLAGS1	EQU	_KB_FLAGS2[EKB_FLAGS1-KB_FLAGS2]
+_EKB_FLAGS2	EQU	_KB_FLAGS2[EKB_FLAGS2-KB_FLAGS2]
+_KB_BIOS_BK	EQU	_KB_FLAGS2[BIOS_BREAK-KB_FLAGS2]
+_KB_FLAGS	EQU	WORD PTR [SI][KB_FLAGS1-KB_FLAGS2]
+_EKB_FLAGS	EQU	WORD PTR [SI][EKB_FLAGS1-KB_FLAGS2]
+
+_KB_BUF_HD	EQU	WORD PTR [SI][KB_BUF_HD-KB_FLAGS2]
+_KB_BUF_TL	EQU	WORD PTR [SI][KB_BUF_TL-KB_FLAGS2]
+_KB_BUF_ST	EQU	WORD PTR [SI][KB_BUF_ST-KB_FLAGS2]
+_KB_BUF_EN	EQU	WORD PTR [SI][KB_BUF_EN-KB_FLAGS2]
+
 		ORG 0E987H
 INT_09 PROC
-			ASSUME DS:_BDA
+			ASSUME DS:_BDA, ES:BIOS
 	PUSH	AX						; save AX first
+		IF KB_EXT EQ 1
+	CALL	KB_READ_SCAN				; read scan code from PPI
+		ELSE
 	IN	AL, PPI_A 					; read scan code from PPI Port A
 	MOV	AH, AL					; save scan code to AH
 	IN	AL, PPI_B 					; read Control Port B
@@ -6856,12 +7213,7 @@ INT_09 PROC
 	OUT	PPI_B, AL 					; write to Control Port B
 	POP	AX						; restore status, and I/O delay
 	OUT	PPI_B, AL 					; write to Control Port B
-
-;----------------------------------------------------------------------------;
-; Send non-specific EOI to PIC
-;
-	MOV	AL, EOI 					; End of Interrupt OCW
-	OUT	INT_P0, AL					; write EOI to port 0
+		ENDIF
 	STI							; enable interrupts
 	CLD							; string functions increment
 			IF CPU_TYPE EQ CPU_V20
@@ -6871,13 +7223,26 @@ INT_09 PROC
 			ENDIF
 	PUSHX	DS, ES					; save segment registers
 	MOV	CX, SEG _BDA 				; CX = BIOS Data Area, CH = 0
-	MOV	AL, AH					; AL = original scan code
-	CMP	AL, 0FFH 					; check for Detection Error/Overrun
-	JE	INT_KB_MEEP_DONE				; if overrun, meep and exit
 	MOV	DS, CX					; DS = BIOS Data Area
 	MOV	DX, CS					; ES = BIOS code segment
 	MOV	ES, DX
-	MOV	DX, KB_FLAGS				; DL=KB_FLAGS1, DH=KB_FLAGS2
+	MOV	AL, AH					; AL = original scan code
+			IF KB_EXT EQ 1
+			IF EKB_INT_15 EQ 1
+	CALL	EKB_INT_15_4F				; call keyboard intercept
+			ENDIF
+			ENDIF
+	CMP	AL, 0FFH 					; check for Detection Error/Overrun
+	JE	INT_KB_MEEP_DONE				; if overrun, meep and exit
+	MOV	SI, OFFSET KB_FLAGS2			; SI = KB_FLAGS2
+	MOV	DX, _KB_FLAGS				; DL=KB_FLAGS1, DH=KB_FLAGS2
+
+			IF KB_EXT EQ 1
+;----------------------------------------------------------------------------;
+; Handle Extended keyboard
+;
+	CALL	EKB_INT_09					; handle extended keys first
+			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; 1. Is a function key?
@@ -6916,21 +7281,27 @@ KB_INT_CHECK_FN_KEY_DONE:				; not a function key
 ;----------------------------------------------------------------------------;
 ; Is Ctrl-Break?
 ;
-	CMP	AL, 46H					; Scroll Lock (Break)
+	CMP	AL, KB_SCR_LOCK				; Scroll Lock (Break)
 	JNE	INT_KB_CHECK_CTRL_NUM			; jump if not Break
 
 INT_KB_CTRL_BREAK:
 	CALL	KB_BUF_CLEAR				; clear keyboard buffer
-	MOV	BIOS_BREAK, KBBRK <1>			; BIOS break flag
+	MOV	_KB_BIOS_BK, KBBRK <1>			; BIOS break flag
 	INT	1BH						; call BIOS Break handler
-	JMP	SHORT INT_KB_DONE_2
+			IF KB_EXT EQ 1
+	XOR	AX, AX
+	JMP	SHORT KB_INT_PUT_BUFFER_2
+			ELSE
+INT_KB_DONE_2:
+	JMP	INT_KB_DONE					; previous behavior
+			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Is Ctrl-NumLock (Pause)?
 ;
 INT_KB_CHECK_CTRL_NUM:
-	CMP	AL, 45H					; is Num Lock key?
-	;CMP	AL, 35H					; key pad / (for testing)
+	CMP	AL, KB_NUM_LOCK				; is Num Lock key?
+	;CMP	AL, EKB_SLASH				; key pad / (for testing)
 	JZ	INT_KB_SET_PAUSE				; if not, put in Pause
 
 ;----------------------------------------------------------------------------;
@@ -6944,11 +7315,11 @@ INT_KB_CHECK_CTRL_NUM:
 ;
 KB_INT_IS_NUM:
 	TEST	DL, MASK K1NL				; is NUM LOCK on?
-	JZ	KB_INT_IS_NUM_DONE			; if not, do nothing
-	CMP	AL, 53H					; is higher than Del key?
-	JA	KB_INT_IS_NUM_DONE
-	CMP	AL, 47H					; is lower than Home/7 key?
-	JB	KB_INT_IS_NUM_DONE
+	JZ	KB_INT_CHAR					; if not, do nothing
+	CMP	AL, EKB_DELETE				; is higher than Del key?
+	JA	KB_INT_CHAR
+	CMP	AL, EKB_HOME				; is lower than Home/7 key?
+	JB	KB_INT_CHAR
 
 ;----------------------------------------------------------------------------;
 ; Keypad number pressed and Num Lock is on, so invert shift behavior.
@@ -6962,39 +7333,59 @@ KB_INT_IS_NUM:
 ; KB Ctrl-NumLock Screen Pause
 ;----------------------------------------------------------------------------;
 INT_KB_SET_PAUSE:
-	MOV	BX, OFFSET KB_FLAGS2			; (-1 byte to use indirect)
-	OR	BYTE PTR [BX], MASK K2PA		; set PAUSE flag
+	TEST	DH, MASK K2PA				; already in pause?
+	JNZ	INT_KB_DONE_2				; if so, discard
+	OR	_KB_FLAGS2, MASK K2PA			; set PAUSE flag
 
 				IF CGA_SNOW_REMOVE GT 0
 ;----------------------------------------------------------------------------;
 ; Make sure CGA is not currently being blanked
 ;
 	CALL	INT_10_IS_CGA80				; ZF = 1 if CGA 80 col
-	JNZ	INT_KB_PAUSE_LOOP				; jump if not CGA 80 col
+	JNZ	INT_KB_PAUSE_EOI				; jump if not CGA 80 col
 	MOV	AL, VID_MODE_REG				; get default CGA control reg
 	MOV	DX, CGA_CTRL				; DX = CGA control port 03D8h
 	OUT	DX, AL					; enable video signal
 				ENDIF
 
+INT_KB_PAUSE_EOI:
+	MOV	AL, EOI 					; End of Interrupt OCW
+	OUT	INT_P0, AL
+
 ;----------------------------------------------------------------------------;
-; Loop until Pause flag is cleared
+; Loop until Pause flag is cleared. Exit without EOI or clearing E0.
 ;
 INT_KB_PAUSE_LOOP:
 	HLT							; be a good neighbor
 	NOP							; let another interrupt happen
-	TEST	BYTE PTR [BX], MASK K2PA		; check the Pause flag
+	TEST	_KB_FLAGS2, MASK K2PA			; check the Pause flag
 	JNZ	INT_KB_PAUSE_LOOP				; loop until clear
-INT_KB_DONE_2:
-	JMP	SHORT INT_KB_DONE				; exit INT
+	JMP	SHORT INT_KB_DONE_NO_EOI		; exit INT without EOI
 
 ;----------------------------------------------------------------------------;
-; Emit a feeble meep and exit
+; Emit a feeble meep and exit without EOI or clearing E0 flag.
 ;
 INT_KB_MEEP_DONE:
+		IF IS_TURBO OR ARCH_TYPE EQ ARCH_BOOK88
+	CALL	MEEP						; shorter way to do this
+	JMP	SHORT INT_KB_DONE_EOI			; exit INT with EOI and E0/E1 clear
+		ELSE
+	CLI							; better way to do this?
+	MOV	AL, EOI					; Send End of Interrupt
+	OUT	INT_P0, AL
 	CALL	MEEP
-	JMP	SHORT INT_KB_DONE				; exit INT
+	JMP	SHORT INT_KB_DONE_NO_EOI		; exit INT without EOI or E0/E1 clear
+		ENDIF
 
-KB_INT_IS_NUM_DONE:
+;----------------------------------------------------------------------------;
+; Handle Shift-PrtSc, clear E0/E1 and exit without EOI.
+;
+KB_INT_PRTSC:
+	MOV	AL, EOI 					; Send End of Interrupt
+	OUT	INT_P0, AL
+	INT	5H						; call print screen handler
+	AND	_EKB_FLAGS1, NOT (MASK KEE0 OR MASK KEE1)	; clear E0 and E1
+	JMP	SHORT INT_KB_DONE_NO_EOI		; exit INT without EOI
 
 ;----------------------------------------------------------------------------;
 ; 4. Do scan code to ASCII translation
@@ -7044,13 +7435,18 @@ KB_INT_IS_ALT:
 ;----------------------------------------------------------------------------;
 ; 6. Handle additional Non-ALT special case chars
 ;
-	CMP	AX, 3700H					; is Shift-PrtSc?
-	JE	KB_INT_PRTSC				; jump if so
 	CMP	AX, 4C00H					; Numeric 5 key (unshifted)
-	JE	INT_KB_DONE					; discard and exit
+				IF KB_EXT EQ 1
+	JNE	KB_INT_NOT_KP_5
+	MOV	AL, EKB_FLAG_F0				; skip unshifted key only AH=0
+KB_INT_NOT_KP_5:
+				ELSE
+	JE	INT_KB_DONE					; always skip unshifted key
+				ENDIF
+	CMP	AX, DBW < EKB_SH_PRTSC, 0 >		; is Shift-PrtSc?
+	JE	KB_INT_PRTSC				; jump if so
 
 KB_INT_IS_ALT_DONE:
-
 ;----------------------------------------------------------------------------;
 ; 7. Handle CTRL chars
 ;
@@ -7060,38 +7456,60 @@ KB_INT_IS_CTRL:
 	JMP	INT_KB_CTRL					; otherwise, CTRL is held
 
 ;----------------------------------------------------------------------------;
-; Handle Shift-PrtSc
-;
-KB_INT_PRTSC:
-	INT	5H						; call print screen handler
-	JMP	SHORT INT_KB_DONE
-
-;----------------------------------------------------------------------------;
 ; All special cases have been handled
 ; Store AX in keyboard buffer
 ;
 KB_INT_PUT_BUFFER:
-	MOV	DI, KB_BUF_TL 				; DI = tail ptr
-	LEA	SI, [DI][2]					; SI = next (maybe)
-			IF KB_BUF_BDA EQ 1
-	CMP	SI, KB_BUF_EN				; is next >= end of buffer?
-	JB	KB_INT_CHECK_FULL 			; if not, check if buffer is full
-	MOV	SI, KB_BUF_ST				; otherwise, wrap to first address
+			IF KB_EXT EQ 1
+;----------------------------------------------------------------------------;
+; Extended KB
+;
+	CALL	KB_PUT_BUFFER				; put AX in KB buffer
+	JZ	INT_KB_MEEP_DONE				; ZF if buffer is full
+
 			ELSE
-	CMP	SI, KB_BUF_END_B				; is next >= end of buffer?
+;----------------------------------------------------------------------------;
+; Standard KB
+;
+	MOV	DI, _KB_BUF_TL 				; DI = tail ptr
+	LEA	BX, [DI][2]					; BX = next (maybe)
+			IF KB_BUF_BDA EQ 1
+	CMP	BX, _KB_BUF_EN				; is next >= end of buffer?
 	JB	KB_INT_CHECK_FULL 			; if not, check if buffer is full
-	MOV	SI, OFFSET KB_BUF 			; otherwise, wrap to first address
+	MOV	BX, _KB_BUF_ST				; otherwise, wrap to first address
+			ELSE
+	CMP	BX, KB_BUF_END_B				; is next >= end of buffer?
+	JB	KB_INT_CHECK_FULL 			; if not, check if buffer is full
+	MOV	BX, OFFSET KB_BUF 			; otherwise, wrap to first address
 			ENDIF
 KB_INT_CHECK_FULL:
-	CMP	SI, KB_BUF_HD 				; next == head?
+	CMP	BX, _KB_BUF_HD 				; next == head?
 	JE	INT_KB_MEEP_DONE				; Beep if ZF - buffer is full
 	MOV	[DI], AX 					; buffer[head] = AX
-	MOV	KB_BUF_TL, SI 				; tail = next
+	MOV	_KB_BUF_TL, BX 				; tail = next
+			ENDIF
 
 ;----------------------------------------------------------------------------;
-; Restore registers and exit
+; Send EOI, clear E0 (if KB_EXT) and exit
 ;
 INT_KB_DONE:
+			IF KB_EXT EQ 1
+INT_KB_DONE_2:
+	AND	_EKB_FLAGS1, NOT (MASK KEE0)	; clear E0
+			ENDIF
+
+;----------------------------------------------------------------------------;
+; Send EOI and exit
+;
+INT_KB_DONE_EOI:
+	CLI							; ensure no new INTs
+	MOV	AL, EOI 					; End of Interrupt OCW
+	OUT	INT_P0, AL					; write EOI to port 0
+
+;----------------------------------------------------------------------------;
+; Exit without EOI or clearing E0/E1
+;
+INT_KB_DONE_NO_EOI:
 	POPX	ES, DS
 			IF CPU_TYPE EQ CPU_V20
 	POPA							; restore used registers
@@ -7101,6 +7519,15 @@ INT_KB_DONE:
 	POP	AX
 	IRET
 
+;			IF KB_EXT EQ 1
+;----------------------------------------------------------------------------;
+; Clear E0/E1 and exit without EOI (necessary?)
+;
+;INT_KB_DONE_CLR_NO_EOI:
+;	AND	_EKB_FLAGS1, NOT (MASK KEE0 OR MASK KEE1)
+;	JMP	SHORT INT_KB_DONE_EOI
+;			ENDIF
+
 KB_INT_IS_CTRL_DONE:
 ;----------------------------------------------------------------------------;
 ; Test if in Ctrl-NumLock PAUSE
@@ -7109,16 +7536,48 @@ KB_INT_IS_CTRL_DONE:
 KB_INT_IS_PAUSE:
 	TEST	DH, MASK K2PA				; is in pause?
 	JZ	KB_INT_PUT_BUFFER
-	AND	KB_FLAGS2, NOT MASK K2PA		; clear pause flag
+	AND	_KB_FLAGS2, NOT MASK K2PA		; clear pause flag
 	JMP	SHORT INT_KB_DONE				; discard key and exit int
 
 ;----------------------------------------------------------------------------;
-; 6. Only ALT key is held (no CTRL)
+; 6. Alt key is held (possibly Ctrl)
+;
+INT_KB_ALT PROC
+	TEST	DL, MASK K1CT				; is CTRL currently held?
+	JZ	INT_KB_ALT_NO_CTRL			; jump if not
+
+;----------------------------------------------------------------------------;
+; Ctrl+Alt keys are held (before INT_KB_ALT_SKIP)
+;
+INT_KB_ALT_AND_CTRL:
+
+			IF IS_TURBO
+;----------------------------------------------------------------------------;
+; Handle Turbo speed mode toggle Ctrl-Alt-+
+;
+	CMP	AH, EKB_KP_PLUS				; numeric pad + key
+	;CMP	AH, EKB_KP_MINUS				; or numeric pad - key
+	JNE	INT_KB_ALT_MAYBE_CTRL
+	CALL	INT_KB_TOGGLE_TURBO			; beep and toggle speed
+	JMP	SHORT INT_KB_DONE				; exit and discard key
+			ELSE
+	JMP	SHORT INT_KB_ALT_MAYBE_CTRL
+			ENDIF
+
+;----------------------------------------------------------------------------;
+; Only Alt key is held (no Ctrl)
+;
+INT_KB_ALT_NO_CTRL:
+	CMP	AH, 53H					; is keypad Alt+Del?
+	JE	INT_KB_DONE					; exit and discard key
+
+INT_KB_ALT_MAYBE_CTRL:
+;----------------------------------------------------------------------------;
+; 6. ALT key is held (possibly CTRL) again
 ;
 ; Space bar is the only key that returns the same scan code and ASCII code 
 ; when ALT is held.
 ;
-INT_KB_ALT PROC
 	CMP	AH, 39H					; is space bar?
 	JE	KB_INT_IS_ALT_DONE			; continue
 	MOV	BX, AX
@@ -7127,10 +7586,36 @@ INT_KB_ALT PROC
 CHECK_TOP_ROW_NUM:
 	CMP	AH, 0DH					; is above '=' scan code?
 	JA	CHECK_ALT_ON
-	CMP	AH, 2
-	JB	CHECK_ALT_ON
+	CMP	AH, 02H
+	JB	CHECK_ALT_ON_F0				; jump if Esc
 	ADD	AH, 76H
+KB_INT_PUT_BUFFER_4:
 	JMP	SHORT KB_INT_PUT_BUFFER
+
+;----------------------------------------------------------------------------;
+; 8. Check for ALT modified chars that are skipped
+; Uses table INT_KB_ALT_SKIP
+;
+INT_KB_NOT_ALT_000:
+	XCHG	AX, BX					; restore AX
+	MOV	DI, OFFSET INT_KB_ALT_SKIP
+	MOV	CL, 12					; L_INT_KB_ALT_SKIP
+	XCHG	AH, AL
+	REPNE SCASB						; is in table?
+	XCHG	AH, AL
+	JNE	KB_INT_IS_ALT_DONE			; if not found, continue
+
+			IF KB_EXT EQ 1
+;----------------------------------------------------------------------------;
+; Handle skipped Alts for INT 16h AH=0
+;
+CHECK_ALT_ON_F0:
+	MOV	AL, 0F0H					; if found, mark as alt-skip
+	JMP	SHORT KB_INT_PUT_BUFFER			; and put in buffer
+			ELSE
+	JMP	SHORT INT_KB_DONE				; if found, skip
+CHECK_ALT_ON_F0:
+			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; 7. Check for ALT + 000 numeric entry
@@ -7148,22 +7633,8 @@ INT_KB_IS_ALT_000:
 	AAD							; AL = AL + ( AH * 10 )
 	MOV	KB_ALT, AL					; save new working byte to BDA
 	XCHG	AX, BX					; restore AH, AL = 0
-	JMP	SHORT INT_KB_DONE				; interrupt complete
-
-;----------------------------------------------------------------------------;
-; 8. Check for ALT modified chars that are skipped
-; Uses table INT_KB_ALT_SKIP
-;
-INT_KB_NOT_ALT_000:
-	XCHG	AX, BX					; restore AX
-	MOV	DI, OFFSET INT_KB_ALT_SKIP
-	MOV	CL, 10					; L_INT_KB_ALT_SKIP
-	XCHG	AH, AL
-	REPNE SCASB						; is in table?
-	XCHG	AH, AL
-	JNZ	KB_INT_IS_ALT_DONE			; if not found, continue
 INT_KB_DONE_1:
-	JMP	SHORT INT_KB_DONE				; if found, skip
+	JMP	SHORT INT_KB_DONE				; interrupt complete
 
 INT_KB_ALT ENDP
 
@@ -7178,18 +7649,28 @@ INT_KB_CTRL_NO_ALT PROC
 ;
 	XCHG	AX, BX					; BH = scan code, BL = ASCII
 	MOV	CL, L_INT_KB_CTRL_ASC_TBL		; length of table
+	PUSH	SI						; save SI (used for KB_FLAGS)
 	MOV	SI, OFFSET INT_KB_CTRL_ASC_TBL
 INT_KB_CTRL_ASC_TBL_LOOP:
 	LODS	WORD PTR CS:[SI]				; AH = scan code, AL = new ASCII
 	CMP	AH, BH					; scan code match?
 	LOOPNE INT_KB_CTRL_ASC_TBL_LOOP		; if not keep looping until end
+	POP	SI						; restore SI = OFFSET KB_FLAGS2
 	JNZ	INT_KB_CTRL_ASC_TBL_DONE		; no matches, restore AX and continue
-	CMP	CL, L_INT_KB_CTRL_SCAN_TBL		; was first list segment?
+	CMP	CL, L_KB_CTRL_SCAN_TBL			; was first list segment or PrtScn?
 	JG	KB_INT_IS_CTRL_DONE			; if so, use new ASCII code
-	XOR	AH, AH					; else use new scan code and ASCII 0
+	MOV	AH, 0						; else use new scan code and ASCII 0
+			IF KB_EXT EQ 1
+	JE	INT_KB_CTRL_NO_DONE			; if PrtScn, ASCII always 0
+	TEST	_EKB_FLAGS1, MASK KEE0			; standard scan code?
+	JZ	INT_KB_CTRL_NO_DONE			; return AL=0 if standard
+	MOV	AH, 0E0H					; return AL=0E0h for extended key
+			ENDIF
 INT_KB_CTRL_NO_DONE:
 	XCHG	AL, AH					; AH = scan code, AL = ASCII
-	JMP	SHORT KB_INT_IS_CTRL_DONE		; AX set, exit
+KB_INT_IS_CTRL_DONE_1:
+	JMP	KB_INT_IS_CTRL_DONE			; AX set, exit
+
 INT_KB_CTRL_ASC_TBL_DONE:
 	XCHG	AX, BX					; restore AX
 	XCHG	AL, AH					; AL = scancode for compare
@@ -7200,7 +7681,7 @@ INT_KB_CTRL_ASC_TBL_DONE:
 	CMP	AL, 27H					; pass < 27
 	JB	INT_KB_CTRL_ALPHA
 	CMP	AL, 29H					; pass > 29
-	JNA	INT_KB_DONE					; skip 27-29
+	JNA	INT_KB_DONE_1				; skip 27-29
 
 ;----------------------------------------------------------------------------;
 ; For scan codes 10H-32H return only low 5 bits of ASCII code when CTRL is held
@@ -7221,6 +7702,7 @@ INT_KB_CTRL_NO_ALT_1:
 	JB	INT_KB_CTRL_NO_DONE			; pass < 2
 	CMP	AL, 35H
 	JA	INT_KB_CTRL_NO_DONE			; pass > 35
+INT_KB_DONE_3:
 	JMP	SHORT INT_KB_DONE_1			; don't return 2-35?
 
 INT_KB_CTRL_NO_ALT ENDP
@@ -7233,76 +7715,25 @@ INT_KB_CTRL:
 	JZ	INT_KB_CTRL_NO_ALT			; jump if no ALT
 
 ;----------------------------------------------------------------------------;
-; 9. Ctrl-Alt keys are held
+; 9. Ctrl+Alt keys are held
 ;----------------------------------------------------------------------------;
 INT_KB_CTRL_ALT:
 	CMP	AH, 53H					; is Ctrl-Alt-Del?
-			IF IS_TURBO
-	JNE	INT_KB_CTRL_ALT_1				; if not check for turbo hotkey
-			ELSE
-	JNE	INT_KB_CTRL_NO_DONE			; put in buffer as-is and exit
-			ENDIF
+	JNE	KB_INT_IS_CTRL_DONE_1			; if not, put in buffer as-is
+								;  and exit
 
 ;----------------------------------------------------------------------------;
 ; Handle Ctrl-Alt-Del (Warm reboot)
 ;
 INT_KB_CTRL_ALT_DEL:
-			IF WARM_ENABLE EQ 1
-	MOV	WARM_FLAG, WARM_BOOT			; set warm boot flag
-			ELSE
-	MOV	WARM_FLAG, COLD_BOOT			; clear warm boot flag
+;	CLI
+	MOV	AL, EOI 					; End of Interrupt OCW
+	OUT	INT_P0, AL					; write EOI to port 0
+			IF KB_EXT EQ 1
+	AND	_EKB_FLAGS1, MASK KEEN			; clear all except ext KB flag
 			ENDIF
-
-			IF CPU_TYPE	EQ CPU_V20
-	PUSH	OFFSET BOOT_WARM				; ret address is warm reboot
-	JMP	BEEP						; beep and return to reboot
-			ELSE
 	CALL	BEEP						; BEEP on ctrl-alt-del
 	JMP	BOOT_WARM					; warm reboot
-			ENDIF
-
-			IF IS_TURBO
-;----------------------------------------------------------------------------;
-; 10. Handle Ctrl-Alt but not Del (only Turbo hotkey)
-;
-INT_KB_CTRL_ALT_1:
-
-;----------------------------------------------------------------------------;
-; Is Turbo speed toggle Ctrl-Alt-+ hotkey?
-;
-	CMP	AH, 4EH					; numeric pad + key
-	JNE	INT_KB_CTRL_NO_DONE
-
-;	;CMP	AH, 4AH					; numeric pad - key
-;	;JZ	INT_KB_TURBO_MINUS
-
-;----------------------------------------------------------------------------;
-; Handle Turbo speed mode toggle
-;
-INT_KB_TOGGLE_TURBO PROC
-			IF ARCH_TYPE EQ ARCH_TD3300
-	IN	AL, TD_TURBO				; read current state
-				IF ARCH_SUB_TYPE EQ ARCH_NEST
-	TEST	AL, MASK D11SF				; turbo on? (NZ = turbo)
-				ELSE
-	CMP	AL, MASK TDSS				; turbo on? (NZ = turbo)
-				ENDIF
-			ELSE
-				IF ARCH_TYPE EQ INIT_V40
-	MOV	DX, V40_WCR1				; V40 W/S register
-	IN	AL, DX					; FF = slow, 0 = Turbo
-	NOT	AL						; flip bits
-				ELSE
-	IN	AL, PPI_B					; read standard PPI register
-				ENDIF				; /IF ARCH_TYPE EQ INIT_V40
-	TEST	AL, MASK PBTB				; is in Turbo mode?
-			ENDIF					; /IF ARCH_TYPE EQ ARCH_TD3300
-	CALL	MEEPMEEP_Z					; two meeps if to high (ZF)
-								; one meep if to low (NZ)
-	CALL	TOGGLE_TURBO				; toggle speed setting
-	JMP	SHORT INT_KB_DONE_3			; done with keyboard
-INT_KB_TOGGLE_TURBO ENDP
-			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; 5. Is a flag key?
@@ -7318,11 +7749,7 @@ INT_KB_TOGGLE_TURBO ENDP
 ;       1 |			- K2LA	left ALT key depressed
 ;        0|			- K2LC	left CTRL key depressed
 ;----------------------------------------------------------------------------;
-_KB_FLAGS2	EQU	BYTE PTR[BX]			; Use index addressing
-_KB_FLAGS1	EQU	_KB_FLAGS2[-1]			;  for byte savings
-
 INT_KB_IS_FLAG PROC
-	MOV	BX, OFFSET KB_FLAGS2			; BX = KB_FLAGS2
 	MOV	DI, OFFSET KEY_FLAG_ON_TBL
 	MOV	AL, AH					; AL = original scan code
 	AND	AL, 01111111B				; clear high bit for search
@@ -7334,7 +7761,7 @@ INT_KB_FLAG_LOOP:
 	JNZ	INT_KB_FLAG_LOOP				; CF if not found too
 	JMP	KB_INT_NOT_FLAG
 INT_KB_FLAG_FOUND:
-	CLI
+	;CLI							; necessary?
 	MOV	AL, CL					; move to AL for work
 
 ;----------------------------------------------------------------------------;
@@ -7365,8 +7792,7 @@ INT_KB_FLAG_TOGGLE:
 	TEST	AL, MASK K1IN				; is insert key?
 	MOV	AL, 0
 	JNZ	INT_KB_PUT_BUFFER_2			; pass through as a key if so
-INT_KB_DONE_3:
-	JMP	INT_KB_DONE
+	JMP	INT_KB_DONE_3
 
 ;----------------------------------------------------------------------------;
 ; Scan code for Alt, Ctrl, Left or Right Shift
@@ -7385,15 +7811,14 @@ INT_KB_NOT_ICNS:
 	MOV	AL, CL					; restore AL
 
 INT_KB_NOT_ICNS_1:
-	DEC	BX						; _KB_FLAGS2 = KB_FLAGS1
 	TEST	AH, AH					; is a break code?
 	JS	INT_KB_FLAG_CLEAR				; if so, clear flag
-	OR	_KB_FLAGS2, AL				; set flag
+	OR	_KB_FLAGS1, AL				; set flag
 	JMP	SHORT INT_KB_DONE_3			; done
 
 INT_KB_FLAG_CLEAR:
 	NOT	AL						; invert mask
-	AND	_KB_FLAGS2, AL				; clear flag
+	AND	_KB_FLAGS1, AL				; clear flag
 	CMP	CL, MASK K1AL				; was it ALT key?
 	JNE	INT_KB_DONE_3				; if not, done
 
@@ -7466,8 +7891,8 @@ KEY_FLAG_ON_TBL	LABEL BYTE	;                            ICNSATLR
 L_KEY_FLAG_ON_TBL	EQU $-KEY_FLAG_ON_TBL
 
 ;----------------------------------------------------------------------------;
-; Alt keys that are "skipped" and return no scan codes
-; Length: 10 bytes
+; Alt keys that are "skipped" and return no scan codes on standard INT 16h
+; Length: 12 bytes
 ;
 INT_KB_ALT_SKIP	LABEL BYTE
 	DB	0FH					; Tab
@@ -7480,6 +7905,8 @@ INT_KB_ALT_SKIP	LABEL BYTE
 	DB	34H					; .
 	DB	35H					; /
 	DB	37H					; * PrcSc
+	DB	4AH					; Keypad -
+	DB	4EH					; Keypad +
 L_INT_KB_ALT_SKIP	EQU $-INT_KB_ALT_SKIP
 
 ;----------------------------------------------------------------------------;
@@ -7504,57 +7931,8 @@ KEY_SCAN_TBL_HIGH	LABEL BYTE
 	DB	'.', 0				; 53H		Del
 	DB	2 DUP(0)				; 54H		SysReq
 L_KEY_SCAN_TBL EQU $-KEY_SCAN_TBL
-
+				ASSUME DS:NOTHING, ES:NOTHING
 INT_09 ENDP
-
-			IF CASSETTE EQ 1
-;----------------------------------------------------------------------------;
-; Cassette equates for indirect memory references to save code bytes
-;----------------------------------------------------------------------------;
-_CAS_CRC		EQU	WORD PTR[SI]
-_CAS_PREV		EQU	BYTE PTR[SI][CAS_PREV-CAS_CRC]
-_CAS_TIME_CNT	EQU	WORD PTR[SI][CAS_TIME_CNT-CAS_CRC]
-_BIOS_BREAK		EQU	BYTE PTR[SI][BIOS_BREAK-CAS_CRC]
-
-;----------------------------------------------------------------------------;
-; CAS_CRC_ADD: Add current bit to CRC message
-;----------------------------------------------------------------------------;
-; Input:
-;	CF = bit to add
-;	SI = OFFSET CAS_CRC
-;----------------------------------------------------------------------------;
-; This is (effectively) CRC16-CCITT as used by IBM for SDLC/HDLC. It uses a
-; 0FFFFh initial/preset value, 1021h polynomial and has an expected residue
-; value of 01D0Fh.
-;
-; cf = ( ( crc & 0x8000 ) >> 15 ) ^ CF;
-; if ( cf ) {
-;	crc = crc ^ (0x1021 >> 1);
-; }
-; crc = crc << 1 | cf;
-; return crc;
-;
-; https://stackoverflow.com/questions/62771192/crc16-ccitt-calculation
-; http://bitsavers.trailing-edge.com/pdf/ibm/datacomm/GA27-3093-3_SDLC_Concepts_Jun86.pdf
-;----------------------------------------------------------------------------;
-CAS_CRC_PRE		EQU	0FFFFh	; Cassette CRC16-CCITT preset value
-CAS_CRC_RES		EQU	01D0Fh	; Cassette CRC16-CCITT residue value
-CAS_CRC_POLY 	EQU 	01021h	; Cassette CRC16-CCITT polynomial
-
-CAS_CRC_ADD PROC
-	XCHG	AX, _CAS_CRC		; get working CRC, save AX
-	RCR	AX, 1				; set up for RCL
-	RCL	AX, 1				; OF = MSB(AX) != CF
-	CLC					; CF = OF
-	JNO	CAS_CRC_SHIFT		; if OF: AX = AX XOR 0810h
-	XOR	AX, CAS_CRC_POLY SHR 1	; divide by polynomial (already shifted)
-	STC					; CF = OF
-CAS_CRC_SHIFT:
-	ADC	AX, AX			; add bit to working CRC value
-	XCHG	_CAS_CRC, AX		; store working CRC, restore AX
-	RET
-CAS_CRC_ADD ENDP
-			ENDIF			; IF CASSETTE EQ 1
 
 ;
 ; 12 BYTES HERE / 11 BYTES HERE 5150
@@ -7621,6 +7999,7 @@ _FD_TIMER		EQU	_FD_LAST_OP[TIMER-FD_LAST_OP]		; TIMER
 _FDC_LAST_ST	EQU	([DI][FDC_LAST_ST-FD_LAST_OP])		; FDC_LAST_ST
 
 		ORG 0EC59H
+			IF FDC_ENABLE EQ 1
 INT_13 PROC
 		ASSUME DS:_BDA
 	STI 						; enable interrupts
@@ -7634,13 +8013,11 @@ INT_13 PROC
 	JE	INT_13_1 				; AH = 1, jump to Status
 	PUSHX	DX, CX, BX				; save caller registers
 	MOV	_FD_LAST_OP, FDC_ST_OK		; clear last operation
-			IF FDC_ENABLE EQ 1
 	JB	INT_13_0 				; AH = 0, jump to Reset
 	CMP	DL, 3 				; is drive number > 3?
 	JA	INT_13_BAD_CMD 			; if so, exit
 	CMP	AH, 6 				; AH = 2 through 5?
 	JB	INT_13_2_5 				; jump to FDC RWVF command
-			ENDIF
 INT_13_BAD_CMD:
 	INC	_FD_LAST_OP				; otherwise return "bad command" (1)
 INT_13_DONE:
@@ -8436,6 +8813,7 @@ FDC_RECV_STATUS PROC
 ; Output: AH = 0 if success, 80H if failure
 ;----------------------------------------------------------------------------;
 FDC_RECV_ALL PROC
+			ASSUME ES:_BDA
 	PUSH	ES
 	PUSH	CX
 	PUSH	DI					; preserve DI (FD_LAST_OP)
@@ -8482,6 +8860,7 @@ FDC_RECV_ALL_DONE:
 	POP	CX
 	POP	ES
 FDC_WAIT_SENSE_EXIT:
+			ASSUME ES:NOTHING
 	RET
 
 ;----------------------------------------------------------------------------;
@@ -8591,7 +8970,7 @@ BYTES_HERE	INT_0E
 ;----------------------------------------------------------------------------;
 		ORG 0EF57H
 INT_0E PROC
-	STI						; necessary?
+	;STI						; (necessary?)
 	PUSH	AX
 	PUSH	DS
 	XOR	AX, AX				; DS = BDA_ABS segment
@@ -8611,11 +8990,12 @@ INT_0E ENDP
 ;----------------------------------------------------------------------------;
 ; Input: DS = BDA, DI = FD_LAST_OP
 ; Output: CF if timeout
+; Clobbers: AX
 ;----------------------------------------------------------------------------;
 FDC_WAIT_INT PROC
 			ASSUME DS:_BDA
 	STI						; ensure interrupts are on
-	PUSH	AX 					; call preserve regs
+	;PUSH	AX 					; call preserve regs (necessary?)
 	PUSH	CX
 	MOV	CX, 2 * (1000/55) + 1		; timeout ~2 sec (37 ticks)
 FDC_WAIT_INT_LOOP1:
@@ -8638,7 +9018,7 @@ FDC_WAIT_INT_OK:
 	AND	_FD_CAL_ST, NOT MASK FWIF 	; clear working interrupt flag
 FDC_WAIT_INT_DONE:
 	POP	CX
-	POP	AX
+	;POP	AX
 	RET
 FDC_WAIT_INT ENDP
 
@@ -8688,6 +9068,70 @@ FDC_SEEK_TRACKS	DB	38, 2, 19, 0	; tracks (0 is end)
 
 FDC_RECAL_SEEK_TEST ENDP
 			ENDIF
+
+		ELSE
+;----------------------------------------------------------------------------;
+; INT 13h floppy support is completely removed
+; Always return with CF and caller's flags
+;----------------------------------------------------------------------------;
+INT_CF PROC
+	PUSH	BP
+	MOV	BP, SP				; get stack pointer
+	OR	BYTE PTR [BP][6], MASK FCF	; set CF
+	POP	BP
+	MOV	AH, FDC_ST_BADCMD
+	IRET
+INT_CF ENDP
+
+;----------------------------------------------------------------------------;
+; Use BIOS default ISR for unused interrupts
+;
+INT_0E	EQU	INT_IRQ			; mask IRQ 6 if triggered
+INT_13	EQU	INT_CF			; IRET with CF
+
+		ENDIF					; /IF FDC_ENABLE EQ 1
+
+			IF KB_EXT EQ 1
+			IF EKB_INT_SR EQ 1
+;----------------------------------------------------------------------------;
+; Handle SysRq key
+;----------------------------------------------------------------------------;
+; The SysRq key calls INT 15h, AH=85h on both key down and key up. The value
+; of AL is passed as 0 for key down and 1 for key down to INT 15h.
+; https://stanislavs.org/helppc/int_15-85.html
+;----------------------------------------------------------------------------;
+; Input:
+;	AL: SysRq scan code - make: 54H, break: D4H
+;	DL/DH: Extended keyboard flags
+;
+; Clobbers: AX, DH
+;----------------------------------------------------------------------------;
+		ASSUME DS:_BDA
+EKB_INT_SYSRQ PROC
+	ROL	AL, 1					; make/break bit into low bit
+	XCHG	AL, DH				; save AL
+	JC	KB_SYSRQ_BREAK			; if break code, proceed
+	TEST	AL, MASK K2SQ			; SysRq already held?
+	JNZ	EKB_INT_SYSRQ_DONE		; if so, exit
+KB_SYSRQ_MAKE:					; K2SQ is 0
+	OR	AL, MASK K2SQ			; set SysRq flag
+	JMP	SHORT KB_SYSRQ_INT		; go time
+KB_SYSRQ_BREAK:					; K2SQ 0 or 1
+	AND	AL, NOT MASK K2SQ			; clear SysRq flag
+KB_SYSRQ_INT:
+	JMP	EKB_INT_SYSRQ_2			; continue to relocated code
+EKB_INT_SYSRQ_DONE:
+	POP	CX					; discard caller RET
+	JMP	EKB_INT_EXIT_POP_EOI		; send EOI and exit
+EKB_INT_SYSRQ ENDP
+			ENDIF
+			ENDIF
+
+;----------------------------------------------------------------------------;
+; End of INT 13h CSM ORG
+;
+INT_13_END:						; start offset for KB relocate
+INT_13_SZ	EQU	$-INT_13
 
 ;
 ; 20 BYTES HERE
@@ -8906,6 +9350,7 @@ HIDE_CURSOR PROC
 SET_CURSOR PROC
 	PUSH	AX				; (not necessary)
 	MOV	AH, 1
+INT_10H_RET:
 	INT	10H
 	POP	AX
 	RET
@@ -8929,11 +9374,7 @@ INT_10_JMP LABEL WORD
 	DW	OFFSET INT_10_1		; AH = 1 - Set cursor type
 	DW	OFFSET INT_10_2		; AH = 2 - Set cursor position
 	DW	OFFSET INT_10_3		; AH = 3 - Read cursor position
-			IF LIGHT_PEN EQ 1
 	DW	OFFSET INT_10_4		; AH = 4 - Read light pen
-			ELSE
-	DW	OFFSET INT_10_RET		; AH = 4 - Read light pen (not supported)
-			ENDIF
 	DW	OFFSET INT_10_5		; AH = 5 - Select active display page
 	DW	OFFSET INT_10_6		; AH = 6 - Scroll active page up
 	DW	OFFSET INT_10_7		; AH = 7 - Scroll active page down
@@ -9465,10 +9906,13 @@ INT_10_7 PROC
 ; Input: same as INT 10,7 above
 ;----------------------------------------------------------------------------;
 INT_10_6 PROC
-			IF CPU_TYPE EQ CPU_V20
+			IF CPU_TYPE	EQ CPU_V20
 	PUSHA					; preserve all registers
 			ELSE
-	PUSHX	AX, BX, CX, DX, SI, BP	; call-preserve these registers
+	PUSHX	AX, BX, SI, BP		; call-preserve these registers
+				IF HOBBIT_HACK EQ 1
+	PUSHX	CX, DX
+				ENDIF
 			ENDIF
 	MOV	ES, VID_MEM_SEG		; ES = video/regen RAM segment (B800 or B000)
 
@@ -9496,13 +9940,11 @@ INT_10_6 PROC
 ;
 	MOV	DX, CX			; if scroll up, DX becomes "top"
 
-		IF 1
 ;----------------------------------------------------------------------------;
 ; If full screen scroll up, skip column calculation
 ;
 	MOV	SI, CX			; if CX = 0, skip column calculation
 	JCXZ	INT_10_SCR_ROW		; and scroll full row
-		ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Make sure lower right column does not exceed screen width
@@ -9524,7 +9966,12 @@ INT_10_SCR_ROW:
 ;
 	CALL	INT_10_IS_TXT		; NZ if CGA GFX, ZR if CGA/MDA Text
 	PUSH	DS				; save BDA data SEG
+				IF HOBBIT_HACK EQ 1
+	JZ	INT_10_SCR_TXT		; hack for jump out of range
+	JMP	INT_10_SCR_GFX
+				ELSE
 	JNZ	INT_10_SCR_GFX
+				ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Scroll in text mode
@@ -9659,10 +10106,13 @@ INT_10_6_ENABLE_CGA:
 				ENDIF
 
 INT_10_6_DONE:
-			IF CPU_TYPE EQ CPU_V20
+			IF CPU_TYPE	EQ CPU_V20
 	POPA					; preserve all registers
 			ELSE
-	POPX	BP, SI, DX, CX, BX, AX
+				IF HOBBIT_HACK EQ 1
+	POPX	DX, CX
+				ENDIF
+	POPX	BP, SI, BX, AX
 			ENDIF
 	RET
 
@@ -9901,8 +10351,10 @@ INT_10_8_GFX_LOW_2:
 INT_10_8_GFX_SEARCH:
 	MOV	DI, SP			; DI = char bitmap from video mem
 	MOV	SI, OFFSET GFX_CHARSET	; SI = BIOS ROM table
-	MOV	BX, CS			; DS = CS
-	MOV	DS, BX
+	PUSH	CS				; DS = CS
+	POP	DS
+	;MOV	BX, CS			; DS = CS
+	;MOV	DS, BX
 	XOR	AX, AX			; start codepoint counter at 0
 INT_10_8_GFX_SEARCH_TBL:
 	MOV	BX, 128			; loop counter for each charset table
@@ -10676,6 +11128,7 @@ POST_SYS_VIDEO PROC
 ;----------------------------------------------------------------------------;
 ; Check if INT 10 is using this BIOS. If so, must be CGA or MDA.
 ;
+			ASSUME DS:_BDA
 	MOV	BX, DS				; BX = 0040h (SEG _BDA and IVT_10)
 	XOR	AX, AX				; AX = SEG _IVT
 	MOV	DS, AX				; set IVT segment for LDS
@@ -10697,13 +11150,14 @@ POST_SYS_VIDEO PROC
 BIOS_VIDEO:
 	CALL	INT_10_IS_TXT			; CF = 1 if MDA mode 7
 	MOV	SI, OFFSET POST_MDA		; default "MDA"
-			IF POST_VID_HGC EQ 1
-	JNC	CHECK_CGA				; Not MDA/HGC
 
+			IF POST_VID_HGC EQ 1
 ;----------------------------------------------------------------------------;
-; Check if HGC/Hercules
+; Check if HGC/Hercules (+30 bytes)
 ; http://www.pennelynn.com/Documents/CUJ/HTML/90HTML/199001B5.HTM
 ;
+CHECK_HGC PROC
+	JNC	CHECK_CGA				; Not MDA/HGC
 	MOV	DX, MDA_STAT			; Herc/MDA status port (03BAH)
 		IF IS_TURBO
 	MOV	CH, HIGH 1800H			; timeout (faster CPUs)
@@ -10722,8 +11176,8 @@ HGC_LOOP:
 	MOV	SI, OFFSET POST_HGC		; otherwise "HGC"
 	JMP	SHORT POST_SYS_VIDEO_DONE
 POST_HGC	DB	'HGC', 0
-
 CHECK_CGA:
+CHECK_HGC ENDP
 			ELSE				; POST_VID_HGC EQ 0
 	JC	POST_SYS_VIDEO_DONE		; jump if MDA
 			ENDIF				; ENDIF POST_VID_HGC EQ 1
@@ -10898,7 +11352,7 @@ POST_START_COL_2 ENDP
 ;----------------------------------------------------------------------------;
 POST_END_COL_NL PROC
 	CALL	POST_END_COL
-	JMP	CRLF				; write CRLF and RET
+	JMP	SHORT CRLF				; write CRLF and RET
 POST_END_COL_NL ENDP
 
 ;----------------------------------------------------------------------------;
@@ -10970,6 +11424,25 @@ OUT_SZ_DONE:
 	POP	AX
 	RET
 OUT_SZ ENDP
+
+;----------------------------------------------------------------------------;
+; Display a zero-terminated string in BIOS at CS:[SI] with ending NL
+;----------------------------------------------------------------------------;
+; Input: CS:SI = String
+; Size: 12 bytes
+;----------------------------------------------------------------------------;
+OUTLN_SZ PROC
+	CALL	OUT_SZ			; write original string in SI
+						; fall through to CRLF
+;----------------------------------------------------------------------------;
+; Write a CRLF string to console
+;----------------------------------------------------------------------------;
+CRLF PROC
+	PRINT_SZ  NL_Z, 1
+	RET
+CRLF ENDP
+OUTLN_SZ ENDP
+
 OUT_SZ_ATTR ENDP
 POST_END_COL_STR ENDP
 POST_END_COL ENDP
@@ -11005,17 +11478,6 @@ MOVE_COL_SET:
 	RET
 MOVE_COL ENDP
 POST_COL ENDP
-
-;----------------------------------------------------------------------------;
-; Write a space char to console (8 bytes)
-;----------------------------------------------------------------------------;
-SPACE PROC
-	PUSH	AX				; no clobbery AX
-	MOV	AX, DBW <0EH, ' '>	; AH = 0Eh, AL = space char
-	INT	10H				; send to console
-	POP	AX
-	RET
-SPACE ENDP
 
 ;----------------------------------------------------------------------------;
 ; Write Unsigned word as decimal to console
@@ -11116,8 +11578,152 @@ BYTE_HEX ENDP
 WORD_HEX ENDP
 DWORD_HEX ENDP
 
+			IF KB_EXT EQ 1
+;----------------------------------------------------------------------------;
+; INT 16H Extended KB helper functions [1/2]
+;----------------------------------------------------------------------------;
+EKB_INT_16_1 PROC
+
+;----------------------------------------------------------------------------;
+; KB_KEY_STATUS: Get keystroke status
+;----------------------------------------------------------------------------;
+; Check if a key press is in buffer and return. Does not wait or remove.
+; Output:
+;	ZF = 0 if a key pressed (even Ctrl-Break)
+;	AH = scan code
+;	AL = ASCII character or zero if special function key
+;----------------------------------------------------------------------------;
+;	KB_BUF_HD (1Ah) = "head" next character stored in keyboard buffer
+;	KB_BUF_TL (1Ch) = "tail" next spot available in keyboard buffer
+;----------------------------------------------------------------------------;
+KB_KEY_STATUS PROC
+	MOV	SI, OFFSET KB_BUF_HD 	; SI = head ptr
+	CLI 					; disable interrupts
+	LODSW 				; AX = head, SI = tail ptr
+	CMP	AX, [SI]	 		; head == tail?
+	JNE	KB_BUF_HAS_KEY 		; if not, buffer has a key
+KB_KEY_STATUS_DONE:
+	STI					; re-enable interrupts
+	RET
+KB_BUF_HAS_KEY:
+	XCHG	AX, SI 			; SI = head
+	LODSW 				; AX = buffer[head], SI = next
+	JMP	KB_KEY_STATUS_DONE
+KB_KEY_STATUS ENDP
+
+;----------------------------------------------------------------------------;
+; KB_WAIT_READ_KEY: Wait for keystroke and read
+;----------------------------------------------------------------------------;
+; Wait until keystroke is in buffer. Key press is removed from buffer.
+; Output:
+;	AH = scan code
+;	AL = ASCII code
+;----------------------------------------------------------------------------;
+KB_WAIT_READ_LOOP:
+	STI					; enable interrupts
+		IF KB_HLT_WAIT EQ 1
+	HLT					; wait for keystroke interrupt
+		ELSE
+	NOP					; wait for any interrupt
+		ENDIF
+KB_WAIT_READ_KEY PROC
+	CALL	KB_KEY_STATUS		; check buffer for new keystroke
+	JE	KB_WAIT_READ_KEY		; loop until keystroke
+						; fall through to KB_BUF_NEXT
+
+;----------------------------------------------------------------------------;
+; KB_BUF_NEXT: Rotate buffer if necessary and update head pointer
+;----------------------------------------------------------------------------;
+; Input:
+;	SI = next possible KB buffer location
+; Output:
+;	SI = new KB_BUF_HD
+;----------------------------------------------------------------------------;
+KB_BUF_NEXT PROC
+			IF KB_BUF_BDA EQ 1
+	CMP	SI, KB_BUF_EN		; is next >= end of buffer?
+	JB	KB_GET_READ 		; if not, check if buffer is full
+	MOV	SI, KB_BUF_ST		; otherwise, wrap to first address
+			ELSE
+	CMP	SI, KB_BUF_END_B		; is next >= end of buffer?
+	JB	KB_GET_READ 		; if not, get tail value
+	MOV	SI, OFFSET KB_BUF 	; otherwise, wrap next to buffer top
+			ENDIF
+KB_GET_READ:
+	MOV	KB_BUF_HD, SI 		; head ptr = next
+	RET
+KB_BUF_NEXT ENDP
+
+KB_WAIT_READ_KEY ENDP
+
+;----------------------------------------------------------------------------;
+; Scan code replacements for EKB_CTRL_SCAN_TBL
+; Table is aligned so that even offsets are E0
 ;
-; 46 BYTES HERE
+EKB_CTRL_SCAN_TBL_REP LABEL BYTE
+	DB	8DH					; x [6] Up Arrow / 8
+	DB	8EH					;   [5] Keypad -
+	DB	91H					; x [4] Down Arrow / 2
+	DB	8FH					;   [3] Keypad 5
+	DB	92H					; x [2] Ins / 0
+	DB	90H					;   [1] Keypad +
+	DB	93H					; x [0] Del
+L_EKB_CTRL_SCAN_TBL_REP EQU $-EKB_CTRL_SCAN_TBL_REP
+
+EKB_INT_16_1 ENDP
+			ENDIF				; /IF KB_EXT EQ 1
+
+			IF CASSETTE EQ 1
+;----------------------------------------------------------------------------;
+; Cassette equates for indirect memory references to save code bytes
+;----------------------------------------------------------------------------;
+_CAS_CRC		EQU	WORD PTR[SI]
+_CAS_PREV		EQU	BYTE PTR[SI][CAS_PREV-CAS_CRC]
+_CAS_TIME_CNT	EQU	WORD PTR[SI][CAS_TIME_CNT-CAS_CRC]
+_CAS_BIOS_BREAK	EQU	BYTE PTR[SI][BIOS_BREAK-CAS_CRC]
+
+;----------------------------------------------------------------------------;
+; CAS_CRC_ADD: Add current bit to CRC message
+;----------------------------------------------------------------------------;
+; Input:
+;	CF = bit to add
+;	SI = OFFSET CAS_CRC
+;----------------------------------------------------------------------------;
+; This is (effectively) CRC16-CCITT as used by IBM for SDLC/HDLC. It uses a
+; 0FFFFh initial/preset value, 1021h polynomial and has an expected residue
+; value of 01D0Fh.
+;
+; cf = ( ( crc & 0x8000 ) >> 15 ) ^ CF;
+; if ( cf ) {
+;	crc = crc ^ (0x1021 >> 1);
+; }
+; crc = crc << 1 | cf;
+; return crc;
+;
+; https://stackoverflow.com/questions/62771192/crc16-ccitt-calculation
+; http://bitsavers.trailing-edge.com/pdf/ibm/datacomm/GA27-3093-3_SDLC_Concepts_Jun86.pdf
+;----------------------------------------------------------------------------;
+CAS_CRC_PRE		EQU	0FFFFh	; Cassette CRC16-CCITT preset value
+CAS_CRC_RES		EQU	01D0Fh	; Cassette CRC16-CCITT residue value
+CAS_CRC_POLY 	EQU 	01021h	; Cassette CRC16-CCITT polynomial
+
+CAS_CRC_ADD PROC
+	XCHG	AX, _CAS_CRC		; get working CRC, save AX
+	RCR	AX, 1				; set up for RCL
+	RCL	AX, 1				; OF = MSB(AX) != CF
+	CLC					; CF = OF
+	JNO	CAS_CRC_SHIFT		; if OF: AX = AX XOR 0810h
+	XOR	AX, CAS_CRC_POLY SHR 1	; divide by polynomial (already shifted)
+	STC					; CF = OF
+CAS_CRC_SHIFT:
+	ADC	AX, AX			; add bit to working CRC value
+	XCHG	_CAS_CRC, AX		; store working CRC, restore AX
+	RET
+CAS_CRC_ADD ENDP
+			ENDIF			; IF CASSETTE EQ 1
+
+;
+; 46 BYTES HERE / 28 BYTES HERE 5150 / 9 BYTES HERE KB_EXT
 ;
 BYTES_HERE	INT_12
 
@@ -11209,7 +11815,7 @@ INT_15_CASS PROC
 	MOV	SI, OFFSET CAS_CRC	; used for CAS_CRC and BIOS_BREAK offsets
 	MOV	DX, SEG _BDA		; DH = 0, DL = 40H
 	MOV	DS, DX			; DS = BDA segment
-	MOV	_BIOS_BREAK, DH		; clear BIOS break key flag
+	MOV	_CAS_BIOS_BREAK, DH	; clear BIOS break key flag
 	MOV	AL, AH			; AL = function
 	LAHF					; save 'CMP AH, 3' flags
 	DEC	AL				; is motor off function?
@@ -11607,7 +12213,7 @@ CAS_READ_HEADER_START:
 ;
 	MOV	CX, BHB < 1000 >		; timeout is 1000 bytes, in half bits
 CAS_READ_HEADER_LOOP:
-	TEST	_BIOS_BREAK, MASK KBRK	; Test BIOS break flag
+	TEST	_CAS_BIOS_BREAK, MASK KBRK; Test BIOS break flag
 	JNZ	CAS_READ_ERR_1		; Break key was hit
 	CALL	CAS_READ_CYCLE		; loop until bit detected or timeout
 	LOOPZ	CAS_READ_HEADER_LOOP
@@ -11624,7 +12230,7 @@ CAS_READ_HEADER_LOOP:
 ;
 	MOV	CX, BHB < 32 >		; leader must be at least 32 bytes
 CAS_READ_HEADER_LOOP_1:
-	TEST	_BIOS_BREAK, MASK KBRK	; Test BIOS break flag
+	TEST	_CAS_BIOS_BREAK, MASK KBRK	; Test BIOS break flag
 CAS_READ_ERR_1:				; (short jump hack)
 	JNZ	CAS_READ_ERR		; exit if break key was hit
 
@@ -11676,7 +12282,7 @@ CAS_READ_BLOCKS PROC
 	MOV	_CAS_CRC, CAS_CRC_PRE	; set CRC to initial preset
 	MOV	BH, 0				; loop 256 bytes
 CAS_READ_BLOCK_LOOP:
-	TEST	_BIOS_BREAK, MASK KBRK	; Test BIOS break flag
+	TEST	_CAS_BIOS_BREAK, MASK KBRK	; Test BIOS break flag
 	JNZ	CAS_READ_ERR		; exit if break key was hit
 	CALL	CAS_READ_BYTE		; read next full byte
 	MOV	AH, 2				; data error
@@ -12119,10 +12725,837 @@ INT_10_4_LOW:
 	XCHG	AX, DI			; return as DX
 	JMP	SHORT INT_10_4_DONE	; clear latch and return with AH=1
 INT_10_4 ENDP
+		ELSE
+INT_10_4	EQU	INT_10_RET		; placeholder if not enabled
+		ENDIF				; /IF LIGHT_PEN
+
+;----------------------------------------------------------------------------;
+; Potentially re-locate EKB routines to allow other optional features
+;----------------------------------------------------------------------------;
+		IF KB_EXT EQ 1		; only if EKB
+		IF KB_EXT_RELOCATE NE 0	; and KB relocatable
+		IF FDC_ENABLE EQ 0	; or if no INT 13h, use that space
+			ORG	OFFSET INT_13_END
+			ALIGN	4		; give additional space (just in case)
+		ELSE
+			ORG	ROM_TOP
+		ENDIF				; /IF FDC_ENABLE EQ 0
+		ENDIF				; /IF KB_EXT_RELOCATE NE 0
+
+EKB_INT PROC
+;----------------------------------------------------------------------------;
+; INT 09h - Extended Keyboard ISR helper
+;----------------------------------------------------------------------------;
+; Input:
+;	AH/AL = original scan code
+;	DX = KB_FLAGS (DL=KB_FLAGS1, DH=KB_FLAGS2)
+;	SI = OFFSET KB_FLAGS2
+;	DS = BIOS Data Area
+;	ES = BIOS code segment (CS)
+;	CH = 0
+; Output:
+;	AH/AL = original or modified scan code
+;	BX = EKB_FLAGS (BL=EKB_FLAGS1, BH=EKB_FLAGS2)
+;
+; Must preserve AX, CH, DX, DS, ES, BP (all others okay to clobber)
+;----------------------------------------------------------------------------;
+; References:
+; https://stanislavs.org/helppc/make_codes.html
+; https://stanislavs.org/helppc/scan_codes.html
+; https://stanislavs.org/helppc/int_15-4f.html
+; https://cosmodoc.org/topics/keyboard-functions/
+; https://www.plantation-productions.com/Webster/www.artofasm.com/DOS/ch20/CH20-1.html
+;----------------------------------------------------------------------------;
+; Things you must do/handle:
+;
+; - BDA Flags for extended scan codes E0 and E1
+; - BDA Flags for Right Ctrl and Alt
+; - F11/F12 keys
+; - Dedicated Print Screen
+; - Dedicated Insert key
+; - INT 16h flags for dedicated vs. keypad Edit keys (Insert, Home,
+;	Page Up, etc)
+; - Extended scan codes (Alt+Ctrl) for dedicated Edit keys
+; - Standard key combinations with new scan codes: ex: Ctrl+Alt+Del, Alt+Del,
+;	Alt+Backspace, Alt+Tab, Ctrl+Tab, Keypad 5, etc.
+; - Other new keypad keys: Slash, Star, Enter
+; - Ctrl+Num Lock vs. dedicated Pause behavior on standard and extended KBs
+; - Ctrl+Scroll Lock vs. dedicated Ctrl+Break on standard and extended KBs
+; - SysRq Interrupt
+; - Keyboard Intercept (INT 15h, AH=4FH)
+; - "Fake shifts" - these exist only for backwards compatibility and are
+;	ignored by an extended INT 09h
+; - Flag filter codes for INT 16h to return correct results depending whether
+;	called from standard AH=0h/1h or extended AH=10h/11h functions
+;----------------------------------------------------------------------------;
+; Possible Actions:
+;
+; 1. EKB_INT_PASS: Do nothing, clear E0/E1 flags and pass back to standard INT 09h
+;	- Not an extended key or not handled by EKB_INT_09
+;	- Extended scan code is same output for AH=10h as standard AH=00h
+;	- Alt+Del (including ctrl-alt-delete)
+;	- Keypad * and extended keyboard not detected
+; 2. *EKB_INT_PASS: Modify scan code or flags, clear E0/E1 flags and pass back to standard INT 09h
+;	- Right Alt/Ctrl flags (so standard flags can be applied)
+; 3. EKB_INT_EXIT: Handle key, no buffer store, DO NOT clear E0/E1 flags and exit INT 09h
+;	- Scan code is E0 or E1
+;	- SysRq
+;	- Buffer full meep
+;	- Pause (handled by standard INT 09h)
+; 3A. EKB_INT_EXIT_CLR_E0: Same as 3 but clear E0/E1 BDA flags
+;	- Print Screen
+;	- Fake shifts
+; 4. EKB_INT_PUT_BUFFER: Modify scan code, clear E0/E1 flags, store into buffer and end INT 09h
+;	- F11/F12
+;	- Break
+; 5. EKB_INT_PUT_BUFFER_AL_E0: Replace AL with E0, clear E0/E1 flags, store in buffer and end INT 09h
+;	- Signify INT 16h return AL=00 on standard (00h) and AL=E0 extended (10h)
+;	- Dedicated Ins/Del/Home/etc keys: 47h, 48h, 49h, 4Bh, 4Dh, 4Fh, 50h, 51h, 52h, 53h
+; 6. EKB_INT_PUT_BUFFER_AL_F0: Replace AL with F0, clear E0/E1 flags, store in buffer and end INT 09h
+;	- Signify INT 16h ignore on standard (00h) and AL=00 extended (10h)
+;	- Some CTRL-Skip chars
+; 7. EKB_INT_PUT_BUFFER_AL_0: Store AH in buffer, AL = 00h, clear E0/E1 flags and end INT 09h
+;	- Handle extended keys (dedicated Insert, Home, keypad *, arrows, etc)
+; 8. EKB_INT_PUT_BUFFER_AH_E0: Store AL in buffer, AH = 0E0h, clear E0/E1 flags and end INT 09h
+;	- Special case for KP Slash and Enter handled in INT 16h
+;----------------------------------------------------------------------------;
+EKB_INT_09 PROC
+			ASSUME DS:_BDA, ES:BIOS
+
+;----------------------------------------------------------------------------;
+; load EKB_FLAGS into BX for tests
+;
+	MOV	BX, _EKB_FLAGS			; BL=EKB_FLAGS1, BH=EKB_FLAGS2
+							; DL=KB_FLAGS1,  DH=KB_FLAGS2
+
+;----------------------------------------------------------------------------;
+; set Extended keyboard enabled flag (EKB_FLAGS1) if extended key detected
+;
+	CMP	AL, EKB_SC_E0			; is extended scan code?
+	JNE	EKB_INT_CHECK_E1
+	OR	BL, MASK KEE0 OR MASK KEEN	; set E0 extended key detected flag
+	JMP	SHORT EKB_INT_EXIT_NO_CLR_E0	; exit with no store in buffer
+
+;----------------------------------------------------------------------------;
+; The E1 make/break code is only used for the extended keyboard's dedicated
+; Pause key (E1 1D 45 E1 9D C5) so the BDA KB flag is toggled each time the
+; E1 is received. This is necessary so the E1 can identify the 45h (Num Lock)
+; scan code as distinct from the standard key pad key.
+;
+EKB_INT_CHECK_E1:
+	CMP	AL, EKB_SC_E1			; is extended scan code?
+	JNE	EKB_INT_CHECK_FN_KEY
+	OR	BL, MASK KEEN			; set extended key detected flag
+	XOR	BL, MASK KEE1			; toggle E1 extended key detected flag
+
+;----------------------------------------------------------------------------;
+; EXIT 3: Complete - skip standard INT 09h, DO NOT clear E0 flags, no buffer
+; store, exit ISR
+;
+EKB_INT_EXIT_NO_CLR_E0:
+	MOV	_EKB_FLAGS, BX			; save BL=EKB_FLAGS1, BH=EKB_FLAGS2
+EKB_INT_EXIT_POP_EOI:
+	POP	CX					; discard RET
+	JMP	INT_KB_DONE_EOI			; exit INT and do not clear E0/E1
+
+;----------------------------------------------------------------------------;
+; Is an extended function key (F11, F12)?
+; Function keys have different scan codes based on shift, ALT or CTRL state
+;
+EKB_INT_CHECK_FN_KEY:
+	CMP	AL, EKB_F12				; is F12 scan code?
+	JE	EKB_INT_IS_FN_KEY
+	CMP	AL, EKB_F11				; is F11 scan code?
+	JNE	EKB_INT_IS_NOT_FN_KEY
+
+;----------------------------------------------------------------------------;
+; Handle F11/F12 Function key
+;
+EKB_INT_IS_FN_KEY:
+	ADD	AH, EKB_F11_EXT-EKB_F11		; convert to F11/F12 new scan code
+
+;----------------------------------------------------------------------------;
+; Is a Function key. Check if shift, ALT or Ctrl is held?
+;
+	TEST	DL, MASK K1AL OR MASK K1CT OR MASK K1LS OR MASK K1RS
+	JZ	EKB_INT_PUT_BUFFER_AL_0_2	; no control keys held (scancode already correct)
+	ADD	AH, 8CH-86H				; adjust to ALT
+	TEST	DL, MASK K1AL			; is it ALT?
+	JNZ	EKB_INT_PUT_BUFFER_AL_0_2	; if so, put in buffer
+	SUB	AH, 8CH-8AH				; adjust to CTRL
+	TEST	DL, MASK K1CT			; is CTRL?
+	JNZ	EKB_INT_PUT_BUFFER_AL_0_2	; if so, put in buffer
+	SUB	AH, 8AH-88H				; adjust to shift
+EKB_INT_PUT_BUFFER_AL_0_2:
+	JMP	EKB_INT_PUT_BUFFER_AL_0		; ASCII always 0 on F-keys
+
+EKB_INT_IS_NOT_FN_KEY:
+
+;----------------------------------------------------------------------------;
+; Is a * or Print Screen key?
+;
+EXT_INT_CHK_STAR:
+	CMP	AL, EKB_KP_STAR			; is KP *? (37H)
+	JE	EXT_INT_KEY_STAR			; jump if so
+
+;----------------------------------------------------------------------------;
+; Check if ALT and/or CTRL held
+;----------------------------------------------------------------------------;
+EKB_INT_CTRL_CHK:
+	TEST	DL, MASK K1CT OR MASK K1AL	; isolate Ctrl and Alt
+	JZ	EKB_INT_NO_CTRL_ALT		; neither
+	JPE	EKB_INT_ALT_CHK_BS		; both
+
+	TEST	DL, MASK K1CT			; is ONLY Ctrl?
+	JZ	EKB_INT_ALT_CHK_BS		; jump if not - must be Alt
+
+EKB_INT_CTRL_ONLY:
+;----------------------------------------------------------------------------;
+; Only Ctrl is held
+;----------------------------------------------------------------------------;
+
+;----------------------------------------------------------------------------;
+; Handle additional extended keys in EKB_CTRL_SCAN_TBL and replace scan codes.
+;
+; - AL = E0h for extended scan codes E0: 52h, 53h, 48h, 50h
+; - AL = F0h for all others
+;
+INT_EKB_CTRL_SCAN_TBL_NEXT:
+	MOV	DI, OFFSET EKB_CTRL_SCAN_TBL
+	MOV	CL, L_EKB_CTRL_SCAN_TBL			; (CH already 0)
+	REPNE SCASB						; is in table?
+	JNE	EKB_INT_CTRL_ONLY_2			; if not found, continue
+								; if found, CL is index
+
+;----------------------------------------------------------------------------;
+; Replace scan code from EKB_CTRL_SCAN_TBL_REP table.
+;
+	MOV	AH, ES:[DI][EKB_CTRL_SCAN_TBL_REP-EKB_CTRL_SCAN_TBL][-1]
+	TEST	BL, MASK KEE0				; last scan code E0?
+	JZ	EKB_INT_PUT_BUFFER_AL_F0		; jump if standard to F0
+
+;----------------------------------------------------------------------------;
+; Handle extended keys: Insert, Delete, Up Arrow and Down Arrow
+;
+	SHR	CL, 1						; even offsets are E0H
+	JC	EKB_INT_PUT_BUFFER_AL_F0		; jump if odd (CF=1) to F0
+	JMP	EKB_INT_PUT_BUFFER_AL_E0		; else E0
+
+;----------------------------------------------------------------------------;
+; Handle PrtScn key
+;
+EXT_INT_KEY_STAR:
+	TEST	DL, MASK K1AL			; is Alt?
+	JNZ	EKB_INT_PUT_BUFFER_AL_F0	; exit with AL=F0
+
+	TEST	BL, MASK KEEN			; is an extended keyboard?
+	JZ	EKB_INT_PASS			; not extended, pass back to INT 9h
+
+	TEST	BL, MASK KEE0			; extended keystroke?
+	JZ	EXT_INT_CHK_STAR_KP		; jump if Keypad *
+
+;----------------------------------------------------------------------------;
+; Is PrtScn key on a 101 keyboard
+;
+	TEST	DL, MASK K1CT			; is Ctrl?
+	JNZ	EKB_INT_PASS			; pass to standard ISR
+	AND	_EKB_FLAGS1, NOT (MASK KEE0 OR MASK KEE1)	; clear E0 and E1 flag
+	POP	CX					; discard RET
+	JMP	KB_INT_PRTSC			; print the screen
+
+EKB_INT_CTRL_ONLY_2:
+;----------------------------------------------------------------------------;
+; Only Ctrl is held - continue checking for extended or standard Pause/Break.
+;
+	TEST	BL, MASK KEEN			; is an extended keyboard?
+	JZ	EKB_INT_NOT_EXT_SLNL		; continue onward if standard
+
+;----------------------------------------------------------------------------;
+; Ctrl and an extended keyboard. Check for Pause and Ctrl-Num Lock.
+;
+	CMP	AL, KB_NUM_LOCK			; is NumLock or (fake) Ctrl-Pause?
+	JNE	EKB_INT_CHK_CT_BRK		; continue if not
+
+;----------------------------------------------------------------------------;
+; Is an extended keyboard and Pause: E1 1D 45 E1 9D C5
+; If extended keyboard and standard non-E0/E1 Ctrl-NumLock is ignored.
+;
+	TEST	BL, MASK KEE1			; is extended E1 dedicated Pause?
+	JZ	EKB_INT_EXIT_CLR_E0		; else is Ctrl-NumLock - discard
+
+EKB_INT_CHK_CT_BRK:
+	CMP	AL, EKB_CT_BRK			; is Break key?
+	JNE	EKB_INT_NOT_EXT_SLNL
+
+;----------------------------------------------------------------------------;
+; Is an extended keyboard and Break (Ctrl-Pause) or Ctrl-Break (Ctrl-ScrollLock)
+; - if extended keyboard and standard (non-E0) keys: discard key
+; - if extended keyboard and extended Break (E0 46 E0 C6): pass to standard
+; - if not extended keyboard, continue onward
+;
+	TEST	BL, MASK KEE0			; is an extended key?
+	JZ	EKB_INT_EXIT_CLR_E0		; if not, discard key
+
+EKB_INT_NOT_EXT_SLNL:
+;----------------------------------------------------------------------------;
+; Only Ctrl held and not Edit keys or Num/Scroll lock
+;
+							; fall through?
+
+EKB_INT_NO_CTRL_ALT:
+;----------------------------------------------------------------------------;
+; Neither Ctrl nor Alt held and is not F11/F12, * or Print Screen
+;
+							; fall through?
+
+;----------------------------------------------------------------------------;
+; Not Tab, Del or Backspace - continue processing
+;
+EKB_INT_ALT_CHK:
+	MOV	CL, AL				; CL = scancode
+	AND	CL, NOT KB_BRK			; strip make/break
+
+;----------------------------------------------------------------------------;
+; Check if previous scan code was 0E0H
+;
+	TEST	BL, MASK KEE0			; last scan code E0 extended?
+	JNZ	EKB_INT_EXT_SC			; jump if an extended scan code
+
+;----------------------------------------------------------------------------;
+; Key is a standard scan code
+;----------------------------------------------------------------------------;
+EKB_INT_STD_SC:
+
+		IF EKB_INT_SR EQ 1
+;----------------------------------------------------------------------------;
+; SysRq (54h) sends INT 15h, AH=85h: AL=00 for key press, AL=01 for release
+;
+EXT_INT_CHK_SYSRQ:
+	CMP	CL, KB_SYSRQ			; SysReq make or break?
+	JNE	EKB_INT_PASS			; pass to standard ISR
+	CALL	EKB_INT_SYSRQ			; handle SysRq event and send EOI
+	POP	CX					; discard RET
+	JMP	INT_KB_DONE_NO_EOI		; exit INT and do not send EOI
+		ELSE
+
+;----------------------------------------------------------------------------;
+; Unhandled non-extended scan code - pass back to standard ISR
+;
+	JMP	SHORT EKB_INT_PASS		; pass to standard ISR
 		ENDIF
 
+;----------------------------------------------------------------------------;
+; Could be Ctrl + Alt or just Alt
+; Handle: Ctrl+Alt+Del, Alt+Del, Alt+Backspace or Alt+Tab
 ;
-; 79 BYTES HERE / 0 BYTES HERE 5150
+EKB_INT_ALT_CHK_BS:
+	CMP	AL, 0EH					; is backspace?
+	JE	EKB_INT_PUT_BUFFER_AL_F0		; exit with skip/00
+
+EKB_INT_ALT_CHK_TAB:
+	CMP	AL, 0FH					; is tab?
+	JNE	EKB_INT_ALT_CHK_DEL			; not interested
+	MOV	AH, 0A5H					; Alt+Tab scan code
+	JMP	SHORT EKB_INT_PUT_BUFFER_AL_F0	; exit with skip/00
+
+;----------------------------------------------------------------------------;
+; Is Keypad * on a 101 keyboard
+;
+EXT_INT_CHK_STAR_KP:
+	MOV	AL, 2AH					; default ASCII code
+	TEST	DL, MASK K1CT				; is ctrl?
+	JZ	EKB_INT_PUT_BUFFER			; if not, exit to skip shift
+	MOV	AH, 96H					; if ctrl, otherwise 96H
+	JMP	SHORT EKB_INT_PUT_BUFFER_AL_0
+
+;----------------------------------------------------------------------------;
+; Could be Ctrl + Alt or just Alt continued
+;
+EKB_INT_ALT_CHK_DEL:
+	CMP	AL, EKB_DELETE				; is either Del key?
+	JNE	EKB_INT_ALT_CHK				; if not, keep going
+
+;----------------------------------------------------------------------------;
+; Is Alt + Del key and maybe Ctrl
+;
+	TEST	DL, MASK K1CT				; is Ctrl + Alt + Del?
+	JNZ	EKB_INT_PASS				; if so, pass back for reboot
+
+;----------------------------------------------------------------------------;
+; Alt + Del, no Ctrl
+;
+	JMP	SHORT EKB_INT_ALT_CHK			; keep going
+
+;----------------------------------------------------------------------------;
+; EXIT 6: Store AH in buffer, AL = F0h, clear E0/E1 flags and exit ISR
+;----------------------------------------------------------------------------;
+EKB_INT_PUT_BUFFER_AL_F0:
+	MOV	AL, EKB_FLAG_F0
+	JMP	SHORT EKB_INT_PUT_BUFFER		; alt-skip-code
+
+;----------------------------------------------------------------------------;
+; Key is an extended E0/E1 scan code
+;----------------------------------------------------------------------------;
+EKB_INT_EXT_SC:
+
+;----------------------------------------------------------------------------;
+; Check for Right Alt/Ctrl - set EKB_FLAGS and pass through
+;
+	CMP	CL, EKB_R_CTRL			; Right Ctrl?
+	JNE	EKB_NOT_R_CTRL
+	XOR	BL, MASK KERC			; toggle Right Ctrl flag
+	JMP	SHORT EKB_INT_PASS		; pass back to standard INT 09h
+EKB_NOT_R_CTRL:
+	CMP	CL, EKB_R_ALT			; Right Alt?
+	JNE	EKB_CHK_FAKE_SHIFTS		; continue to check fake shifts
+	XOR	BL, MASK KERA			; toggle Right Alt flag
+							; fall through for standard INT 09h
+
+;----------------------------------------------------------------------------;
+; EXIT 1 or 2: Key is not handled by Extended keyboard BIOS or nothing left to do.
+; Clear E0/E1 flags and return to standard ISR.
+;----------------------------------------------------------------------------;
+EKB_INT_PASS:
+	MOV	_EKB_FLAGS, BX			; save BL=EKB_FLAGS1, BH=EKB_FLAGS2
+	;MOV	_KB_FLAGS, DX			; save standard flags (unnecessary)
+	RET
+
+;----------------------------------------------------------------------------;
+; Discard fake shifts since extended codes are handled directly.
+;
+EKB_CHK_FAKE_SHIFTS:
+	CMP	CL, EKB_L_SHIFT
+	JE	EKB_INT_EXIT_CLR_E0		; discard and clear E0/E1
+	CMP	CL, EKB_R_SHIFT
+	JNE	EKB_INT_EXT_SC_2			; continue to check more E0's
+
+;----------------------------------------------------------------------------;
+; EXIT 3A: Clear E0/E1, discard scan code, EOI and exit ISR
+;----------------------------------------------------------------------------;
+EKB_INT_EXIT_CLR_E0:				; cleared by INT_KB_DONE
+EKB_INT_EXIT:
+	MOV	_EKB_FLAGS, BX			; save BL=EKB_FLAGS1, BH=EKB_FLAGS2
+	POP	CX
+	JMP	INT_KB_DONE				; clear E0/E1, EOI and exit INT
+
+;----------------------------------------------------------------------------;
+; EXIT 8: Store AL in buffer, AH (scan code) = 0E0h for, clear E0/E1 flags and exit ISR
+;----------------------------------------------------------------------------;
+EKB_INT_PUT_BUFFER_AH_E0:
+	MOV	AH, EKB_FLAG_SE			; extended Slash or Enter
+
+;----------------------------------------------------------------------------;
+; EXIT 4: Put Extended key in buffer, clear E0/E1 flags and exit ISR
+;----------------------------------------------------------------------------;
+EKB_INT_PUT_BUFFER:
+	MOV	_EKB_FLAGS, BX			; save EKB_FLAGS
+	POP	CX					; discard RET
+	JMP	KB_INT_PUT_BUFFER			; put in buffer, clear E0/E1, exit
+
+;----------------------------------------------------------------------------;
+; Check for Edit keys - Insert, Delete, Arrows, etc (47H - 53H)
+;----------------------------------------------------------------------------;
+EKB_INT_CHK_EDIT:
+
+;----------------------------------------------------------------------------;
+; Handle extended Insert BDA flags
+; Even though it's the same scan code as the Num pad Ins, it can never be
+; a 0 no matter state of Num Lock or shift.
+;
+	TEST	DL, MASK K1AL			; is Alt?
+	JNZ	EKB_INT_NOT_INS			; don't set flags for Alt+Insert
+	CMP	AL, EKB_INS OR KB_BRK		; is Insert break?
+	JNE	EKB_INT_NOT_INS_BK
+	AND	_KB_FLAGS2, NOT MASK K2IN	; clear key down flag for break
+EKB_INT_NOT_INS_BK:
+	CMP	AL, EKB_INS				; is Insert make?
+	JNE	EKB_INT_NOT_INS
+	XOR	_KB_FLAGS, DBW < MASK K2IN, MASK K2IN > ; toggle Insert/down
+							; fall through harmlessly
+EKB_INT_NOT_INS:
+	CMP	AL, EKB_HOME			; Home
+	JB	EKB_INT_PASS			; pass if not Edit key
+	CMP	AL, EKB_DELETE			; Delete
+	JA	EKB_INT_PASS			; (end of extended key processing)
+
+;----------------------------------------------------------------------------;
+; Key is an extended Edit key - check if Alt
+;
+	TEST	DL, MASK K1AL			; is Alt?
+	JZ	EKB_INT_EDIT_CHK_CTRL		; if not, check Ctrl
+
+;----------------------------------------------------------------------------;
+; Handle Alt + extended Edit keys
+;
+	ADD	AH, 50H				; Alt scan code is +50H for all
+
+;----------------------------------------------------------------------------;
+; EXIT 7: Store AH in buffer, AL = 00h, clear E0/E1 flags and exit ISR
+;----------------------------------------------------------------------------;
+EKB_INT_PUT_BUFFER_AL_0:
+	XOR	AL, AL				; AL = 0
+	JMP	SHORT EKB_INT_PUT_BUFFER
+
+;----------------------------------------------------------------------------;
+; if Ctrl, pass back to standard ISR to handle remaining Ctrl + keys in
+; KB_CTRL_SCAN_TBL
+;
+EKB_INT_EDIT_CHK_CTRL:
+	TEST	DL, MASK K1CT			; is Ctrl?
+	JNZ	EKB_INT_PASS			; pass Ctrl back to standard ISR
+							; otherwise store as E0 and exit
+
+;----------------------------------------------------------------------------;
+; EXIT 5: Store AH in buffer, AL = 0E0h, clear E0/E1 flags and exit ISR
+;----------------------------------------------------------------------------;
+EKB_INT_PUT_BUFFER_AL_E0:
+	MOV	AL, EKB_FLAG_E0
+	JMP	SHORT EKB_INT_PUT_BUFFER
+
+;----------------------------------------------------------------------------;
+; More special extended E0/E1 keys
+;----------------------------------------------------------------------------;
+EKB_INT_EXT_SC_2:
+
+;----------------------------------------------------------------------------;
+; Check keypad Slash
+;
+EXT_INT_CS_CHK_SL:
+	CMP	AL, EKB_SLASH			; is slash?
+	JNE	EXT_INT_CS_CHK_ENT		; if not, check Enter
+	MOV	AL, 2FH				; slash scan code
+	TEST	DL, MASK K1AL OR MASK K1CT	; ctrl or alt?
+	JZ	EKB_INT_PUT_BUFFER_AH_E0	; set AH=0 and put buffer
+
+;----------------------------------------------------------------------------;
+; is Slash + Ctrl or Alt
+;
+	TEST	DL, MASK K1AL			; is Alt?
+	MOV	AH, 95H				; set for Ctrl
+	JZ	EKB_INT_PUT_BUFFER_AL_F0	; exit if not Alt (must be Ctrl)
+	MOV	AH, 0A4H				; set for Alt, exit
+EKB_INT_PUT_BUFFER_AL_F0_1:
+	JMP	SHORT EKB_INT_PUT_BUFFER_AL_F0
+
+;----------------------------------------------------------------------------;
+; Check Enter key
+;
+EXT_INT_CS_CHK_ENT:
+	CMP	AL, 1CH				; is Enter?
+	JNE	EKB_INT_CHK_EDIT			; if not, continue onward
+	MOV	AL, 0DH				; Enter scan code
+	TEST	DL, MASK K1AL OR MASK K1CT	; ctrl or alt?
+	JZ	EKB_INT_PUT_BUFFER_AH_E0	; set AH=0 and put buffer
+
+;----------------------------------------------------------------------------;
+; is Ctrl or Alt and Keypad Enter
+;
+	MOV	AL, 0AH				; Ctrl + Enter scan code
+	TEST	DL, MASK K1AL			; is alt?
+	JZ	EKB_INT_PUT_BUFFER_AH_E0	; exit since ctrl
+	MOV	AH, 0A6H				; set for Alt, exit
+	JMP	SHORT EKB_INT_PUT_BUFFER_AL_F0_1
+
+			ASSUME DS:NOTHING, ES:NOTHING
+EKB_INT_09 ENDP
+
+;----------------------------------------------------------------------------;
+; END of INT 09h Extended Keyboard ISR
+;----------------------------------------------------------------------------;
+
+			IF EKB_INT_15 EQ 1
+;----------------------------------------------------------------------------;
+; INT 15h, 4Fh - Keyboard Intercept
+;----------------------------------------------------------------------------;
+EKB_INT_15_4F PROC
+	MOV	AH, 04FH				; Keyboard Intercept hook
+	STC						; preset CF if no intercept
+	INT	15H					; if NC, INT 9h ignores keystroke
+	JNC	EKB_INT_EXIT_CLR_E0		; exit if key was intercepted
+	MOV	AH, AL				; restore AH
+	RET
+EKB_INT_15_4F ENDP
+			ENDIF
+
+;----------------------------------------------------------------------------;
+; Standard INT 09h - relocated code
+;----------------------------------------------------------------------------;
+
+;----------------------------------------------------------------------------;
+; Read keyboard scan code from PPI
+; Output: AH = scan code
+; Size: 15 bytes
+;----------------------------------------------------------------------------;
+KB_READ_SCAN PROC
+	IN	AL, PPI_A 					; read scan code from PPI Port A
+	MOV	AH, AL					; save scan code to AH
+	IN	AL, PPI_B 					; read Control Port B
+	PUSH	AX						; save status, and I/O delay
+	OR	AL, MASK PBKB				; set clear keyboard bit
+	OUT	PPI_B, AL 					; write to Control Port B
+	POP	AX						; restore status, and I/O delay
+	OUT	PPI_B, AL 					; write to Control Port B
+	RET
+KB_READ_SCAN ENDP
+
+;----------------------------------------------------------------------------;
+; INT 16h - Extended Keyboard Services
+;----------------------------------------------------------------------------;
+; Input:
+;	AH = KB function
+;	ZF = 1 if AH=5
+;	DS = BDA
+;----------------------------------------------------------------------------;
+			ASSUME DS:_BDA
+EKB_INT_16 PROC
+	JE	INT_16_5			; AH = 5 - Keyboard Buffer Write
+	CMP	AH, 12H
+	JE	INT_16_12 			; AH = 12 - Get shift status
+	JA	EKB_INT_16_RET		; AH > 12 - Not valid, exit
+	JNP	INT_16_10			; AH = 10 - Wait for keystroke and read
+						; AH = 11 - Get keystroke status
+
+;----------------------------------------------------------------------------;
+; AH = 11h - Return Extended Keyboard Status
+;----------------------------------------------------------------------------;
+; This function is similar to function AH=01h, except that it returns unique
+; scan codes for all keys on the 101/102-key keyboard. It executes as follows:
+;
+; - Checks to see if a character code is available in the keyboard buffer.
+; - If a key is waiting, a copy of the character code is returned in AX. The
+;	buffer is not incremented to the next key.
+; - If the keyboard buffer contains at least one key, the Zero Flag is cleared.
+; - If the keyboard buffer does not contain a key, the Zero Flag is set.
+; - If the keyboard LEDs to not match the current flag settings, this function
+; 	updates the LEDs. (implemented only on AT 8042 KBC)
+;
+; Output:
+;	AH = scan code or character ID for special char (if ZF is set)
+;	AL = ASCII code or other translation of character ID (ZF is set)
+;	ZF = 00: key waiting
+;	     01: no key in buffer
+;----------------------------------------------------------------------------;
+INT_16_11 PROC
+	CALL	KB_KEY_STATUS		; read key into AX and status flags
+	JZ	INT_16_11_RET		; jump if no key waiting, ZF=1
+	CALL	INT_16_EXT_FILTER		; handle F0/E0 filter codes
+	TEST	SP, SP			; set ZF=0
+INT_16_11_RET:
+	POP	SI				; discard RET
+	JMP	INT_16_1_EXIT		; exit with current flags
+INT_16_11 ENDP
+
+;----------------------------------------------------------------------------;
+; AH = 5 - Keyboard Buffer Write
+;----------------------------------------------------------------------------;
+; This function stores program-generated data into the keyboard buffer just
+; as if it were pressed. The buffer pointer (40:1C) is adjusted to point to
+; the next available location in the keyboard buffer.
+;
+; If the keyboard buffer is full, AL is set to indicate a keyboard buffer
+; full error. Keyboard enhancers and other utilities can use this function
+; to interpolate keys into the data stream viewed by application programs.
+;
+; Input:
+;	CH = scan code
+;	CL = ASCII character
+;	DS = BDA
+; Output:
+;	AL = 00 if success
+;	     01 if buffer full
+;
+; - available on AT and PS/2 machines with extended keyboard support
+; - stores normal keystroke into keyboard buffer
+; - will not store attribute keys like Shift, Alt, Ctrl, etc...
+;
+; Clobbers: SI, AL
+;----------------------------------------------------------------------------;
+INT_16_5 PROC
+	PUSH	DI					; KB_PUT_BUFFER clobbers DI/SI
+	XCHG	AX, CX				; AX = char/code, CX = saved AH
+	XOR	CL, CL				; assume success status = 0
+	CALL	KB_PUT_BUFFER			; put AX into KB buffer
+	JZ	INT_16_5_FULL			; ZF if buffer is full
+INT_16_5_DONE:
+	XCHG	AX, CX				; restore AH and CX
+	POP	DI
+EKB_INT_16_RET:
+	RET
+INT_16_5_FULL:
+	INC	CX					; 1 = buffer full
+	JMP	SHORT INT_16_5_DONE
+INT_16_5 ENDP
+
+;----------------------------------------------------------------------------;
+; Standard INT 16H, AH=0-1h Scan code filtering
+;----------------------------------------------------------------------------;
+; Keystrokes may be returned differently from the keyboard buffer if read
+; using standard (AH=0h/1h) or extended (AH=10h/11h) INT 16h functions.
+; Special flag scan codes are stored in the buffer to signify when scan or
+; ASCII codes need to be modified for either standard or extended calls.
+;
+; AH == E0: modify Enter and Slash keys scan code on standard
+; AH  > 84: skip (most extended Ctrl and Alt codes unless overriden by AH=E0)
+; AL == E0: AL=00 on standard (00h), AL=E0 extended (10h)
+; AL == F0: skip on standard (00h), AL=00 extended (10h)
+; AL == F0 and AH == 00: pass unmodified
+;----------------------------------------------------------------------------;
+; Input:
+;	AH = scan code
+;	AL = ASCII code
+;	BL = function number
+; Output:
+;	AH/AL = translated if needed
+;	CF = if key is to be skipped
+;----------------------------------------------------------------------------;
+INT_16_STD_FILTER PROC
+	CMP	AH, EKB_FLAG_SE		; is a keypad Slash or Enter?
+	JE	INT_16_EXT_AH_E0		; filter and exit with NC
+
+;----------------------------------------------------------------------------;
+; Not Slash or Enter - handle filter codes E0/F0 flag codes
+; Scan codes > 84h are treated like F0h and skipped on standard INT 16h
+;
+	CMP 	AH, 84H			; is skipped scan code?
+	JA	INT_16_EXT_EXIT_CMC	; if AH > 84H, skip with CF
+	CMP 	AL, EKB_FLAG_E0		; is E0H filter code?
+	JE	INT_16_EXT_FILTER_AL_E0	; filter and exit with NC
+	CMP 	AL, EKB_FLAG_F0		; is F0H filter code?
+	JNE 	INT_16_EXT_EXIT_NC	; if not, exit with NC
+	CMP	AH, 1				; skip all AL == F0H, unless AH == 00
+INT_16_EXT_EXIT_CMC:
+	CMC
+	RET
+
+;----------------------------------------------------------------------------;
+; Extended KB Keypad Enter and Slash both have E0 as extended INT 16h scan
+; code. For INT 16h AH=0h/1h, these must be set back to their standard scan
+; codes: 1CH and 35H respectively.
+;
+INT_16_EXT_AH_E0:
+	MOV	AH, EKB_SLASH		; assume keypad Slash key (35H)
+	CMP	AL, 0AH			; is Ctrl + Enter/Return?
+	JE	INT_16_EXT_KP_ENTER	; if so, set Enter scan code
+	CMP	AL, 0DH			; is Enter/Return?
+	JNE	INT_16_EXT_EXIT_NC	; if not, must be Slash
+INT_16_EXT_KP_ENTER:
+	MOV	AH, EKB_ENTER		; scan code is Enter (1CH)
+INT_16_EXT_EXIT_NC:
+	CLC
+	RET					; exit with NC (no skip)
+
+;----------------------------------------------------------------------------;
+; AH = 10h - Read Extended Keyboard Input
+;----------------------------------------------------------------------------;
+; Reads the next two-byte character code in the keyboard buffer and returns
+; the value in AX. It is designed for use with the 101/102-key keyboard.
+; Unlike function AH=00h, this function does not modify character codes
+; for 84-key keyboard compatibility.
+;
+; Output:
+;	AH = scan code
+;	AL = ASCII character or zero if special function key
+;----------------------------------------------------------------------------;
+INT_16_10 PROC
+	CALL	KB_WAIT_READ_KEY		; wait until a keystroke is read
+						; fall through to INT_16_EXT_FILTER
+
+;----------------------------------------------------------------------------;
+; Extended INT 16H, AH=10-12h Scan code filtering
+;----------------------------------------------------------------------------;
+; INT 09h places the value F0h in the low byte character code position for
+; some Alt/character key combinations. This function strips F0h from the
+; keyboard buffer image before returning to the caller. Keys with F0h are
+; returned to AX with their low order byte set to 00h.
+; All other keys are returned to AX unmodified by this function.
+;
+; if AL == F0 and AH != 0: AL = 00
+;----------------------------------------------------------------------------;
+INT_16_EXT_FILTER PROC
+	CMP 	AL, EKB_FLAG_F0		; F0 filter code?
+	JNE	INT_16_10_EXIT		; exit with CF=0, ZF=0 if not
+
+;----------------------------------------------------------------------------;
+; Handle extended AL == F0 or standard AL == E0 flag codes, which set ASCII
+; code to 00h, unless AH == 00h.
+;
+; if AH != 0: AL = 00h
+;----------------------------------------------------------------------------;
+INT_16_EXT_FILTER_AL_E0:
+	TEST 	AH, AH			; if AH != 0, AL = 0
+	JZ 	INT_16_10_EXIT		; if AH == 0, exit with NC, ZF=1 (no skip)
+	XOR 	AL, AL			; AL = 0, exit with NC, ZF=1 (no skip)
+INT_16_10_EXIT:
+	RET
+
+INT_16_EXT_FILTER ENDP
+INT_16_10 ENDP
+INT_16_STD_FILTER ENDP
+
+;----------------------------------------------------------------------------;
+; AH = 12h - Return Extended Shift Status Flags
+;----------------------------------------------------------------------------;
+; This function is similar to function AH=02h, except that it returns
+; information on the shift keys provided on the 101/102-key keyboard.
+; It also returns an additional byte of flags in the AH register.
+;
+; This function returns the shift flag status from KBFLAGS1 (40:17) in the
+; AL register, and returns the shift flag status from KBFLAGS2 (40:18) and
+; 101-key KBFLAGS3 (40:96) in the AH register.
+;
+; Output:
+;  AL = KBFLAGS1 (40:17)
+;  AH = KBFLAGS3 (40:96) and KBFLAGS2 (40:18):
+;	 7 	   |	- KBFLAGS2:2	Sys Req key depressed and held
+;	  6 	   |	- KBFLAGS2:6	caps-lock key is depressed
+;	   5	   |	- KBFLAGS2:5	num-lock key is depressed
+;	    4    |	- KBFLAGS2:4	scroll lock key is depressed
+;	     3   |	- KBFLAGS3:3	right ALT key depressed
+;	      2  |	- KBFLAGS3:2	right CTRL key depressed
+;	       1 |	- KBFLAGS2:1	left ALT key depressed
+;	        0|	- KBFLAGS2:0	left CTRL key depressed
+;----------------------------------------------------------------------------;
+_K2MASK = LOW ( NOT ( MASK K2IN OR MASK K2PA OR MASK K2SQ ) )
+
+INT_16_12 PROC
+	MOV	AL, KB_FLAGS2			; AL = KBFLAGS2
+
+;----------------------------------------------------------------------------;
+; Isolate interesting bits from KBFLAGS2 and move bit 2 into bit 7
+;
+	MOV	AH, AL				; duplicate bytes and mask both
+	AND	AX, DBW <_K2MASK, MASK K2SQ>	; AH = KBFLAGS2 interesting bits
+							; AL = SysReq bit
+			IF CPU_TYPE EQ CPU_V20
+	ROR	AL, 3					; roll SysReq bit into MSB
+			ELSE
+		REPT 3
+	ROR	AL, 1					; roll SysReq bit into MSB
+		ENDM
+			ENDIF
+	OR	AH, AL				; combine rearranged KBFLAGS2 flags
+
+;----------------------------------------------------------------------------;
+; Isolate interesting bits from KBFLAGS3, and combine with new KBFLAGS2 flags
+;
+	MOV	AL, EKB_FLAGS1			; AL = KBFLAGS3
+	AND	AL, MASK KERA OR MASK KERC	; only right Alt and right Ctrl
+	OR	AH, AL				; combine with KBFLAGS2 flags
+	POP	SI					; discard RET
+	JMP	NEAR PTR INT_16_2			; resume standard INT 16H get flags
+
+INT_16_12 ENDP
+
+EKB_INT_16 ENDP
+;----------------------------------------------------------------------------;
+; END of INT 16h - Extended Keyboard
+;----------------------------------------------------------------------------;
+
+EKB_INT ENDP
+			ENDIF				; /IF KB_EXT EQ 1
+
+;
+; 79 BYTES HERE / 0 BYTES HERE 5150 / 5 BYTES EKB
 ;
 BYTES_HERE	GFX_CHARSET
 
@@ -12563,8 +13996,13 @@ INT_08_RESET:
 INT_08 ENDP
 INT_08_PROC ENDP
 
+;----------------------------------------------------------------------------;
+; CRLF string
 ;
-; 3 BYTES HERE
+NL_Z			DB	CR, LF, 0		; one NL, null term'd
+
+;
+; 0 BYTES HERE
 ;
 BYTES_HERE	VECTOR_TABLE
 
@@ -12606,11 +14044,7 @@ VECTOR_TABLE PROC
 	DW  OFFSET INT_16			; INT 16	Keyboard Services
 	DW  OFFSET INT_17			; INT 17	Printer
 	DW  OFFSET INT_18 		; INT 18	Unbootable/ROM BASIC
-			IF FDC_ENABLE EQ 1
 	DW  OFFSET INT_19			; INT 19	Bootstrap
-			ELSE
-	DW  OFFSET INT_RET		; INT 19	No floppy bootstrap
-			ENDIF
 	DW  OFFSET INT_1A			; INT 1A	Time of day
 	DW  OFFSET INT_RET 		; INT 1B	Ctrl Brk
 	DW  OFFSET INT_RET 		; INT 1C	Timer Tick
@@ -12706,7 +14140,7 @@ INT_RET ENDP
 ;----------------------------------------------------------------------------;
 		ORG 0FF54H
 INT_05 PROC
-			ASSUME DS:_BDA
+			ASSUME ES:_DOS_DAT
 	CLD						; string direction forward
 	PUSHX	AX, DI, ES				; preserve caller registers
 	MOV	DI, SEG _DOS_DAT
@@ -12797,7 +14231,7 @@ LPT_CHAR_EXIT:
 LPT_CHAR ENDP
 LPT_LF ENDP
 LPT_CRLF ENDP
-
+			ASSUME ES:NOTHING
 INT_05 ENDP
 
 ;----------------------------------------------------------------------------;
