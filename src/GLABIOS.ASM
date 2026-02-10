@@ -111,10 +111,10 @@ TURBO_REV		EQU	2			; reversed PPI (0=turbo, 1=normal)
 ;
 VER_NAME		EQU	'GLaBIOS'
 	IFNDEF VER_NUM
-VER_NUM		EQU	'0.8b0'		; (max 5 chars)
+VER_NUM		EQU	'0.8b2'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'01/17/26'		; must be MM/DD/YY per Intel CSM
+VER_DATE		EQU	'02/10/26'		; must be MM/DD/YY per Intel CSM
 	ENDIF
 COPY_YEAR		EQU	'2022-26'		; Copyright year range
 
@@ -276,7 +276,8 @@ SW1_FLP		=	11b		; Default SW1 floppy drives value
 MDA_ATTR		=	1		; Display MDA character attributes
 						; 2=all, 1=intensity only, 0=filter all
 LIGHT_PEN		=	1		; INT 10h,4 light pen support
-EXP_UNIT		=	0		; Init 5161 I/O Expansion Unit
+DETECT_EXP		=	0		; detect and init 5161 I/O Expansion Unit
+DETECT_GAM		=	1		; detect joystick port on POST
 KB_FILTER_SC	=	0		; Filter KB make/break code >= 70h
 INIT_AT_KBC		=	0		; Init AT type KB controller
 INIT_V40		=	0		; Init V40 config registers
@@ -284,7 +285,7 @@ OEM_FONT		=	0		; 1=use OEM style font, 0=clone style
 POST_CARD		=	0		; enable POST codes on port 80H
 MUTE_TANDY		=	0		; mute buzzing on Tandy 3 Voice
 MUSHROOM_HACK	=	0		; workaround delay if PIT is stopped
-HOBBIT_HACK		=	0		; Don't clobber CX and DX on INT 10h scroll
+INT_10_SCR_REG	=	1		; Preserve CX and DX on INT 10h scroll
 FE_CONF_LOCK	=	1		; lock FE2010 config register after init
 ROM_SCAN_ALIGN	=	1		; option ROM scan aligns to 2K boundaries
 FEATURE_BYTES	=	1		; include build options in build binary
@@ -363,7 +364,7 @@ CASSETTE		=	1			; enable INT 13h cassette
 MBR_CHECK		=	0			; disable MBR check for DOS 1.x
 FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
 TURBO_TYPE		=	TURBO_NONE
-EXP_UNIT		=	1			; enable Expansion Unit
+DETECT_EXP		=	1			; enable Expansion Unit
 OEM_FONT		=	1			; use OEM style font
 POST_TEST_DMA_TC0	=	0			; OEM 5150 BIOS does not do this test
 	ENDIF
@@ -374,7 +375,7 @@ POST_TEST_DMA_TC0	=	0			; OEM 5150 BIOS does not do this test
 	IF ARCH_TYPE EQ ARCH_5160
 TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
 FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
-EXP_UNIT		=	1			; enable Expansion Unit
+DETECT_EXP		=	1			; enable Expansion Unit
 OEM_FONT		=	1			; use OEM style font
 KB_BUF_BDA		=	1			; use BDA KB start/end pointers
 	IF ARCH_SUB_TYPE EQ ARCH_5160v2 OR KB_EXT EQ 1
@@ -392,17 +393,16 @@ BASIC_ROM		= 	0			; disable to free code space
 FDC_HLT_WAIT	=	0			; halting CPU on FDC and KB wait
 FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
 KB_HLT_WAIT		=	0			; seems to cause issues on TD3300A
-TURBO_TYPE		=	TURBO_STD		; always use Standard
+TURBO_TYPE		=	TURBO_REV		; always use Reverse
 TURBO_SWITCH	=	1			; boot under hardware Turbo control
 TD_WS_SETUP		=	0			; set wait state register on boot (0 ws)
 TD_UPMEM		=	1			; clear and display upper memory bank
 		IF TD_UPMEM EQ 1
 RAM_DIGITS		=	4			; display RAM as four digits
-POST_TEST_PIC_REG	=	0			; disable PIC reg test (code space)
-		ENDIF
-
-		IF KB_EXT EQ 1
+POST_TEST_PIC_REG	=	0			; disable PIC reg tests
 POST_TEST_PIC_INT	=	0			; not enough code space
+		ENDIF
+		IF KB_EXT EQ 1
 ;FDC_ENABLE		=	0			; remove FDC to enable Ext. KB
 		ENDIF					;  if using GLaDISK for floppy
 
@@ -414,7 +414,6 @@ TD_WS_SETUP		=	1			; set wait state register on boot
 UNSAFE_REFRESH	=	1			; go big or go home
 DRAM_REFRESH	=	655
 N3_UMA		=	1			; enable UMA bank (E000) on boot
-POST_CARD		=	0			; not enough code space
 	ENDIF						; /IF ARCH_SUB_TYPE EQ ARCH_NEST
 	ENDIF						; /IF ARCH_TYPE EQ ARCH_TD3300
 
@@ -434,29 +433,31 @@ POST_TEST_PIC_INT	=	0			;  space since PIC is integrated
 ;----------------------------------------------------------------------------;
 ; Configuration for FE2010A
 ;
-;BASIC_ROM		=	0			; can be disabled to free code space
+FE_SPD_HI		EQU	110b			; 9.54 MHz, 4 IOWS, 2 MBWS
+FE_SPD_HI_SAFE	EQU	100b			; 9.54 MHz, 6 IOWS, 4 MBWS (safe)
+FE_SPD_HI_UNSAFE	EQU	101b			; 9.54 MHz, 6 IOWS, 0 MBWS (not so safe)
+FE_SPD_HI_INSANE	EQU	111b			; 9.54 MHz, 4 IOWS, 0 MBWS (good luck)
+FE_SPD_MED		EQU	011b			; 7.15 MHz, 4 IOWS, 0 MBWS
+FE_SPD_MED_SAFE	EQU	010b			; 7.15 MHz, 4 IOWS, 2 MBWS (safe)
+FE_SPD_LO		EQU	000b			; 4.77 MHz, 1 IOWS, 0 MBWS
+
+;----------------------------------------------------------------------------;
+; Configure RAM/WS for HI (9.54) and MED (7.15)
+;
+FE_CPU_CFG		=	FE_SPD_HI_SAFE	; boot to 9.54 MHz, 6 IOWS, 4 MBWS
+FE_CPU_CFG_MED	=	FE_SPD_MED		; 7.15 MHz, 4 IOWS, 0 MBWS
+FE_SPD_MED_ONLY	=	0			; FE2010 (not A) or 7.15 MHZ CPU only
+
+BASIC_ROM		=	0			; can be disabled to free code space
 FD_AUTO_DETECT	=	1			; auto-detect number of floppy drives
-;FE_CPU_CFG		=	110b			; boot to 9.54 MHz, 2 RAM WS
-FE_CPU_CFG		=	100b			; boot to 9.54 MHz, 4 RAM WS (safest)
-;FE_CPU_CFG		=	010b			; boot to 7.15 MHz, 2 RAM WS
-;FE_CPU_CFG		=	011b			; boot to 7.15 MHz, 0 RAM WS
-;FE_CPU_CFG		=	000b			; boot to 4.77 MHz, 0 RAM WS
 POST_TEST_PIT_1	=	0			; FE2010A chipset cannot read timer 1
 SW1_FLP		=	01b			; SW1 5/6 Max # of floppy drives (0-1)
-TURBO_TYPE		=	TURBO_REV		; always use reverse
+FE_3_SPD		=	1			; toggle through all three speeds
+TURBO_TYPE		=	TURBO_REV		; FE2010A always use reverse
 	IF BASIC_ROM EQ 1				; if BASIC enabled, PIC tests are
 POST_TEST_PIC_REG =	0			;  disabled to fit available code space
 POST_TEST_PIC_INT =	0			; Since PIC is integrated on FE2010A
 	ENDIF						;  these tests may be unnecessary
-
-	IF ARCH_SUB_TYPE EQ ARCH_WILDCARD
-;----------------------------------------------------------------------------;
-; Additional Configuration for Wildcard 88
-;
-;FE_CPU_CFG		=	010b			; 7.15 MHz/2 IOWS, if not -10
-POST_ERR_WAIT	=	0			; 0=only warn POST errors
-RAM_PARITY		=	0			; disable memory parity check
-	ENDIF
 
 	IF ARCH_SUB_TYPE EQ ARCH_M88
 ;----------------------------------------------------------------------------;
@@ -466,7 +467,27 @@ UNITS_IEC		=	1			; use modern IEC size units
 DRAM_REFRESH	=	0			; disable DRAM refresh (for SRAM)
 RAM_PARITY		=	0			; disable memory parity check
 CGA_SNOW_REMOVE	=	0			; disable snow removal
-FE_CPU_CFG		=	110b			; boot to 9.54 MHz, 2 RAM WS
+FE_CPU_CFG		=	FE_SPD_HI		; boot to 9.54 MHz, 2 RAM WS
+FE_3_SPD		=	1			; toggle three speeds
+INT_10_SCR_REG	=	0			; clobber CX and DX on INT 10h scroll
+EKB_INT_SR		=	0			; NuXT's KBC doesn't implement SysRq
+	ENDIF
+
+	IF ARCH_SUB_TYPE EQ ARCH_WILDCARD
+;----------------------------------------------------------------------------;
+; Additional Configuration for Wildcard 88
+;
+;FE_SPD_MED_ONLY	=	1			; boot to 7.15 MHz/2 IOWS, if not -10
+POST_ERR_WAIT	=	0			; 0=only warn POST errors
+RAM_PARITY		=	0			; disable memory parity check
+	ENDIF
+
+	IF FE_SPD_MED_ONLY EQ 1
+;----------------------------------------------------------------------------;
+; FE2010 (not A) - 7.15MHz only, or not -10 CPU
+;
+FE_CPU_CFG		=	FE_SPD_MED_SAFE	; boot to 7.15 MHz/2 IOWS, if not -10
+FE_3_SPD		=	0			; toggle high / low speed
 	ENDIF
 	ENDIF
 
@@ -644,7 +665,7 @@ RANDOM_TAGLINE	=	0			; enable random tagline
 
 ;----------------------------------------------------------------------------;
 ; If additional space is available, such as ROM larger than 8K or INT 13h (FD)
-; support removed, relocate keyboard code.
+; support removed, extended keyboard code may be relocated.
 ;
 
 	IF KB_EXT EQ 1
@@ -653,13 +674,13 @@ RANDOM_TAGLINE	=	0			; enable random tagline
 ;
 EKB_EXT_RESET	=	1			; allow EAh reset byte on ext. keyboard
 EKB_EXT_CHK		=	1			; set BDA extended keyboard flags
-		IF ARCH_TYPE EQ ARCH_5150
-ARCH_ID		=	0FBH			; Upgrade machine byte if extended KB
+		IF ARCH_TYPE NE ARCH_5150
+ARCH_ID		=	0FBH			; upgrade machine byte if extended KB
 		ENDIF					;  and not 5150
 
 ;----------------------------------------------------------------------------;
 ; Extended Keyboard may be enabled in addition to other optional features by
-; using one of the following methods:
+; using one of the following methods.
 ;
 ;ROM_SIZE_K		=	10			; increase ROM image to 10K
 ;FDC_ENABLE		=	0			; remove FDC to enable Ext. KB
@@ -676,9 +697,15 @@ POST_HD_PARMS	=	0			; remove POST HD size display
 POST_OPT_ROM	=	0			; remove POST option ROM display
 RANDOM_TAGLINE	=	0			; remove random tagline
 CASSETTE		=	0			; remove cassette
+		ELSE
+;----------------------------------------------------------------------------;
+; Not all ARCH_TYPEs can build with 10K ROM size. Some options may still need
+; to be disabled. Uncomment if necessary.
+;
+;EKB_INT_SR		=	0			; disable SysRq key support
+;DETECT_GAM		=	0			; do not try to detect joystick port
 		ENDIF
 POST_VID_HGC	=	0			; remove HGC detection display
-HOBBIT_HACK		= 	0			; not enough bytes for this
 	ENDIF						; /IF KB_EXT EQ 1
 
 ;----------------------------------------------------------------------------;
@@ -1034,6 +1061,7 @@ FDC_ST_SENSE	EQU	0FFH 			; Sense operation failed
 RAM_TEST_1		EQU 	1001010110100101B	; Simple RAM test 095A5H
 RAM_TEST_2		EQU 	0111001100011101B	; Alternate RAM test 0731DH
 RAM_TEST		=	RAM_TEST_2		; pick one
+REG_TEST		=	RAM_TEST_2		; pick one (MSB must be 0)
 MAGIC_WORD		EQU	0AA55H		; Magic Word used for option ROM, IPL device
 
 ; Warm Boot Flag options set in BDA 40:72H
@@ -1256,7 +1284,7 @@ VID_MDA	EQU	11b		; ON/ON:	MDA
 ; 76543210
 ; xxxx    |			- TBD		Reserved
 ;     x   |			- TURBO	Turbo supported
-;      x  |			- V20		1 if V20, 0 if 8088
+;      x  |			- V20		1 if V20, 0 if 8088 (unused)
 ;       xx|			- TBD		Reserved
 ; 84218421
 ;----------------------------------------------------------------------------;
@@ -1275,12 +1303,15 @@ GFLAGS RECORD	GTBD1:4,TURBO:1,V20:1,GTBD2:2
 ;      x  |			- PDMA  	DMA error
 ;       x |			- PMEM  	Memory Error
 ;        x|			- PFXX  	Reserved (do not use)
-;         |xxxxx		- TBD
+;         |xxxx		- TBD
+;         |    x		- PV20	V-series CPU detected on POST
 ;         |     xx	- GRND	Random number for tagline
 ;         |       x	- PFXY	Reserved (do not use)
 ; 84218421
 ;----------------------------------------------------------------------------;
-PFLAGS RECORD WARM:1,PKI:1,PKEY:1,PFDC:1,PFSK:1,PDMA:1,PMEM:1,PFXX:1,PTBD:5,GRND:2,PFXY:1
+PFLAGS RECORD WARM:1,PKI:1,PKEY:1,PFDC:1,PFSK:1,PDMA:1,PMEM:1,PFXX:1,PTBD:4,PV20:1,GRND:2,PFXY:1
+
+PFLAG_ERR	EQU MASK PKI OR MASK PKEY OR MASK PFDC OR MASK PFSK OR MASK PDMA OR MASK PMEM
 
 		IF FEATURE_BYTES EQ 1
 ;----------------------------------------------------------------------------;
@@ -1984,9 +2015,9 @@ LASER_CR	RECORD	LASER_SPD:1=1,LASER_X1:7
 ;         |                               010 = 7.15, 4 IOWS, 2 MBWS
 ;         |                               011 = 7.15, 4 IOWS, 0 MBWS *
 ;         |                               100 = 9.54, 6 IOWS, 4 MBWS * default
-;         |                               110 = 9.54, 6 IOWS, 2 MBWS
+;         |                               110 = 9.54, 4 IOWS, 2 MBWS
 ;         |                               101 = 9.54, 6 IOWS, 0 MBWS
-;         |                               111 = 9.54, 6 IOWS, 0 MBWS
+;         |                               111 = 9.54, 4 IOWS, 0 MBWS
 ;    0    |             - FME1      RAM size high bit
 ;     0   |             - FLCK      1=lock bits 0-4 until next restart
 ;      0  |             - FME2      RAM size low bit
@@ -2001,6 +2032,20 @@ FE_CR RECORD      FSPD:3=FE_CPU_CFG,FME1:1,FLCK:1,FME2:1,FFPU:1,FPAR:1
 				ELSE
 FE_CR RECORD      FSPD:3=FE_CPU_CFG,FME1:1,FLCK:1,FME2:1,FFPU:1,FPAR:1=1
 				ENDIF
+
+;----------------------------------------------------------------------------;
+; FE2010 CR speed settings
+;
+FSPD_HI	= FE_CR < FE_CPU_CFG > AND MASK FSPD
+FSPD_MED	= FE_CR < FE_CPU_CFG_MED > AND MASK FSPD
+FSPD_LO	= FE_CR < FE_SPD_LO > AND MASK FSPD
+
+;----------------------------------------------------------------------------;
+; Toggle speed settings XORs
+;
+FSPD_HI_LO	= FSPD_HI XOR FSPD_LO
+FSPD_HI_MED	= FSPD_HI XOR FSPD_MED
+FSPD_MED_LO	= FSPD_MED XOR FSPD_LO
 
 ;----------------------------------------------------------------------------;
 ; FE2010A: 8255 PPI Channel B (Port 61h) Flags
@@ -2345,12 +2390,13 @@ FLAG_MEM	= EQUIP_FLAGS[1]			; high BDA flags byte
 ; Input:
 ;	FLAG = field name from EQUIP_FLAGS RECORD
 ;	SET_BDA = if defined, saves CX and sets DS = BDA
+;	AL_ONLY = if defined, does not clear AH
 ;		otherwise assumes DS = BDA and clobbers CX if 3 or 4 shifts
-; Output: AX = flag value
+; Output: AX = flag value (AL if AL_ONLY)
 ;
 ; Note: flags must not cross byte boundary (which they don't)
 ;----------------------------------------------------------------------------;
-GET_EFLAG	MACRO	FLAG, SET_BDA
+GET_EFLAG	MACRO	FLAG, SET_BDA, AL_ONLY
 		LOCAL FLAG_MASK, FLAG_BIT, FLAG_MEM
 			IFNB <SET_BDA>
 	PUSH	CX					; save CX
@@ -2377,7 +2423,11 @@ FLAG_MEM	= EQUIP_FLAGS[1]			; high BDA flags byte
 			ENDIF
 
 	MOV	AL, BYTE PTR FLAG_MEM		; AL = equipment flag byte
+		IFNB <AL_ONLY>
+	AND	AL, FLAG_MASK			; isolate bits, clear AH
+		ELSE
 	AND	AX, FLAG_MASK			; isolate bits, clear AH
+		ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Determine optimal number of shifts based on bit position and shift
@@ -3252,7 +3302,7 @@ RESET		ENDS
 ;----------------------------------------------------------------------------;
 ; Main BIOS ROM begins
 ;----------------------------------------------------------------------------;
-; Note: Memory space from F000:0000 - F000:E05A is available, though a
+; Note: ROM space from F000:0000 - F000:E05A is available, though a
 ; BIOS identifier string is typically at or near the top of this segment
 ;----------------------------------------------------------------------------;
 		ASSUME	DS:BIOS, SS:BIOS, CS:BIOS, ES:BIOS
@@ -3351,9 +3401,6 @@ BOOT_WARM	PROC NEAR
 			ASSUME DS:NOTHING
 BOOT_WARM ENDP
 
-;
-; 0 BYTES HERE
-;
 BYTES_HERE	BOOT
 
 			ASSUME CS:BIOS, DS:NOTHING, ES:NOTHING, SS:NOTHING
@@ -3409,9 +3456,9 @@ POST_CPU_TEST:
 ; On Failure: 2 short and 1 long beep
 ;----------------------------------------------------------------------------;
 			ASSUME DS:_BDA_ABS, ES:_IVT
-	MOV	AX, RAM_TEST		; use the standard test pattern
+	MOV	DX, REG_TEST		; use the standard test pattern
 CPU_REG_TEST:
-	MOV	BX, AX			; the game of telephone
+	MOV	BX, DX			; the game of telephone
 	MOV	DS, BX			;  pass a
 	MOV	CX, DS			;  known value
 	MOV	ES, CX			;  through all
@@ -3420,12 +3467,16 @@ CPU_REG_TEST:
 	MOV	DI, SS			;  same value
 	MOV	BP, DI			;  makes it all
 	MOV	SP, BP			;  the way
-	MOV	DX, SP			;  to the end
-	TEST	DX, NOT RAM_TEST		; expected result?
+	MOV	AX, SP			;  to the end
+	TEST	AX, NOT REG_TEST		; expected result?
 	MOV	BL, BEEP_SL <2,1>		; on Failure: 2 short and 1 long beep
 	JNZ	HALT_ERROR
-	XOR	AX, AX 			; otherwise repeat with AX = 0
-	TEST	DX, DX			; if zero it was second pass
+		IF (REG_TEST AND 8000H) EQ 0
+	CWD					; otherwise repeat with pattern = 0
+		ELSE
+	XOR	DX, DX			; otherwise repeat with pattern = 0
+		ENDIF
+	TEST	AX, AX			; if zero it was second pass
 	JNZ	CPU_REG_TEST		; Loop again to zero all registers
 CPU_REG_PASS:
 
@@ -3799,7 +3850,7 @@ DMA_SETUP_CH:
 	INC	AX				; next channel
 	LOOP	DMA_SETUP_CH		; (delay 13-17 clocks between OUTs)
 
-			IF EXP_UNIT EQ 1
+			IF DETECT_EXP EQ 1
 ;----------------------------------------------------------------------------;
 ; [14] Detect and enable 5161 expansion chassis / extension card
 ;----------------------------------------------------------------------------;
@@ -3971,6 +4022,7 @@ PIC_REG_PASS:
 			IF POST_TEST_PIC_INT EQ 1
 ;----------------------------------------------------------------------------;
 ; - Set up test interrupt handler for all interrupts
+; - AX = CS used by INIT_SW_INT_VECTORS
 ;
 PIC_INT_TEST:
 	MOV	CL, 1FH			; 0 - 1EH BIOS vectors (LOW L_VECTOR_TABLE)
@@ -4043,7 +4095,9 @@ PIC_INT_PASS:
 ;----------------------------------------------------------------------------;
 			ASSUME DS:BIOS, ES:_IVT
 INIT_SW_INT_VECTORS:
+			IF POST_TEST_PIC_INT EQ 0	; if 1, AX is already CS
 	MOV	AX, CS 			; AX to BIOS segment
+			ENDIF
 	MOV	CL, 1FH			; 0 - 1EH BIOS vectors (LOW L_VECTOR_TABLE)
 	XOR	DI, DI			; DI = beginning to IVT
 	MOV	SI, OFFSET VECTOR_TABLE
@@ -4112,7 +4166,7 @@ CPU_IS_V20:
 	AAD_I	10H					; result is 11 if V20, 11H if x86
 	CMP	AL, 11				; ZF = 1 if V20, ZF = 0 if 8088
 	JNE	CPU_TYPE_8088			; jump if not V20
-	SET_GFLAG	V20				; set V20 flag
+	POST_FLAG_SET PV20			; set V20 flag
 			IF CPU_TYPE	EQ CPU_V20
 	JMP	SHORT CPU_TYPE_DONE		; continue booting
 CPU_TYPE_8088:
@@ -4435,17 +4489,21 @@ HELLO_WORLD:
 ; Jump over INT 02h fixed ORG to continue...
 ;
 		;IF ARCH_TYPE EQ ARCH_TD3300
-		IF ARCH_TYPE EQ ARCH_TD3300 AND ARCH_SUB_TYPE EQ ARCH_NEST
+		;IF ARCH_TYPE EQ ARCH_TD3300 AND ARCH_SUB_TYPE EQ ARCH_NEST
+		;IF IS_TURBO AND (ARCH_TYPE NE ARCH_TD3300 OR ARCH_TYPE NE ARCH_FE2010)
+			IF ARCH_TYPE EQ ARCH_TURBO
 	JMP	SHORT POST_DETECT_PORTS
-		ELSE
+			ELSE
 	JMP	NEAR PTR POST_DETECT_PORTS
-		ENDIF
+			ENDIF
 
 			IF IS_TURBO
 ;----------------------------------------------------------------------------;
 ; KB ISR Toggle Turbo mode on/off
 ;----------------------------------------------------------------------------;
 INT_KB_TOGGLE_TURBO PROC
+	MOV	AL, EOI 					; End of Interrupt OCW
+	OUT	INT_P0, AL					; write EOI to port 0
 			IF ARCH_TYPE EQ ARCH_TD3300
 	IN	AL, TD_TURBO				; read current state
 				IF ARCH_SUB_TYPE EQ ARCH_NEST
@@ -4454,19 +4512,25 @@ INT_KB_TOGGLE_TURBO PROC
 	CMP	AL, MASK TDSS				; turbo on? (NZ = turbo)
 				ENDIF
 			ELSE
-				IF ARCH_TYPE EQ INIT_V40
+				IF ARCH_TYPE EQ ARCH_FE2010
+	MOV	AL, FE2010_CONF_REG			; get current register
+	TEST	AL, MASK FSPD				; ZF if LO
+				ELSE
+					IF ARCH_TYPE EQ ARCH_EHB AND INIT_V40 EQ 1
 	MOV	DX, V40_WCR1				; V40 W/S register
 	IN	AL, DX					; FF = slow, 0 = Turbo
 	NOT	AL						; flip bits
-				ELSE
+					ELSE
+	;IO_DELAY_SHORT
 	IN	AL, PPI_B					; read standard PPI register
+					ENDIF
+	TEST	AL, MASK PBTB				; is in Turbo mode? ZF if low
 				ENDIF				; /IF ARCH_TYPE EQ INIT_V40
-	TEST	AL, MASK PBTB				; is in Turbo mode?
 			ENDIF					; /IF ARCH_TYPE EQ ARCH_TD3300
+	STI							; enable INTs before beeps
 	CALL	MEEPMEEP_Z					; two meeps if to high (ZF)
 								; one meep if to low (NZ)
 								; fall through to toggle speed
-INT_KB_TOGGLE_TURBO ENDP
 
 ;----------------------------------------------------------------------------;
 ; Toggle Turbo mode on/off
@@ -4479,9 +4543,10 @@ INT_KB_TOGGLE_TURBO ENDP
 ;----------------------------------------------------------------------------;
 TOGGLE_TURBO PROC
 			ASSUME DS:_BDA
-	CLI						; interrupts off
+	;CLI						; interrupts off
 
 		IF ARCH_TYPE EQ ARCH_TD3300
+	CLI						; interrupts off
 			IF ARCH_SUB_TYPE NE ARCH_NEST
 ;----------------------------------------------------------------------------;
 ; TD3300A Port 90h Turbo switch
@@ -4515,6 +4580,7 @@ TOGGLE_TURBO_TD_1:
 	OUT	N3_CTRL, AL
 	TEST	AL, MASK D11SF			; turbo on? (NZ = turbo)
 			ENDIF				; NOT ARCH_NEST
+	STI						; Enable interrupts
 		ELSE					; NOT ARCH_TD3300
 
 ;----------------------------------------------------------------------------;
@@ -4528,23 +4594,56 @@ TOGGLE_TURBO_TD_1:
 	OUT	DX, AL				; write to speed control port
 			ELSE				; NOT ARCH_TD3300 OR ARCH_LASER
 
-;----------------------------------------------------------------------------;
-; Standard PPI B Turbo switch
-;
-	IN	AL, PPI_B				; read PPI
-	XOR	AL, MASK PBTB			; flip turbo bit
-	OUT	PPI_B, AL
-
 				IF ARCH_TYPE EQ ARCH_FE2010
+;----------------------------------------------------------------------------;
+; FE2010A Turbo
+; DON'T Use PPI bit for cursor and LO/MED beep pattern
+; Input: AL = PPI_B
+;
+	;OR	AL, MASK PBTB			; set turbo bit
+	;XCHG	AX, DX				; save AX
+	;MOV	AL, FE2010_CONF_REG		; get current register
+
+					IF FE_3_SPD EQ 1
+;----------------------------------------------------------------------------;
+; FE2010 Toggle three speeds
+;
+	XOR	AL, FSPD_MED_LO			; toggle LO <--> MED
+	TEST	AL, MASK FSPD			; test only speed bits
+	JZ	MED_TO_LO				; if MED -> LO, done, ZF = 1
+	JS	HI_TO_MED				; if HI -> MED (MSB now 1)
+LO_TO_HI:						; else is LO -> HI
+	XOR	AL, FSPD_MED_LO			; toggle LO --> MED (then to HI below)
+HI_TO_MED:
+	XOR	AL, FSPD_HI				; toggle HI <--> MED
+	CALL	MEEP					; extra MEEP for MED/HI, ZF = 0
+MED_TO_LO:
+	;CALL	FE2010_SETUP_SAVE			; write to memory and register
+	;XCHG	AX, DX				; restore AX
+	;JNZ	MED_TO_LO_2				; jump if NOT low
+	;AND	AL, NOT MASK PBTB			; clear turbo bit for HI
+;MED_TO_LO_2:
+
+					ELSE
 ;----------------------------------------------------------------------------;
 ; FE2010 Toggle two speeds
 ;
-	XCHG	AX, CX				; save AX
-	MOV	AL, FE2010_CONF_REG		; get current register
-	XOR	AL, FE_CR <> AND MASK FSPD	; flip speed bit(s)
+	XOR	AL, FSPD_HI				; flip HI speed bit(s)
+	TEST	AL, MASK PBTB			; standard turbo bit set?
+	;CALL	FE2010_SETUP_SAVE			; write to memory and register
+	;XCHG	AX, DX				; restore AX
+					ENDIF		; /IF FE_3_SPD EQ 1
 	CALL	FE2010_SETUP_SAVE			; write to memory and register
-	XCHG	AX, CX				; restore AX
-				ENDIF			; ARCH_FE2010
+	;OUT	PPI_B, AL				; write PPI
+
+				ELSE
+;----------------------------------------------------------------------------;
+; Standard PPI B Turbo switch
+;
+	;IN	AL, PPI_B				; read PPI (already read)
+	XOR	AL, MASK PBTB			; flip turbo bit
+	OUT	PPI_B, AL
+				ENDIF			; /IF ARCH_TYPE EQ ARCH_FE2010
 
 				IF ARCH_TYPE EQ ARCH_UM82
 ;----------------------------------------------------------------------------;
@@ -4563,6 +4662,7 @@ TOGGLE_TURBO_TD_1:
 ;	Turbo: AL = xxxxx1xx	-> 3 (0011)
 ;	Slow:  AL = xxxxx0xx	-> 2 (0010)
 ;
+	IN	AL, PPI_B				; read PPI
 	AND	AL, MASK PBTB			; AL = 4 (NZ) if turbo, 0 (ZF) if slow
 	XCHG	AX, CX				; save original turbo bit
 	MOV	AL, 3					; AL = 3 - assume turbo
@@ -4575,7 +4675,7 @@ VEN888_TURBO:
 	XCHG	AX, CX				; restore original turbo bit
 				ENDIF
 
-				IF ARCH_TYPE EQ ARCH_EHB
+				IF ARCH_TYPE EQ ARCH_EHB AND INIT_V40 EQ 1
 ;----------------------------------------------------------------------------;
 ; EMM Homebrew/V40 - Toggle wait state FF = 3 W/S, 0 = zero W/S
 ;
@@ -4601,25 +4701,28 @@ VEN888_TURBO:
 ;----------------------------------------------------------------------------;
 ; NZ if turbo bit set, ZF if not turbo
 ;
-;					IF ARCH_TYPE EQ ARCH_FE2010
-;	TEST	AL, MASK FSPD			; speed low?
-;					ELSE
+					IF ARCH_TYPE NE ARCH_FE2010
 	TEST	AL, MASK PBTB			; standard turbo bit set?
-;					ENDIF
+					ENDIF
 				ENDIF			; ARCH_MIST
 			ENDIF				; ARCH_LASER
 		ENDIF					; ARCH_TD3300
 
-	MOV	CX, CURSOR_DEFAULT		; original power-on cursor (fast)
+	MOV	AX, CURSOR_DEFAULT		; original power-on cursor
+			IF TURBO_TYPE EQ TURBO_REV
 	JNZ	TOGGLE_TURBO_CURSOR		; Jump if turbo, use original cursor
-	XOR	CH, CH 				; starting scan line 0 ("big cursor")
+			ELSE
+	JZ	TOGGLE_TURBO_CURSOR		; Jump if turbo, use original cursor
+			ENDIF
+	CBW						; starting scan line 0 ("big cursor")
 TOGGLE_TURBO_CURSOR:
 	CALL	SET_CURSOR				; Video set cursor
 
 TOGGLE_TURBO_DONE:
-	STI						; Enable interrupts
+	;STI						; Enable interrupts
 	RET
 TOGGLE_TURBO ENDP
+INT_KB_TOGGLE_TURBO ENDP
 			ENDIF				; IF IS_TURBO
 
 			IF ARCH_TYPE EQ ARCH_TD3300
@@ -4852,27 +4955,6 @@ SET_EFLAG_FLP_RET:
 SET_EFLAG_FLP ENDP
 			ENDIF
 
-			IF EKB_INT_SR EQ 1 AND ARCH_TYPE EQ ARCH_TD3300
-;----------------------------------------------------------------------------;
-; Handle SysRq key - The Sequel
-;----------------------------------------------------------------------------;
-EKB_INT_SYSRQ_2 PROC
-			ASSUME DS:_BDA
-	MOV	KB_FLAGS2, AL			; save KB flag
-	MOV	AL, EOI 				; End of Interrupt OCW
-	OUT	INT_P0, AL				; write EOI to port 0
-	MOV	AH, 85H				; System Request Key Pressed fn
-	XCHG	AL, DH				; restore AL
-	AND	AL, 1					; AL = 1 if break, 0 if make
-	INT	15H
-EKB_INT_SYSRQ_2_DONE:
-	RET
-EKB_INT_SYSRQ_2 ENDP
-			ENDIF				; /IF EKB_INT_SR EQ 1
-
-;
-; 11 BYTES HERE
-;
 BYTES_HERE	INT_02
 
 ;----------------------------------------------------------------------------;
@@ -4925,6 +5007,7 @@ POST_DETECT_PORTS PROC
 
 	MOV	BX, OFFSET EQUIP_FLAGS[1]	; BX = high byte of EQUIP_FLAGS
 
+			IF DETECT_GAM EQ 1
 ;----------------------------------------------------------------------------;
 ; [38] Detect and enable Game port
 ;----------------------------------------------------------------------------;
@@ -4935,6 +5018,8 @@ POST_DETECT_PORTS PROC
 ; Equipment Bit is set if the lower nibble of an I/O port 201h read is zero
 ; Note: bit 12 is ONLY set if TWO joysticks are connected:
 ; http://www.minuszerodegrees.net/5150_5160/post/IBM%205150%20and%205160%20-%20Bit%2012%20of%20Equipment%20Flag.htm
+; Note 2: Due to PC hardware design, this detection may only be reliable if
+; TWO joysticks are attached.
 ;----------------------------------------------------------------------------;
 POST_DETECT_GAM:
 	MOV	DX, GAME_CTRL
@@ -4943,6 +5028,7 @@ POST_DETECT_GAM:
 	JNZ	NO_GAME_PORT
 	OR	BYTE PTR [BX], HIGH MASK GAM	; enable Game Port bit
 NO_GAME_PORT:
+			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; [37] Detect and enable COM ports 1-4
@@ -5027,6 +5113,32 @@ POST_DETECT_PORTS ENDP
 		ENDIF
 
 ;----------------------------------------------------------------------------;
+; Begin Hardware POST Test Results
+;----------------------------------------------------------------------------;
+	CALL	HIDE_CURSOR				; cursor movement is distracting
+
+			IF POST_WARM_COLD EQ 1
+;----------------------------------------------------------------------------;
+; Display "WARM" or "COLD" boot
+;----------------------------------------------------------------------------;
+; Size: 38 bytes
+;----------------------------------------------------------------------------;
+POST_BOOT_TYPE PROC
+	MOV	SI, OFFSET POST_BOOT		; BOOT string
+	MOV	BL, POST_CLR_WARM			; attribute to warm color
+	CALL	POST_START_COL_1			; display column label
+							;  CX=POST_TAB_COL_I, SI=WARM string
+	JWB	POST_BOOT_TYPE_OUT		; jump if warm boot
+	MOV	BL, POST_CLR_COLD			; attribute to cold color
+	MOV	SI, OFFSET POST_COLD		; COLD string
+POST_BOOT_TYPE_OUT:
+	CALL	OUT_SZ_ATTR				; write string with attribute
+	CALL	POST_END_COL_NL			; end of column with NL and RET
+
+POST_BOOT_TYPE ENDP
+			ENDIF
+
+;----------------------------------------------------------------------------;
 ; Reset Keyboard Interface
 ;----------------------------------------------------------------------------;
 ; http://minuszerodegrees.net/5160/keyboard/5160_keyboard_startup.jpg
@@ -5069,7 +5181,8 @@ POST_KB_RESET PROC
 
 	OR	AL, MASK PBKB OR MASK PBKC	; keyboard enable clock and clear
 	OUT	DX, AL				; send to PPI port B
-	PUSH	CX					; give a little more time
+	;PUSH	CX					; give a little more time
+	IO_DELAY_SHORT
 	AND	AL, NOT MASK PBKB			; keyboard enable (clear low)
 	OUT	DX, AL				; send to PPI port B
 
@@ -5077,9 +5190,20 @@ POST_KB_RESET PROC
 ; Unmask KB interrupt IRQ1
 ;
 	IN	AL, INT_IMR 			; get PIC Port 1 INT mask
-	XCHG	AX, SI 				; SI = save previous INT mask
+	PUSH	AX					; save previous INT mask
 	MOV	AL, NOT MASK IRQ1			; unmask only keyboard interrupt
 	OUT	INT_IMR, AL
+			IF POST_TEST_KB NE 0
+	STI 						; enable interrupts
+			ENDIF
+
+;----------------------------------------------------------------------------;
+; [17] Detect and test conventional memory while waiting for KB byte
+;----------------------------------------------------------------------------;
+	PUSH	DX
+	CALL	DETECT_MEMORY			; detect and display memory count
+	POP	DX
+			ASSUME ES:NOTHING		; ES clobbered by DETECT_MEMORY
 
 ;----------------------------------------------------------------------------;
 ; Check if reset scan code was received
@@ -5088,26 +5212,33 @@ POST_KB_RESET PROC
 ; when IRQ1 is received with successful reset code of 0AAh
 ;
 			IF POST_TEST_KB NE 0
-	STI 						; enable interrupts
+	;STI 						; enable interrupts
 KB_RESET_TEST:
-	IO_DELAY_SHORT				; give a little more time
+	;IO_DELAY_SHORT				; give a little more time
 	POST_FLAG_TEST  PKI			; KB test flag yet?
 	LOOPZ	KB_RESET_TEST			; Loop until KB flag OR CX is 0 (timeout)
 	CLI 						; disable interrupts again
 	POST_FLAG_FLIP  PKI			; invert PKI flag: 1 = error, 0 = success
 			ENDIF
-	IO_DELAY_LONG 				; additional delay, CX = 0
+	;IO_DELAY_LONG 				; additional delay, CX = 0
+	IO_DELAY 					; additional delay, CX = 0
 
 ;----------------------------------------------------------------------------;
-; Ack scan code, clear keyboard again and check that no scan codes were received
+; Ack scan code, clear keyboard again
 ;
 	IN	AL, DX				; read PPI port B
 	OR	AL, MASK PBKB OR MASK PBKC	; keyboard enable clock and clear
 	OUT	DX, AL				; send to PPI port B
-	POP	CX					; give a little more time
+	PUSH	CX					; give a little more time, push a 0
+	;POP	CX					; give a little more time
+	;IO_DELAY_SHORT
 	AND	AL, NOT MASK PBKB			; keyboard enable (clear low)
 	OUT	DX, AL				; send to PPI port B
-	IO_DELAY					; delay for KBC, CX = 0
+
+;----------------------------------------------------------------------------;
+; Check that no extraneous scan codes were received
+;
+	IO_DELAY					; wait for another key, CX = 0
 	IN	AL, PPI_A 				; check KB for extraneous key
 			IF POST_TEST_KB NE 0	; all KB tests enabled?
 			IF POST_TEST_KEY NE 0	; Key Stuck test enabled?
@@ -5120,58 +5251,28 @@ KB_RESET_TEST:
 			ENDIF
 
 KB_HAPPY:
+			ASSUME ES:_IVT
+	POP	ES 					; ES = IVT seg
+
 ;----------------------------------------------------------------------------;
 ; Disable keyboard for rest of POST
 ;
 	IN	AL, DX
 	OR	AL, MASK PBKB OR MASK PBKC	; keyboard enable clock and clear
 	OUT	DX, AL				; send to PPI port B
-
-	XCHG	AX, SI 				; restore interrupt mask register
+	POP	AX					; restore interrupt mask register
 	OUT	INT_IMR, AL
 
 ;----------------------------------------------------------------------------;
 ; Set up the real INT 09H keyboard interrupt handler
 ;
 			ASSUME ES:_IVT
-	MOV	ES, CX 				; ES = IVT seg (CX is 0 from above)
+	;MOV	ES, CX 				; ES = IVT seg (CX is 0 from above)
 	MOV	DI, OFFSET IVT_09 		; DI = INT 9H offset in IVT (24H)
 	MOV	AX, OFFSET INT_09 		; Vector offset
 	STOSW 					; replace in IVT
 
 POST_KB_RESET ENDP
-
-;----------------------------------------------------------------------------;
-; Begin Hardware POST Test Results
-;----------------------------------------------------------------------------;
-	CALL	HIDE_CURSOR				; cursor movement is distracting
-
-			IF POST_WARM_COLD EQ 1
-;----------------------------------------------------------------------------;
-; Display "WARM" or "COLD" boot
-;----------------------------------------------------------------------------;
-; Size: 38 bytes
-;----------------------------------------------------------------------------;
-POST_BOOT_TYPE PROC
-	MOV	SI, OFFSET POST_BOOT		; BOOT string
-	MOV	BL, POST_CLR_WARM			; attribute to warm color
-	CALL	POST_START_COL_1			; display column label
-							;  CX=POST_TAB_COL_I, SI=WARM string
-	JWB	POST_BOOT_TYPE_OUT		; jump if warm boot
-	MOV	BL, POST_CLR_COLD			; attribute to cold color
-	MOV	SI, OFFSET POST_COLD		; COLD string
-POST_BOOT_TYPE_OUT:
-	CALL	OUT_SZ_ATTR				; write string with attribute
-	CALL	POST_END_COL_NL			; end of column with NL and RET
-
-POST_BOOT_TYPE ENDP
-			ENDIF
-
-;----------------------------------------------------------------------------;
-; [17] Detect and test conventional memory
-;----------------------------------------------------------------------------;
-	CALL	DETECT_MEMORY			; detect and display memory count
-			ASSUME ES:NOTHING		; ES clobbered by DETECT_MEMORY
 
 			IF POST_TEST_DMA EQ 1 AND POST_TEST_DMA_TC0 EQ 1
 ;----------------------------------------------------------------------------;
@@ -5366,7 +5467,8 @@ ENABLE_NMI:
 	CALL	KB_BUF_CLEAR			; clear any stray keys in buffer
 	IN	AL, PPI_B 				; AL = PB0 flags
 	AND	AL, NOT MASK PBKB			; keyboard clear LOW (enable KB)
-	IO_DELAY_SHORT
+	;IO_DELAY_SHORT
+	NOP
 	OUT	PPI_B, AL				; send to PPI port B
 
 ;----------------------------------------------------------------------------;
@@ -5374,7 +5476,7 @@ ENABLE_NMI:
 ;
 	XOR	AX, AX				; AX = 0
 	MOV	WARM_FLAG, AX			; clear warm boot flag in BDA
-	POST_FLAG_CLR  WARM, 1			; remove warm boot flag, NZ if error
+	AND	BP, PFLAG_ERR			; check for POST errors, NZ if error
 	JZ	POST_OK				; if no errors, go ahead and boot
 
 ;----------------------------------------------------------------------------;
@@ -5483,74 +5585,6 @@ BOOT ENDP
 ;
 ;----------------------------------------------------------------------------;
 
-		ASSUME DS:_BDA
-STRINGS PROC
-
-BANNER_STRINGS PROC
-;----------------------------------------------------------------------------;
-; Banner Strings
-;
-BOOT_FAIL		DB	'Disk Boot Fail.'
-			DB	' You monster.'
-NL2_ANY_KEY		DB	LF
-NL_ANY_KEY		DB	CR, LF
-ANY_KEY		DB	'Press the Any Key...'
-			DB	 0
-BANNER_STRINGS ENDP
-
-POST_STRINGS PROC
-;----------------------------------------------------------------------------;
-; POST Test Strings
-;
-POST_CPU		DB	'CPU',  0			; 'CPU' followed by default
-					IF ARCH_SUB_TYPE EQ ARCH_NEST
-			DB	'8086', 0			;  *must be after POST_CPU
-					ELSE
-			DB	'8088', 0			;  *must be after POST_CPU
-					ENDIF
-POST_FPU		DB	'FPU',  0			; 'FPU' followed by default
-			DB	'8087', 0			;  *must be after POST_FPU
-POST_HD		DB	':',    0			; HD size letter display
-			DB	' ', POST_M_UNIT		;  MB or MiB units display
-			DB	0				;  *must be after POST_HD
-POST_MEMORY		DB	'RAM',  0			; RAM Memory test
-					IF RAM_DIGITS GT 3
-			DB	'0'				; add extra 0 to RAM count
-					ENDIF
-			DB	'000 ', POST_K_UNIT	;  and KB or KiB
-			DB	' OK',  0
-					IF ARCH_SUB_TYPE EQ ARCH_NEST
-POST_V20		DB	'V30'
-					ELSE
-POST_V20		DB	'V20'
-					ENDIF
-					IF INIT_V40 EQ 1
-			DB	'/V40'			; could be a V40
-					ENDIF
-			DB	0
-POST_LPT		DB	'LPT',  0
-POST_COM		DB	'COM',  0
-POST_FDD		DB	'FDD',  0
-POST_HDD		DB	'HDD',  0
-POST_LSEP		DB	POST_L, 0
-POST_RSEP		DB	POST_R, 0
-
-;----------------------------------------------------------------------------;
-; NMI strings - these must be contiguous
-; TODO FIX: some of these strings have to be shortened due to lack of space
-;
-		IF KB_EXT EQ 1 AND (ARCH_SUB_TYPE EQ ARCH_NEST OR ARCH_TYPE EQ ARCH_UM82)
-NMI_ERR_IO		DB	'IO'				; NMI I/O Error string
-NMI_ERR_PAR		DB	'PAR'				; NMI Parity Error (abbrev.)
-		ELSE
-NMI_ERR_IO		DB	'IO'				; NMI I/O Error string
-NMI_ERR_PAR		DB	' PARITY'			; NMI Parity Error
-		ENDIF
-			DB	0
-
-POST_STRINGS ENDP
-
-STRINGS ENDP
 
 ;============================================================================;
 ;
@@ -5571,6 +5605,7 @@ STRINGS ENDP
 ; Clobbers: AX, BX, SI (anything else the ROM might, except for DS, ES and BP)
 ; Size: 67 bytes
 ;----------------------------------------------------------------------------;
+		ASSUME DS:_BDA
 BIOS_ROM_SCAN PROC
 	PUSHX	BP, DS, ES				; call preserve these registers
 CHECK_ROM:
@@ -6002,6 +6037,149 @@ NMI_RESET PROC
 	RET
 NMI_RESET ENDP
 
+BEEP_PROC PROC
+;----------------------------------------------------------------------------;
+; Repeats LONG_BEEPs then SHORT_BEEPs indefinitely
+;----------------------------------------------------------------------------;
+; Input:
+;	BL low nibble = long beeps
+;	BL high nibble = short beeps
+;
+; Note: Cannot use stack since HALT_BEEP could occur before stack
+;
+; Size: 60 bytes
+;----------------------------------------------------------------------------;
+HALT_BEEP PROC
+	MOV	DX, CS 				; SS to CS
+	MOV	SS, DX				; for CALL_NS
+	XCHG	AX, BX				; beep pattern to AL
+	POST_CODE					; optionally display beep code on POST card
+	AAM_I	10H					; split nibbles
+	XCHG	AX, BP				; BP(H) = short beeps, BP(L) = long beeps
+HALT_BEEP_START:
+	IO_DELAY_TURBO				; pause between sequences, CX = 0
+	MOV	DX, BP 				; restore original beep pattern
+	MOV	SI, BEEP_ERR_LOW			; low C5
+HALT_BEEP_NEXT:
+	MOV	DI, CX				; set beep duration for this loop
+HALT_BEEP_REP:
+	MOV	AX, SI				; restore beep tone
+	CALL_NS  BEEP_ON_P, 1			; turn on speaker/beep, BL = old PPI state
+	MOV	CX, DI				; reset counter
+	IO_DELAY_TURBO				; delay for beep (longer if turbo)
+	XCHG	AX, BX				; AL = old PPI state (speaker off)
+	OUT	PPI_B, AL				; write back to PPI port B
+	SUB	CX, DI				; set for remainder of counter
+	IO_DELAY_TURBO				; delay for silence (longer if turbo)
+	DEC	DL					; dec beep repeat count
+	JNZ	HALT_BEEP_REP			; jump if more of this length
+	XCHG	DL, DH				; swap beep counts
+	TEST	DX, DX				; both cycles done?
+	JZ	HALT_BEEP_START			; if so, restart beep pattern
+	MOV	CH, 100H * 1/3			; else, short beep on 33%
+	MOV	SI, BEEP_ERR_HIGH			; high F5
+	JMP	HALT_BEEP_NEXT			; start short cycle
+HALT_BEEP ENDP
+
+;----------------------------------------------------------------------------;
+; Make a beepin' beep
+;----------------------------------------------------------------------------;
+; Play a (correctly pitched) A6 for 250ms
+; Clobbers: BX
+;----------------------------------------------------------------------------;
+BEEP PROC
+	PUSH	AX
+	BEEP_ON
+	MOV	AL, 2				; 1/4 second pause
+	CALL	IO_WAIT_MS_125
+	BEEP_OFF
+	POP	AX
+	RET
+BEEP ENDP
+
+;----------------------------------------------------------------------------;
+; Conditionally beep based on ZF (used for KB turbo toggle hot key)
+; If TURBO_REV: two very short beeps if ZF, one short if NZ
+; IF TURBO_STD: two very short beeps if NZ, one short if ZF
+;----------------------------------------------------------------------------;
+MEEPMEEP_Z PROC
+		IF TURBO_TYPE EQ TURBO_REV
+	JNZ	MEEP				; if ZF=0, skip first meep
+		ELSE
+	JZ	MEEP				; if ZF=1, skip first meep
+		ENDIF
+
+;----------------------------------------------------------------------------;
+; Two very short beeps
+; Size: 27 bytes
+; Output: CX = 0
+;----------------------------------------------------------------------------;
+			IF IS_TURBO
+MEEP_DELAY	EQU	40H
+			ELSE
+MEEP_DELAY	EQU	20H
+			ENDIF
+MEEPMEEP PROC
+	CALL MEEP				; first meep
+
+;----------------------------------------------------------------------------;
+; One very short beep
+; Clobbers: BX, CX
+;----------------------------------------------------------------------------;
+MEEP PROC
+	PUSH	AX
+	BEEP_ON
+	MOV	CH, MEEP_DELAY
+	IO_DELAY				; delay while meeping
+	BEEP_OFF
+	MOV	CH, MEEP_DELAY
+	IO_DELAY				; delay between beeps
+	POP	AX
+	RET
+MEEP ENDP
+MEEPMEEP ENDP
+MEEPMEEP_Z ENDP
+
+;----------------------------------------------------------------------------;
+; Turn on speaker at given tone
+;----------------------------------------------------------------------------;
+; Input:
+; 	AX = TONE
+; Output:
+;	BL = previous PPI state
+;	ZF = 0
+;
+; http://www.cs.binghamton.edu/~reckert/220/8254_timer.html
+;
+; Clobbers AX, BX
+; Cannot use stack since this could be called before it is working.
+;----------------------------------------------------------------------------;
+BEEP_ON_P PROC
+	XCHG	AX, BX				; save tone to BX
+	MOV	AL, PIT_CW <2, 11B, 3>		; Select Timer 2, LE, Mode 3 (square)
+	OUT	PIT_CTRL, AL			; Send to PIT control word (43H)
+	XCHG	AX, BX				; restore tone
+	OUT	PIT_CH2, AL				; send low byte to timer
+	MOV	AL, AH 				; select high byte
+	OUT	PIT_CH2, AL				; send high byte to timer
+	IN	AL, PPI_B				; read current PPI port B status
+	MOV	BL, AL				; save original PPI state
+	OR	BL, MASK PBSP OR MASK PBST	; enable speaker and timer gates
+
+;----------------------------------------------------------------------------;
+; Write to PPI (turn speaker on/off)
+;----------------------------------------------------------------------------;
+; Input: BL = new PPI state
+;
+BEEP_OFF_P PROC
+	XCHG	AX, BX				; AL = new PPI state
+	OUT	PPI_B, AL				; write back to port B
+	RET
+BEEP_OFF_P ENDP
+BEEP_ON_P ENDP
+
+BEEP_PROC ENDP
+
 ;----------------------------------------------------------------------------;
 ; Delay using PIT counter increments of 125 ms
 ;----------------------------------------------------------------------------;
@@ -6257,9 +6435,6 @@ EKB_INT_SYSRQ_2 ENDP
 EKB_INT_16_2 ENDP
 		ENDIF					; /IF KB_EXT EQ 1
 
-;
-; 25 BYTES HERE / 22 BYTES HERE 5150 / ? BYTES EXT_KB / ? BYTES EXT_KB + ST
-;
 BYTES_HERE	INT_19
 
 ;----------------------------------------------------------------------------;
@@ -6344,9 +6519,6 @@ GET_DISK_PARAMS_ERR:
 GET_DISK_PARAMS ENDP
 		ENDIF
 
-;
-; 0 BYTES HERE
-;
 BYTES_HERE	INT_14
 
 ;----------------------------------------------------------------------------;
@@ -6604,7 +6776,7 @@ INT_14 ENDP
 ; https://www.edaboard.com/threads/walking-1-0-test-for-memory-bist.241278/
 ;
 ; Size: 47 bytes
-; Clobbers AX, BX, CX, DX, DI
+; Clobbers AL, BX, CX, DX, DI
 ;----------------------------------------------------------------------------;
 PORT_TEST PROC
 	MOV	BH, 1				; start with low order bit
@@ -6668,9 +6840,6 @@ POST_MDA		DB	'Mono', 0
 ;
 VID_MODE_TBL	DB	1, 3, 7	; Color 40x25, Color 80x25, Mono 80x25
 
-;
-; 0 BYTES HERE
-;
 BYTES_HERE	INT_16
 
 ;----------------------------------------------------------------------------;
@@ -6849,142 +7018,84 @@ INT_16_2 ENDP
 
 INT_16 ENDP
 
-BEEP_PROC PROC
-
-;----------------------------------------------------------------------------;
-; Repeats LONG_BEEPs then SHORT_BEEPs indefinitely
-;----------------------------------------------------------------------------;
-; Input:
-;	BL low nibble = long beeps
-;	BL high nibble = short beeps
+STRINGS PROC
+;============================================================================;
 ;
-; Note: Cannot use stack since HALT_BEEP could occur before stack
+;	       * * *   S T R I N G S  &  T H I N G S  * * *
 ;
-; Size: 60 bytes
-;----------------------------------------------------------------------------;
-HALT_BEEP PROC
-	MOV	DX, CS 				; SS to CS
-	MOV	SS, DX				; for CALL_NS
-	XCHG	AX, BX				; beep pattern to AL
-	POST_CODE					; optionally display beep code on POST card
-	AAM_I	10H					; split nibbles
-	XCHG	AX, BP				; BP(H) = short beeps, BP(L) = long beeps
-HALT_BEEP_START:
-	IO_DELAY_TURBO				; pause between sequences, CX = 0
-	MOV	DX, BP 				; restore original beep pattern
-	MOV	SI, BEEP_ERR_LOW			; low C5
-HALT_BEEP_NEXT:
-	MOV	DI, CX				; set beep duration for this loop
-HALT_BEEP_REP:
-	MOV	AX, SI				; restore beep tone
-	CALL_NS  BEEP_ON_P, 1			; turn on speaker/beep, BL = old PPI state
-	MOV	CX, DI				; reset counter
-	IO_DELAY_TURBO				; delay for beep (longer if turbo)
-	XCHG	AX, BX				; AL = old PPI state (speaker off)
-	OUT	PPI_B, AL				; write back to PPI port B
-	SUB	CX, DI				; set for remainder of counter
-	IO_DELAY_TURBO				; delay for silence (longer if turbo)
-	DEC	DL					; dec beep repeat count
-	JNZ	HALT_BEEP_REP			; jump if more of this length
-	XCHG	DL, DH				; swap beep counts
-	TEST	DX, DX				; both cycles done?
-	JZ	HALT_BEEP_START			; if so, restart beep pattern
-	MOV	CH, 100H * 1/3			; else, short beep on 33%
-	MOV	SI, BEEP_ERR_HIGH			; high F5
-	JMP	HALT_BEEP_NEXT			; start short cycle
-HALT_BEEP ENDP
+;============================================================================;
 
+BANNER_STRINGS PROC
 ;----------------------------------------------------------------------------;
-; Make a beepin' beep
-;----------------------------------------------------------------------------;
-; Play a (correctly pitched) A6 for 250ms
-; Clobbers: BX
-;----------------------------------------------------------------------------;
-BEEP PROC
-	PUSH	AX
-	BEEP_ON
-	MOV	AL, 2				; 1/4 second pause
-	CALL	IO_WAIT_MS_125
-	BEEP_OFF
-	POP	AX
-	RET
-BEEP ENDP
-
-;----------------------------------------------------------------------------;
-; Two very short beeps if ZF, one short if NZ
-;----------------------------------------------------------------------------;
-MEEPMEEP_Z PROC
-	JNZ	MEEP				; if ZF=0, skip first meep
-
-;----------------------------------------------------------------------------;
-; Two very short beeps
-; Size: 27 bytes
-; Output: CX = 0
-;----------------------------------------------------------------------------;
-			IF IS_TURBO
-MEEP_DELAY	EQU	40H
-			ELSE
-MEEP_DELAY	EQU	20H
-			ENDIF
-MEEPMEEP PROC
-	CALL MEEP				; first meep
-
-;----------------------------------------------------------------------------;
-; One very short beep
-; Clobbers: BX, CX
-;----------------------------------------------------------------------------;
-MEEP PROC
-	PUSH	AX
-	BEEP_ON
-	MOV	CH, MEEP_DELAY
-	IO_DELAY				; delay while meeping
-	BEEP_OFF
-	MOV	CH, MEEP_DELAY
-	IO_DELAY				; delay between beeps
-	POP	AX
-	RET
-MEEP ENDP
-MEEPMEEP ENDP
-MEEPMEEP_Z ENDP
-
-;----------------------------------------------------------------------------;
-; Turn on speaker at given tone
-;----------------------------------------------------------------------------;
-; Input:
-; 	AX = TONE
-; Output:
-;	BL = previous PPI state
+; Banner Strings
 ;
-; http://www.cs.binghamton.edu/~reckert/220/8254_timer.html
-;
-; Clobbers AX, BX
-; Cannot use stack since this could be called before it is working.
+BOOT_FAIL		DB	'Disk Boot Fail.'
+			DB	' You monster.'
+NL2_ANY_KEY		DB	LF
+NL_ANY_KEY		DB	CR, LF
+ANY_KEY		DB	'Press the Any Key...'
+			DB	 0
+BANNER_STRINGS ENDP
+
+POST_STRINGS PROC
 ;----------------------------------------------------------------------------;
-BEEP_ON_P PROC
-	XCHG	AX, BX				; save tone to BX
-	MOV	AL, PIT_CW <2, 11B, 3>		; Select Timer 2, LE, Mode 3 (square)
-	OUT	PIT_CTRL, AL			; Send to PIT control word (43H)
-	XCHG	AX, BX				; restore tone
-	OUT	PIT_CH2, AL				; send low byte to timer
-	MOV	AL, AH 				; select high byte
-	OUT	PIT_CH2, AL				; send high byte to timer
-	IN	AL, PPI_B				; read current PPI port B status
-	MOV	BL, AL				; save original PPI state
-	OR	BL, MASK PBSP OR MASK PBST	; enable speaker and timer gates
+; POST Test Strings
+;
+POST_CPU		DB	'CPU',  0			; 'CPU' followed by default
+					IF ARCH_SUB_TYPE EQ ARCH_NEST
+			DB	'8086', 0			;  *must be after POST_CPU
+					ELSE
+			DB	'8088', 0			;  *must be after POST_CPU
+					ENDIF
+POST_FPU		DB	'FPU',  0			; 'FPU' followed by default
+			DB	'8087', 0			;  *must be after POST_FPU
+POST_HD		DB	':',    0			; HD size letter display
+			DB	' ', POST_M_UNIT		;  MB or MiB units display
+			DB	0				;  *must be after POST_HD
+POST_MEMORY		DB	'RAM',  0			; RAM Memory test
+					IF RAM_DIGITS GT 3
+			DB	'0'				; add extra 0 to RAM count
+					ENDIF
+			DB	'000 ', POST_K_UNIT	;  and KB or KiB
+			DB	' OK',  0
+					IF ARCH_SUB_TYPE EQ ARCH_NEST
+POST_V20		DB	'V30'
+					ELSE
+POST_V20		DB	'V20'
+					ENDIF
+					IF INIT_V40 EQ 1
+			DB	'/V40'			; could be a V40
+					ENDIF
+			DB	0
+POST_LPT		DB	'LPT',  0
+POST_COM		DB	'COM',  0
+POST_FDD		DB	'FDD',  0
+					IF POST_HD_COUNT EQ 1
+POST_HDD		DB	'HDD',  0
+					ENDIF
+POST_LSEP		DB	POST_L, 0
 
 ;----------------------------------------------------------------------------;
-; Write to PPI (turn speaker on/off)
-;----------------------------------------------------------------------------;
-; Input: BL = new PPI state
+; NMI strings - these must be contiguous
+; NOTE: some of these strings have to be shortened due to lack of space
 ;
-BEEP_OFF_P PROC
-	XCHG	AX, BX				; AL = new PPI state
-	OUT	PPI_B, AL				; write back to port B
-	RET
-BEEP_OFF_P ENDP
-BEEP_ON_P ENDP
-
-BEEP_PROC ENDP
+		IF KB_EXT EQ 1
+				IF ARCH_TYPE EQ ARCH_EHB
+NMI_ERR_IO		DB	'I'				; NMI I/O Error string
+NMI_ERR_PAR		DB	'P'				; NMI Parity Error (ab.)
+				ELSE
+					IF ARCH_SUB_TYPE EQ ARCH_M88
+NMI_ERR_IO		DB	'I'				; NMI I/O Error string
+					ELSE
+NMI_ERR_IO		DB	'IO'				; NMI I/O Error string
+					ENDIF
+NMI_ERR_PAR		DB	'PAR'				; NMI Parity Error (abbrev.)
+				ENDIF
+		ELSE
+NMI_ERR_IO		DB	'IO'				; NMI I/O Error string
+NMI_ERR_PAR		DB	' PARITY'			; NMI Parity Error
+		ENDIF
+			DB	0
 
 ;----------------------------------------------------------------------------;
 ; Additional POST messages
@@ -6995,14 +7106,6 @@ POST_WARM		DB	'WARM', 0
 POST_COLD		DB	'COLD', 0
 				ENDIF
 
-;----------------------------------------------------------------------------;
-; Display all POST messages
-;----------------------------------------------------------------------------;
-; See PFLAGS
-; Output: BP (high byte) = 0
-; Clobbers: AX, CX, SI
-; Size: 63 bytes
-;----------------------------------------------------------------------------;
 POST_ERR_MSG PROC
 
 ;----------------------------------------------------------------------------;
@@ -7014,6 +7117,12 @@ POST_ERR_PKI	DB	'KB',   0		; Reset returned non-success "301"
 POST_ERR_PKEY	DB	'Key',  0		; Reset did not clear KBC
 POST_ERR_PFDC	DB	'FDC',  0		; General FD init failure
 POST_ERR_PDMA	DB	'DMA',  0		; DMA TC0 error
+
+POST_ERR_MSG ENDP
+
+POST_STRINGS ENDP
+
+STRINGS ENDP
 
 ;----------------------------------------------------------------------------;
 ; POST String Vectors - indexed by PFLAGS
@@ -7027,6 +7136,14 @@ POST_ERRORS LABEL WORD
 	DW	OFFSET POST_MEMORY		; PMEM : RAM Error
 L_POST_ERRORS	EQU	($-POST_ERRORS)/SIZE POST_ERRORS
 
+;----------------------------------------------------------------------------;
+; Display all POST messages
+;----------------------------------------------------------------------------;
+; See PFLAGS
+; Output: BP (high byte) = 0
+; Clobbers: AX, CX, SI
+; Size: 63 bytes
+;----------------------------------------------------------------------------;
 POST_ERROR_MSG PROC
 	MOV	CX, L_POST_ERRORS+1		; # of available POST error messages
 	MOV	SI, OFFSET POST_ERRORS[-2]	; SI = string table pointer
@@ -7046,18 +7163,21 @@ POST_ERROR_MSG_EXIT:
 	RET
 POST_ERROR_MSG ENDP
 
-POST_ERR_MSG ENDP
-
 ;----------------------------------------------------------------------------;
 ; Additional INT 9h - Keyboard Code
 ;----------------------------------------------------------------------------;
 
 ;----------------------------------------------------------------------------;
 ; INT 9 - Test keyboard during POST
-; Size: 27 bytes
 ;----------------------------------------------------------------------------;
 INT_09_POST PROC
+			ASSUME DS:_BDA_ABS
 	PUSH	AX
+				IF EKB_EXT_CHK EQ 1
+	PUSH	DS
+	XOR	AX, AX
+	MOV	DS, AX
+				ENDIF
 	POST_FLAG_CLR PKI				; clear POST test int flag
 	IN	AL, PPI_A				; read keyboard scan from PPI
 			IF EKB_EXT_RESET EQ 1
@@ -7070,7 +7190,7 @@ INT_09_POST PROC
 ;
 	CMP	AL, 0EAH				; is extended KB power-on byte?
 	JNE	EKB_EXT_CHK_DONE
-	MOV	EKB_FLAGS1, MASK KEEN		; set BDA ext KB flag
+	MOV	EKB_FLAGS1_ABS, MASK KEEN	; set BDA ext KB flag
 EKB_EXT_CHK_DONE:
 				ENDIF
 	AND	AL, NOT 0EAH XOR 0AAH		; transform EAh -> AAh
@@ -7084,6 +7204,9 @@ INT_09_POST_DONE:
 	OUT	PPI_B, AL				; write to PPI Control Port B
 	MOV	AL, EOI				; Send End of Interrupt
 	OUT	INT_P0, AL
+				IF EKB_EXT_CHK EQ 1
+	POP	DS
+				ENDIF
 	POP	AX
 	IRET
 INT_09_POST ENDP
@@ -7139,12 +7262,9 @@ KB_CTRL_SCAN_TBL LABEL BYTE
 	DB	94H, 0FH				; Ctrl Tab
 			ENDIF
 
-L_INT_KB_CTRL_ASC_TBL	EQU ($-INT_KB_CTRL_ASC_TBL)/2		; 12 total
+L_INT_KB_CTRL_ASC_TBL	EQU ($-INT_KB_CTRL_ASC_TBL)/2	; 12 total
 L_KB_CTRL_SCAN_TBL	EQU ($-KB_CTRL_SCAN_TBL)/2-1	; 6
 
-;
-; 1 BYTE HERE
-;
 BYTES_HERE	INT_09
 
 ;----------------------------------------------------------------------------;
@@ -7495,7 +7615,7 @@ KB_INT_CHECK_FULL:
 INT_KB_DONE:
 			IF KB_EXT EQ 1
 INT_KB_DONE_2:
-	AND	_EKB_FLAGS1, NOT (MASK KEE0)	; clear E0
+	AND	_EKB_FLAGS1, NOT (MASK KEE0)		; clear E0
 			ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -7558,8 +7678,10 @@ INT_KB_ALT_AND_CTRL:
 	CMP	AH, EKB_KP_PLUS				; numeric pad + key
 	;CMP	AH, EKB_KP_MINUS				; or numeric pad - key
 	JNE	INT_KB_ALT_MAYBE_CTRL
-	CALL	INT_KB_TOGGLE_TURBO			; beep and toggle speed
-	JMP	SHORT INT_KB_DONE				; exit and discard key
+
+	CLI
+	CALL	INT_KB_TOGGLE_TURBO			; EOI, beep and toggle speed
+	JMP	SHORT INT_KB_DONE_NO_EOI		; exit and discard key
 			ELSE
 	JMP	SHORT INT_KB_ALT_MAYBE_CTRL
 			ENDIF
@@ -7934,9 +8056,6 @@ L_KEY_SCAN_TBL EQU $-KEY_SCAN_TBL
 				ASSUME DS:NOTHING, ES:NOTHING
 INT_09 ENDP
 
-;
-; 12 BYTES HERE / 11 BYTES HERE 5150
-;
 BYTES_HERE	INT_13
 
 ;----------------------------------------------------------------------------;
@@ -8957,10 +9076,24 @@ INT_1E_PARAM PROC
 	RET
 INT_1E_PARAM ENDP
 
-;
-; 0 BYTES HERE
-;
 BYTES_HERE	INT_0E
+
+		ORG 0EF57H				; INT_0E CSM ORG
+
+			ELSE
+;----------------------------------------------------------------------------;
+; INT 13h floppy support is completely removed
+; Always return with CF and caller's flags
+;----------------------------------------------------------------------------;
+INT_13 PROC
+	PUSH	BP
+	MOV	BP, SP				; get stack pointer
+	OR	BYTE PTR [BP][6], MASK FCF	; set CF
+	POP	BP
+	MOV	AH, FDC_ST_BADCMD
+	IRET
+INT_13 ENDP
+			ENDIF				; /IF FDC_ENABLE EQ 1
 
 ;----------------------------------------------------------------------------;
 ; INT 0EH - Floppy Disk Interrupt IRQ6
@@ -8968,7 +9101,6 @@ BYTES_HERE	INT_0E
 ; This interrupt is issued upon floppy disk I/O completion and sets the
 ; floppy disk working interrupt flag at 40:3E, bit 7.
 ;----------------------------------------------------------------------------;
-		ORG 0EF57H
 INT_0E PROC
 	;STI						; (necessary?)
 	PUSH	AX
@@ -8985,6 +9117,7 @@ INT_0E PROC
 	IRET
 INT_0E ENDP
 
+			IF FDC_ENABLE EQ 1
 ;----------------------------------------------------------------------------;
 ; FDC_WAIT_INT: Wait for BDA Working Interrupt Flag from FDC
 ;----------------------------------------------------------------------------;
@@ -9068,33 +9201,12 @@ FDC_SEEK_TRACKS	DB	38, 2, 19, 0	; tracks (0 is end)
 
 FDC_RECAL_SEEK_TEST ENDP
 			ENDIF
-
-		ELSE
-;----------------------------------------------------------------------------;
-; INT 13h floppy support is completely removed
-; Always return with CF and caller's flags
-;----------------------------------------------------------------------------;
-INT_CF PROC
-	PUSH	BP
-	MOV	BP, SP				; get stack pointer
-	OR	BYTE PTR [BP][6], MASK FCF	; set CF
-	POP	BP
-	MOV	AH, FDC_ST_BADCMD
-	IRET
-INT_CF ENDP
-
-;----------------------------------------------------------------------------;
-; Use BIOS default ISR for unused interrupts
-;
-INT_0E	EQU	INT_IRQ			; mask IRQ 6 if triggered
-INT_13	EQU	INT_CF			; IRET with CF
-
 		ENDIF					; /IF FDC_ENABLE EQ 1
 
 			IF KB_EXT EQ 1
 			IF EKB_INT_SR EQ 1
 ;----------------------------------------------------------------------------;
-; Handle SysRq key
+; Handle SysRq key (relocated due to ROM space)
 ;----------------------------------------------------------------------------;
 ; The SysRq key calls INT 15h, AH=85h on both key down and key up. The value
 ; of AL is passed as 0 for key down and 1 for key down to INT 15h.
@@ -9133,9 +9245,6 @@ EKB_INT_SYSRQ ENDP
 INT_13_END:						; start offset for KB relocate
 INT_13_SZ	EQU	$-INT_13
 
-;
-; 20 BYTES HERE
-;
 BYTES_HERE	INT_1E
 
 ;----------------------------------------------------------------------------;
@@ -9326,30 +9435,36 @@ CRLF_SHOW_CURSOR PROC
 ;----------------------------------------------------------------------------;
 ; Input:
 ; 	DS = BDA
-; Clobbers CX
+; Clobbers AX, CX
 ;----------------------------------------------------------------------------;
 SHOW_CURSOR PROC
 			ASSUME DS:_BDA
-	MOV	CX, CURSOR_DEFAULT	; reset to original
+	MOV	AX, CURSOR_DEFAULT	; reset to original cursor
 	JMP	SHORT SET_CURSOR
 
 ;----------------------------------------------------------------------------;
 ; Hide cursor display
 ;----------------------------------------------------------------------------;
-; Clobbers CX
+; Clobbers AX, CX
 ;----------------------------------------------------------------------------;
 HIDE_CURSOR PROC
-	MOV	CX, DBW < 00100000b >	; hide cursor (CH bit 5 = 1)
+	MOV	AX, DBW < 00100000b >	; hide cursor (AH bit 5 = 1)
 
 ;----------------------------------------------------------------------------;
 ; Set Video Cursor type
 ;----------------------------------------------------------------------------;
 ; Input:
-;	CX = cursor type
+;	AX = cursor type
+; Clobbers CX
 ;----------------------------------------------------------------------------;
 SET_CURSOR PROC
-	PUSH	AX				; (not necessary)
-	MOV	AH, 1
+	PUSH	AX
+	XCHG	AX, CX			; CX = cursor type
+	MOV	AH, 1				; INT 10H set cursor type
+
+;----------------------------------------------------------------------------;
+; Call INT 10H, POP AX and RET (used by SPACE PROC to save bytes)
+;
 INT_10H_RET:
 	INT	10H
 	POP	AX
@@ -9360,9 +9475,6 @@ HIDE_CURSOR ENDP
 SHOW_CURSOR ENDP
 CRLF_SHOW_CURSOR ENDP
 
-;
-; 0 BYTES HERE
-;
 BYTES_HERE	INT_10_JMP
 
 ;----------------------------------------------------------------------------;
@@ -9467,9 +9579,6 @@ INT_10_IS_CGA80_DONE:
 	RET
 INT_10_IS_CGA80 ENDP
 
-;
-; 1 BYTE HERE
-;
 BYTES_HERE	INT_1D
 
 ;----------------------------------------------------------------------------;
@@ -9910,7 +10019,7 @@ INT_10_6 PROC
 	PUSHA					; preserve all registers
 			ELSE
 	PUSHX	AX, BX, SI, BP		; call-preserve these registers
-				IF HOBBIT_HACK EQ 1
+				IF INT_10_SCR_REG EQ 1
 	PUSHX	CX, DX
 				ENDIF
 			ENDIF
@@ -9966,12 +10075,7 @@ INT_10_SCR_ROW:
 ;
 	CALL	INT_10_IS_TXT		; NZ if CGA GFX, ZR if CGA/MDA Text
 	PUSH	DS				; save BDA data SEG
-				IF HOBBIT_HACK EQ 1
-	JZ	INT_10_SCR_TXT		; hack for jump out of range
-	JMP	INT_10_SCR_GFX
-				ELSE
 	JNZ	INT_10_SCR_GFX
-				ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Scroll in text mode
@@ -9996,8 +10100,13 @@ INT_10_SCR_TXT:
 	XCHG	DI, DX			; DI = new rect bottom, DX = row/col pos.
 	SUB	DX, CX			; DH = rect height (rows), DL = rect width (cols)
 	MOV	CX, VID_COLS		; CL = current video mode cols (80 or 40), CH = 0
+			IF INT_10_SCR_REG EQ 1 AND CPU_TYPE EQ CPU_8088
+	PUSH	ES				; source and destination is video/regen RAM
+	POP	DS				; (jump out of range if INT_10_SCR_REG)
+			ELSE
 	MOV	AX, ES			; source and destination is video/regen RAM
 	MOV	DS, AX
+			ENDIF
 	MOV	AX, BP			; AL = # of rows to scroll
 	SHL	CL, 1				; WORD-align bytes per full row (now 160 or 80)
 	MUL	CL				; AX = size in WORDs of full rows to scroll
@@ -10109,7 +10218,7 @@ INT_10_6_DONE:
 			IF CPU_TYPE	EQ CPU_V20
 	POPA					; preserve all registers
 			ELSE
-				IF HOBBIT_HACK EQ 1
+				IF INT_10_SCR_REG EQ 1
 	POPX	DX, CX
 				ENDIF
 	POPX	BP, SI, BX, AX
@@ -11223,7 +11332,7 @@ POST_SYS_VIDEO ENDP
 	POST_COL_1	POST_CPU, POST_CLR_VAL1	; display 'CPU' left column
 							;  SI now points to '8088'
 CPU_CHECK_TYPE_2:
-	TEST_GFLAG  V20				; ZF = 0 if V20, ZF = 1 if 8088
+	POST_FLAG_TEST PV20			; ZF = 0 if V20, ZF = 1 if 8088
 	JZ	CPU_CHECK_TYPE_2_DONE		; jump if 8088
 	MOV	SI, OFFSET POST_V20		; if not, is V20
 CPU_CHECK_TYPE_2_DONE:
@@ -11561,15 +11670,16 @@ NIB_HEX PROC
 
 ;--------------------------------------------------------------------------
 ; Write char in AL to console
+; Clobbers AH
 ;--------------------------------------------------------------------------
 OUT_CHAR PROC
-	PUSH	AX
+	;PUSH	AX				; (necessary?)
 	PUSH	BX
 	MOV	BH, 0				; video page = 0 (preserve flags)
 	MOV	AH, 0EH			; Write AL to screen tty mode
 	INT	10H				; send to console
 	POP	BX
-	POP	AX
+	;POP	AX
 	RET
 
 OUT_CHAR ENDP
@@ -11722,9 +11832,6 @@ CAS_CRC_SHIFT:
 CAS_CRC_ADD ENDP
 			ENDIF			; IF CASSETTE EQ 1
 
-;
-; 46 BYTES HERE / 28 BYTES HERE 5150 / 9 BYTES HERE KB_EXT
-;
 BYTES_HERE	INT_12
 
 ;----------------------------------------------------------------------------;
@@ -12460,7 +12567,6 @@ SHOW_DISK_PARAMS ENDP
 HELLO_RAND_TAGLINE PROC
 	PRINT_SZ  TOP_BANNER		; display main banner
 	MOV	AX, BP			; get random bits from BP
-	POST_FLAG_CLR  GRND		; clear random bits from BP
 	AND	AX, MASK GRND		; only random bits (WORD aligned)
 	XCHG	AX, SI			; SI = string offset table
 	MOV	SI, CS:TAGS[SI]		; SI = chosen tagline offset
@@ -13256,13 +13362,6 @@ EXT_INT_CS_CHK_ENT:
 	MOV	AH, 0A6H				; set for Alt, exit
 	JMP	SHORT EKB_INT_PUT_BUFFER_AL_F0_1
 
-			ASSUME DS:NOTHING, ES:NOTHING
-EKB_INT_09 ENDP
-
-;----------------------------------------------------------------------------;
-; END of INT 09h Extended Keyboard ISR
-;----------------------------------------------------------------------------;
-
 			IF EKB_INT_15 EQ 1
 ;----------------------------------------------------------------------------;
 ; INT 15h, 4Fh - Keyboard Intercept
@@ -13276,6 +13375,31 @@ EKB_INT_15_4F PROC
 	RET
 EKB_INT_15_4F ENDP
 			ENDIF
+
+			IF EKB_INT_SR EQ 1 AND ARCH_TYPE EQ ARCH_TD3300
+;----------------------------------------------------------------------------;
+; Handle SysRq key - The Sequel
+;----------------------------------------------------------------------------;
+EKB_INT_SYSRQ_2 PROC
+			ASSUME DS:_BDA
+	MOV	KB_FLAGS2, AL			; save KB flag
+	MOV	AL, EOI 				; End of Interrupt OCW
+	OUT	INT_P0, AL				; write EOI to port 0
+	MOV	AH, 85H				; System Request Key Pressed fn
+	XCHG	AL, DH				; restore AL
+	AND	AL, 1					; AL = 1 if break, 0 if make
+	INT	15H
+EKB_INT_SYSRQ_2_DONE:
+	RET
+EKB_INT_SYSRQ_2 ENDP
+			ENDIF				; /IF EKB_INT_SR EQ 1
+
+			ASSUME DS:NOTHING, ES:NOTHING
+EKB_INT_09 ENDP
+
+;----------------------------------------------------------------------------;
+; END of INT 09h Extended Keyboard ISR
+;----------------------------------------------------------------------------;
 
 ;----------------------------------------------------------------------------;
 ; Standard INT 09h - relocated code
@@ -13550,13 +13674,12 @@ EKB_INT_16 ENDP
 ;----------------------------------------------------------------------------;
 ; END of INT 16h - Extended Keyboard
 ;----------------------------------------------------------------------------;
-
 EKB_INT ENDP
 			ENDIF				; /IF KB_EXT EQ 1
 
-;
-; 79 BYTES HERE / 0 BYTES HERE 5150 / 5 BYTES EKB
-;
+POST_RSEP		DB	POST_R		; POST screen field right separator
+;			DB	0			; use 0 below as string term
+
 BYTES_HERE	GFX_CHARSET
 
 ;----------------------------------------------------------------------------;
@@ -13907,9 +14030,6 @@ INT_08_MOTOR_OFF:
 	OUT	DX, AL 				; write to controller
 	JMP	SHORT INT_08_INT_1C
 
-;
-; 0 BYTES HERE
-;
 BYTES_HERE	INT_08
 
 ;----------------------------------------------------------------------------;
@@ -14001,9 +14121,6 @@ INT_08_PROC ENDP
 ;
 NL_Z			DB	CR, LF, 0		; one NL, null term'd
 
-;
-; 0 BYTES HERE
-;
 BYTES_HERE	VECTOR_TABLE
 
 ;----------------------------------------------------------------------------;
@@ -14100,9 +14217,6 @@ POST_VIDEO		DB	'Video', 0
 				ENDIF
 POST_NONE		DB	'None', 0	; must be contiguous to POST_VIDEO
 
-;
-; 2 BYTES HERE
-;
 BYTES_HERE	INT_RET
 
 ;----------------------------------------------------------------------------;
@@ -14280,9 +14394,6 @@ FPU_TEST_DONE:
 	RET
 HAS_FPU ENDP
 
-;
-; 0 BYTES HERE
-;
 BYTES_HERE	VER
 
 ;----------------------------------------------------------------------------;
@@ -14300,9 +14411,6 @@ VER 	DB	'Ver: '
 	DB	' '				; space before date
 	DB	0
 
-;
-; 0 BYTES HERE
-;
 BYTES_HERE	POWER_ON
 
 BIOS		ENDS
