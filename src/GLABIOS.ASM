@@ -6247,7 +6247,7 @@ INT_14_1 PROC
 	OUT	DX, AL
 	JMP	SHORT INT_14_DONE
 INT_14_RW_ERR:
-	OR	AH, 10000000B			; set error bit
+	MOV	AH, 10000000B			; set error bit
 	JMP	SHORT INT_14_DONE
 INT_14_1 ENDP
 
@@ -6274,6 +6274,7 @@ INT_14_2 PROC
 	MOV	BX, DBW <MASK MDSR, MASK LDR>	; BH = modem (DSR), BL = line (data ready)
 	CALL	INT_14_POLL 			; poll both registers, AH = status
 	POP	DX 					; restore base port
+      JNZ   INT_14_RW_ERR                 ; Jump if port timeout
 	AND	AH, MASK LBI OR MASK LFE OR MASK LPE OR MASK LOE ; include only 
 							;  error bits in port status
 	IN	AL, DX				; read char from buffer
@@ -6319,6 +6320,7 @@ INT_14_POLL_LOOP:
 	LOOP	INT_14_POLL_LOOP		; poll port 65,535 * timeout times
 	DEC	SI 				;
 	JNZ	INT_14_POLL_LOOP		; Jump if timeout not expired
+      INC   CX                       ; Need to set ZF to indicate timeout
 INT_14_POLL_DONE:
 	POP	SI
 INT_14_POLL_RET:
@@ -6403,11 +6405,6 @@ POST_MDA		DB	'MDA', 0
 POST_MDA		DB	'Mono', 0
 		ENDIF
 			ENDIF
-
-;----------------------------------------------------------------------------;
-; POST Initial INT 10H Video Mode to BIOS video equipment type
-;
-VID_MODE_TBL	DB	1, 3, 7	; Color 40x25, Color 80x25, Mono 80x25
 
 ;
 ; 0 BYTES HERE
@@ -7506,6 +7503,11 @@ KEY_SCAN_TBL_HIGH	LABEL BYTE
 L_KEY_SCAN_TBL EQU $-KEY_SCAN_TBL
 
 INT_09 ENDP
+
+;----------------------------------------------------------------------------;
+; POST Initial INT 10H Video Mode to BIOS video equipment type
+;
+VID_MODE_TBL	DB	1, 3, 7	; Color 40x25, Color 80x25, Mono 80x25
 
 			IF CASSETTE EQ 1
 ;----------------------------------------------------------------------------;
