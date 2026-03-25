@@ -531,6 +531,9 @@ TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
 SW1_VID		=	10b			; SW1 5/6 ON/OFF Video Type CGA 80
 SW1_FLP		=	1			; SW1 7/8 Max # of floppy drives (0-3)
 							;  0-based: 0=1 drive, 1=2 drives, etc
+TEST_FD           =     0                 ; disable Floppy Drive tests
+TEST_SEEK         =     0                 ; 
+CGA_SNOW_REMOVE   =     0                 ; disable CGA snow removal
 	ENDIF
 
 	IF ARCH_TYPE EQ ARCH_EMU
@@ -6235,8 +6238,6 @@ INT_14_1 PROC
 	ADD	DX, COM1_MCR-COM1_DATA		; DX = 3FC/2FC - Modem Control Register
 	MOV	AL, MASK RTS OR MASK DTR	; activate DTR & RTS
 	OUT	DX, AL				; set DTR or RTS
-	INC	DX
-	INC	DX 					; DX = 3FE - Modem Status Register
 	MOV	BX, DBW <MASK THRE OR MASK LBI, MASK MDSR> ; BH = line (THRE)
 							;  BL = modem (DSR/CTS)
 	CALL	INT_14_POLL 			; poll both registers, AH = status
@@ -6247,7 +6248,7 @@ INT_14_1 PROC
 	OUT	DX, AL
 	JMP	SHORT INT_14_DONE
 INT_14_RW_ERR:
-	MOV	AH, 10000000B			; set error bit
+	OR	AH, 10000000B			; set error bit
 	JMP	SHORT INT_14_DONE
 INT_14_1 ENDP
 
@@ -6269,8 +6270,6 @@ INT_14_2 PROC
 	ADD	DX, COM1_MCR-COM1_DATA		; DX = 3FC/2FC - Modem Control Register
 	MOV	AL, MASK DTR			; activate DTR
 	OUT	DX, AL				; set DTR
-	INC	DX
-	INC	DX 					; DX = 3FE/2FE - Modem Status Register
 	MOV	BX, DBW <MASK MDSR, MASK LDR>	; BH = modem (DSR), BL = line (data ready)
 	CALL	INT_14_POLL 			; poll both registers, AH = status
 	POP	DX 					; restore base port
@@ -6286,7 +6285,7 @@ INT_14_2 ENDP
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	DI = port index (0 based byte)
-; 	DX = 3FE Modem Status Register
+; 	DX = 3FC Modem Status Register
 ;	BL = line status expected masked
 ;	BH = modem status expected masked
 ; Output:
@@ -6297,6 +6296,8 @@ INT_14_2 ENDP
 ; Clobbers: AX, CX
 ;----------------------------------------------------------------------------;
 INT_14_POLL PROC
+	INC	DX
+	INC	DX 				; DX = 3FE/2FE - Modem Status Register
 	CALL	INT_14_POLL_PORT 		; first poll modem status
 	JNZ	INT_14_POLL_RET  		; jump if ZF = 0, timeout or failure occurred
 	XCHG	BH, BL 			; BH = line status
@@ -6319,8 +6320,7 @@ INT_14_POLL_LOOP:
 	JZ	INT_14_POLL_DONE
 	LOOP	INT_14_POLL_LOOP		; poll port 65,535 * timeout times
 	DEC	SI 				;
-	JNZ	INT_14_POLL_LOOP		; Jump if timeout not expired
-      INC   CX                       ; Need to set ZF to indicate timeout
+	JNS	INT_14_POLL_LOOP		; Jump if timeout not expired
 INT_14_POLL_DONE:
 	POP	SI
 INT_14_POLL_RET:
@@ -6405,6 +6405,11 @@ POST_MDA		DB	'MDA', 0
 POST_MDA		DB	'Mono', 0
 		ENDIF
 			ENDIF
+
+;----------------------------------------------------------------------------;
+; POST Initial INT 10H Video Mode to BIOS video equipment type
+;
+VID_MODE_TBL	DB	1, 3, 7	; Color 40x25, Color 80x25, Mono 80x25
 
 ;
 ; 0 BYTES HERE
@@ -7503,11 +7508,6 @@ KEY_SCAN_TBL_HIGH	LABEL BYTE
 L_KEY_SCAN_TBL EQU $-KEY_SCAN_TBL
 
 INT_09 ENDP
-
-;----------------------------------------------------------------------------;
-; POST Initial INT 10H Video Mode to BIOS video equipment type
-;
-VID_MODE_TBL	DB	1, 3, 7	; Color 40x25, Color 80x25, Mono 80x25
 
 			IF CASSETTE EQ 1
 ;----------------------------------------------------------------------------;
