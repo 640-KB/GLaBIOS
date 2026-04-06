@@ -1540,7 +1540,7 @@ COM_MSR RECORD	MLSD:1,MRI:1,MDSR:1,MCTS:1,DDCD:1,DRI:1,DDSR:1,DCTS:1
 ; Port 3FD/2FD - Line Status Register - LSR (read only)
 ;----------------------------------------------------------------------------;
 ; 84218421
-; 7	    |			- LSX		unused
+; 7	    |			- COM_ERR_T	BIOS INT 14h timeout error flag
 ;  6      |			- TSRE	1 = transmitter shift register empty (TSRE)
 ;   5     |			- THRE	1 = transmitter holding register empty (THRE)
 ;    4    |			- LBI		1 = break interrupt  (BI)
@@ -1549,7 +1549,7 @@ COM_MSR RECORD	MLSD:1,MRI:1,MDSR:1,MCTS:1,DDCD:1,DRI:1,DDSR:1,DCTS:1
 ;       1 |			- LOE		1 = overrun error (OE)
 ;        0|			- LDR		1 = data ready
 ;----------------------------------------------------------------------------;
-COM_LSR RECORD	LSX:1,TSRE:1,THRE:1,LBI:1,LFE:1,LPE:1,LOE:1,LDR:1
+COM_LSR RECORD	COM_ERR_T:1,TSRE:1,THRE:1,LBI:1,LFE:1,LPE:1,LOE:1,LDR:1
 
 ;----------------------------------------------------------------------------;
 ; HALT_BEEP Pattern - Short / Long
@@ -6228,26 +6228,31 @@ INT_14_0 ENDP
 ; INT 14, 1 - Send/write character in AL
 ;----------------------------------------------------------------------------;
 ; Input:
+;	AL = character to send
 ; 	DX = base port address
-;	BL = port timeout
+; Output:
+;	AH = port status
+;	NZ = timeout or failure occurred
+;
+; Clobbers: BX
 ;----------------------------------------------------------------------------;
 INT_14_1 PROC
 	PUSH	DX 					; save base port
-	PUSH	AX
+	PUSH	AX					; preserve output char
 	ADD	DX, COM1_MCR-COM1_DATA		; DX = 3FC/2FC - Modem Control Register
 	MOV	AL, MASK RTS OR MASK DTR	; activate DTR & RTS
 	OUT	DX, AL				; set DTR or RTS
 	MOV	BX, DBW <MASK THRE OR MASK LBI, MASK MDSR> ; BH = line (THRE)
 							;  BL = modem (DSR/CTS)
 	CALL	INT_14_POLL 			; poll both registers, AH = status
-	POP	BX
-	MOV	AL, BL 				; AL = output char
+	POP	DX					; restore output char
+	MOV	AL, DL 				; AL = output char, preserve AH
 	POP	DX 					; restore base port
 	JNZ	INT_14_RW_ERR			; Jump if port timeout
 	OUT	DX, AL
 	JMP	SHORT INT_14_DONE
 INT_14_RW_ERR:
-	OR	AH, 10000000B			; set error bit
+	OR	AH, MASK COM_ERR_T		; set timeout error bit
 	JMP	SHORT INT_14_DONE
 INT_14_1 ENDP
 
@@ -6256,7 +6261,6 @@ INT_14_1 ENDP
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	DX = base port address
-;	BL = port timeout
 ; Output:
 ;	AH = port status
 ;	AL = character read
@@ -6272,7 +6276,7 @@ INT_14_2 PROC
 	MOV	BX, DBW <MASK MDSR, MASK LDR>	; BH = modem (DSR), BL = line (data ready)
 	CALL	INT_14_POLL 			; poll both registers, AH = status
 	POP	DX 					; restore base port
-      JNZ   INT_14_RW_ERR                 ; Jump if port timeout
+	JNZ	INT_14_RW_ERR			; Jump if port timeout
 	AND	AH, MASK LBI OR MASK LFE OR MASK LPE OR MASK LOE ; include only 
 							;  error bits in port status
 	IN	AL, DX				; read char from buffer
@@ -6284,7 +6288,7 @@ INT_14_2 ENDP
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	DI = port index (0 based byte)
-; 	DX = 3FC Modem Status Register
+; 	DX = 3FC Modem Control Register
 ;	BL = line status expected masked
 ;	BH = modem status expected masked
 ; Output:
@@ -6318,8 +6322,9 @@ INT_14_POLL_LOOP:
 	TEST	AL, BH 			; did it match expected result?
 	JZ	INT_14_POLL_DONE
 	LOOP	INT_14_POLL_LOOP		; poll port 65,535 * timeout times
-	DEC	SI 				;
-	JNS	INT_14_POLL_LOOP		; Jump if timeout not expired
+	DEC	SI
+	JNS	INT_14_POLL_LOOP		; loop if timeout not expired
+						; (extend timeout by 1 for faster CPUs)
 INT_14_POLL_DONE:
 	POP	SI
 INT_14_POLL_RET:
