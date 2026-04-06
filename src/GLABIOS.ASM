@@ -6267,8 +6267,8 @@ INT_14_1 ENDP
 INT_14_2 PROC
 	PUSH	DX 					; save base port
 	ADD	DX, COM1_MCR-COM1_DATA		; DX = 3FC/2FC - Modem Control Register
-	MOV	AL, MASK RTS OR MASK DTR	; activate DTR & RTS
-	OUT	DX, AL				; set DTR or RTS
+	MOV	AL, MASK DTR			; activate DTR
+	OUT	DX, AL				; set DTR
 	MOV	BX, DBW <MASK MDSR, MASK LDR>	; BH = modem (DSR), BL = line (data ready)
 	CALL	INT_14_POLL 			; poll both registers, AH = status
 	POP	DX 					; restore base port
