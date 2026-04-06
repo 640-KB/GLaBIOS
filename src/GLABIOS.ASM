@@ -206,6 +206,7 @@ WARM_ENABLE		=	1		; 1=enable WARM boot or 0=always COLD boot
 RANDOM_TAGLINE	=	1		; randomize pithy tagline
 UNITS_IEC		=	0		; 0=period-correct "KB" or 1=modern IEC "KiB"
 POST_VID_HGC	=	0		; show/detect MDA vs HGC (Herc) on POST
+POST_BEEP		=	1		; beep after POST and warm reboot
 
 ;----------------------------------------------------------------------------;
 ; Enable/Disable POST tests (not all tests can be enabled due to 8K ROM space)
@@ -254,6 +255,8 @@ FDC_ERR_SEC_CT	=	0		; On error, 0=always return 0 sectors
 KB_HLT_WAIT		=	1		; Halt CPU during KB wait
 KB_BUF_BDA		=	0		; 1=use BDA KB buffer ptrs (40:80-83)
 						;   0=static offsets (-3 bytes)
+KB_RESET		=	1		; Reset keyboard on boot (disabling may not
+						;  work w/all KBs)
 MBR_CHECK		=	0		; Verify magic number of DOS MBR at boot
 						;   note: DOS 1.0 does not use MBR, so
 						;   will not boot if this is enabled
@@ -581,6 +584,7 @@ POST_TEST_PIT_1	=	0			; disable to free code space
 		ENDIF
 		IF MARTY_FAST_BOOT EQ 1
 RAM_TEST_NONE	=	1			; disable ALL RAM test
+POST_BEEP		=	0			; disable beep
 POST_TEST_DMA_TC0	=	0			; may not complete in time
 		ENDIF
 	ENDIF
@@ -3869,9 +3873,6 @@ PIC_VECT_TMP_LOOP:
 			ENDIF			; IF POST_TEST_PIC_REG EQ 1
 			ENDIF			; IF POST_TEST_PIC_INT EQ 1
 
-	MOV	AL, NOT MASK IRQ0		; OCW1 - unmask timer
-	OUT	DX, AL			; write IMR to PIC
-
 PIC_INT_PASS:
 
 ;----------------------------------------------------------------------------;
@@ -3918,6 +3919,12 @@ BIOS_INT_VECTORS_LOOP:
 	MOVSW 				; copy vector offset to IVT
 	STOSW 				; write BIOS/CS segment
 	LOOP	BIOS_INT_VECTORS_LOOP	; loop and set CX = 0
+
+;----------------------------------------------------------------------------;
+; Unmask Timer IRQ 0
+;
+	MOV	AL, NOT MASK IRQ0		; OCW1 - unmask timer
+	OUT	DX, AL			; write IMR to PIC
 
 			IF BASIC_ROM EQ 1
 ;----------------------------------------------------------------------------;
@@ -4865,10 +4872,12 @@ POST_DETECT_PORTS ENDP
 ;----------------------------------------------------------------------------;
 POST_KB_RESET PROC
 	MOV	DX, PPI_B 				; DX = PPI port B (61H)
+			IF KB_RESET EQ 1
 	IN	AL, DX
 	AND	AL, NOT (MASK PBKB OR MASK PBKC) ; keyboard clock hold LOW and enable
 	OUT	DX, AL				; send to PPI port B
 	XCHG	AX, SI				; save modified PPI port B
+			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; [31] - Set up and clear keyboard buffer
@@ -4882,6 +4891,7 @@ POST_KB_RESET PROC
 	MOV	AL, KB_BUF_END_B			; (AH already 00)
 	STOSW						; DI = KB_BUF_ST + 4
 
+			IF KB_RESET EQ 1
 ;----------------------------------------------------------------------------;
 ; Hold clock low 20+ ms to signal keyboard to reset. Clear and re-enable.
 ;
@@ -4939,7 +4949,8 @@ KB_RESET_TEST:
 			ENDIF				; end Key Stuck test
 			ELSE
 	POST_FLAG_CLR  PKI			; clear any KB error
-			ENDIF
+			ENDIF				; /POST_TEST_KB
+			ENDIF				; /KB_RESET
 
 KB_HAPPY:
 ;----------------------------------------------------------------------------;
@@ -5244,7 +5255,9 @@ CLEAR_POST_SCREEN:
 	INT	10H
 			ENDIF
 
+			IF POST_BEEP EQ 1
 	CALL	BEEP 					; beep to signify POST test is done
+			ENDIF
 			IF POST_GLADOS EQ 1
 	PRINT_SZ  BOOT_BEGIN			; Starting DOS...
 			ELSE
@@ -7263,12 +7276,16 @@ INT_KB_CTRL_ALT_DEL:
 	MOV	WARM_FLAG, COLD_BOOT			; clear warm boot flag
 			ENDIF
 
-			IF CPU_TYPE	EQ CPU_V20
+			IF POST_BEEP EQ 1
+				IF CPU_TYPE	EQ CPU_V20
 	PUSH	OFFSET BOOT_WARM				; ret address is warm reboot
 	JMP	BEEP						; beep and return to reboot
-			ELSE
+				ELSE
 	CALL	BEEP						; BEEP on ctrl-alt-del
 	JMP	BOOT_WARM					; warm reboot
+				ENDIF
+			ELSE
+	JMP	BOOT_WARM					; warm reboot (no beep)
 			ENDIF
 
 			IF IS_TURBO
@@ -11973,7 +11990,6 @@ S_OPT_K	DB	' ', POST_K_UNIT, 0
 
 ROM_SCAN_POST ENDP
 		ENDIF
-
 
 		IF LIGHT_PEN EQ 1
 ;----------------------------------------------------------------------------;
