@@ -531,8 +531,6 @@ TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
 SW1_VID		=	10b			; SW1 5/6 ON/OFF Video Type CGA 80
 SW1_FLP		=	1			; SW1 7/8 Max # of floppy drives (0-3)
 							;  0-based: 0=1 drive, 1=2 drives, etc
-POST_TEST_SEEK    =     0                 ; disabe floppy drive seek test
-CGA_SNOW_REMOVE   =     0                 ; disable CGA snow removal
 	ENDIF
 
 	IF ARCH_TYPE EQ ARCH_EMU
