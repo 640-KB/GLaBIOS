@@ -6127,10 +6127,10 @@ INT_14 PROC
 	JZ	INT_14_DONE 		; is port index valid (detected)?
 	CMP	AH, CL			; check function number (CL = 3)
 	JA	INT_14_DONE			; > 3? Not valid
-	JZ 	INT_14_3	 		; = 3 then status
+	JE 	INT_14_3	 		; = 3 then status
 	CMP	AH, 1				; check remaining functions
 	JA	INT_14_2 			; = 2 then read
-	JZ	INT_14_1 			; = 1 then write
+	JE	INT_14_1 			; = 1 then write
 						; = 0 fall through to init
 
 ;----------------------------------------------------------------------------;
@@ -11969,6 +11969,7 @@ S_OPT_K	DB	' ', POST_K_UNIT, 0
 ROM_SCAN_POST ENDP
 		ENDIF
 
+
 		IF LIGHT_PEN EQ 1
 ;----------------------------------------------------------------------------;
 ; INT 10,4 - Read Light Pen Position
@@ -11982,7 +11983,7 @@ ROM_SCAN_POST ENDP
 ;	DH = row (0-24)
 ;	DL = column (0-79 or 0-79 mode dependent)
 ;
-; Size: 128 bytes
+; Size: 111 bytes
 ;
 ; Thx to @Raffzahn for "clean room" specs.
 ;----------------------------------------------------------------------------;
@@ -12006,15 +12007,16 @@ INT_10_4 PROC
 ; into light pen register when LPSTB pulses high.
 ;
 	SUB	DX, CGA_STAT-CGA_IDX	; DX = 3x4h index port
-	MOV	AL, 10H			; light pen index (MSB)
+	MOV	AX, DBW < 11H, 10H >	; light pen regs (MSB/LSB)
 	OUT	DX, AL			; select index
 	INC	DX				; DX = 3x5h data port
+	PUSH	DX				; save DX = 3x5h data port and I/O delay
 	IN	AL, DX			; read MSB
-	MOV	AH, AL			; save MSB
+	XCHG	AH, AL			; AH = MSB value, AL = LSB index
 	DEC	DX				; DX = 3x4h index port
-	MOV	AL, 11H			; light pen index (LSB)
+	MOV	BX, VID_SEG			; BX = start offset of video memory
 	OUT	DX, AL			; select index
-	INC	DX				; DX = 3x5h data port
+	POP	DX				; DX = 3x5h data port and I/O delay
 	IN	AL, DX			; read LSB
 
 ;----------------------------------------------------------------------------;
@@ -12025,12 +12027,11 @@ INT_10_4 PROC
 ; -5: 2,3 (CGA hi-res text)
 ; -4: 7 (MDA text)
 ;
-	MOV	BX, VID_SEG			; BX = start offset of video memory
-	SHR	BX, 1				; byte align index
+	SHR	BX, 1				; byte align for CRTC register index
 	ADD	BX, 3				; BX = minimum calibration factor
 	XCHG	AX, CX			; save AX
 	CALL	INT_10_IS_TXT		; ZF=1 if text, ZF=0 if gfx, CF=1 if MDA
-	LAHF					; save video type flags for later
+	PUSHF					; save video type flags for later
 	JNZ	INT_10_4_CAL_2		; skip if modes 4,5,6
 	JC	INT_10_4_CAL_1		; +1 if MDA mode 7
 	CMP	AL, 2				; AL < 2?
@@ -12043,40 +12044,68 @@ INT_10_4_CAL_2:
 	JAE	INT_10_4_CAL_DONE		; is result < 0?
 	XOR	CX, CX			; if so, use base offset 0000
 INT_10_4_CAL_DONE:
-	SAHF					; ZF=1 if text, ZF=0 if gfx
-	XCHG	AX, CX			; restore AX, CL = video mode
+
+;----------------------------------------------------------------------------;
+; If mode 6 (hi gfx), adjust to 8 pixels per cell (1 bit/pixel column) by
+; doubling the memory offset. This way the video columns per row (80) is used
+; as bytes/scanline which cancels out the 4 pixels/cell to 8 pixels/cell
+; conversion allowing the same calculation as all other modes.
+;
+	CMP	AL, 6				; is "high res" (640x200)
+	JNE	INT_10_4_NO_ADJ		; jump if not
+	SHL	CX, 1				; adjust to 8 pixels per cell
+INT_10_4_NO_ADJ:
+	XCHG	AX, CX			; AX = calibrated linear char index
+
+;----------------------------------------------------------------------------;
+; Using the "calibrated" memory offset (AX) returned by the 6845 CRTC,
+; calculate the text grid row and column and (approximate) x and y pixel
+; location for the light pen hit.
+;
+; cell col = A % C, C = 80 or 40 cols (text), 80 bytes/scanline (hi) or 40 (low)
+; cell row = A / C, A = memory offset index
+; x = Px * cell col, where Px = 8 (text or hi gfx) or 4 (low gfx)
+; y = Py * cell row, where Py = 8 (text) or 2 (gfx interlaced fields)
+;
+	DIV	BYTE PTR VID_COLS		; divide by video mode cols per row
+	XCHG	AH, AL			; AH = cell row, AL = cell col
+
+;----------------------------------------------------------------------------;
+; Calculate y (vertical) pixel component
+;
+; Text: CH = y = 8 * cell row (will * 4 later)
+; Gfx : CH = y = 2 * cell row
+;
+	MOV	CH, AH			; CH = cell row (text) or scanline (gfx)
+	SHL	CH, 1				; CH = row * 2
+
+;----------------------------------------------------------------------------;
+; Calculate x (horizontal) pixel component
+;
+; Text: BX = x = 8 * cell col, where Px = 8 horizontal pixels per cell
+; Gfx : BX = x = Px * cell col, where Px = 4 (Low) or 8 (Hi)
+;
+	XOR	BX, BX			; Horizontal pixels per cell
+	MOV	BL, AL			; BL = cell col
+	MOV	CL, 3				; shift counter for * 8
+	SHL	BX, CL			; BX = pixel col (DL) * 8
+	DEC	CX				; shift counter for * 4
+	POPF					; ZF=1 if text, ZF=0 if gfx
 	JNZ	INT_10_4_GFX		; jump if graphics mode
 
 ;----------------------------------------------------------------------------;
-; Calculate output for Text mode
+; Calculate y (vertical) pixel component for text mode
 ;
-; Input:
-;	AX = calibrated memory offset
-; Output:
-;	BX = pixel column (0-319 or 0-639)
-;	CH = raster line (0-199)
-;	DI = (value for DX) DH = row (0-24), DL = column (0-79)
-;----------------------------------------------------------------------------;
-; Formula:
-;	DX = calibrated memory offset (AX) DIV video columns (DH=row, DL=col)
-;	BX = col (DL) * 8
-;	CH = row (DH) * 8
-;----------------------------------------------------------------------------;
+; CH = cell row * 8 (already * 2)
+;
 INT_10_4_TXT:
-	MOV	CL, 3				; shift counter 3 (for * 8)
-	DIV	BYTE PTR VID_COLS		; divide value by char/line
-	XCHG	AH, AL			; AH = row, AL = col
-	MOV	DI, AX			; DH = row, DL = col
-	MOV	CH, AH			; CH = row
-	SHL	CH, CL			; CH = raster line (col * 8)
-	CBW					; AH = 0, AL = col
-	SHL	AX, CL			; AX = col * 8
-	XCHG	AX, BX			; BX = pixel column
+	SHL	CH, CL			; CH = cell row * 4
 
 ;----------------------------------------------------------------------------;
 ; DONE: Clear latch and return with AH = 1
 ;
 INT_10_4_DONE:
+	XCHG	DI, AX			; save DX for return DH = row, DL = col
 	MOV	AH, 1				; light pen triggered
 
 ;----------------------------------------------------------------------------;
@@ -12084,58 +12113,22 @@ INT_10_4_DONE:
 ;
 	ADD	DX, CGA_PEN_RST-CGA_DATA	; pen latch register
 INT_10_4_RESET:
-	OUT	DX, AL			; reset light pen latch
+	OUT	DX, AL			; reset light pen latch (any value)
 
 INT_10_4_EXIT:
 	MOV	DX, DI			; restore/output DX
 	RET
 
 ;----------------------------------------------------------------------------;
-; Calculate output for GFX mode
+; Calculate cell row component for graphics mode
 ;
-; Input:
-;	AX = calibrated memory offset
-;	CL = video mode (4, 5 or 6)
-; Output:
-;	BX = pixel column (0-319 or 0-639)
-;	CH = raster line (0-199)
-;	DI = (value for DX) DH = row (0-24), DL = column (0-79)
-;----------------------------------------------------------------------------;
-; Formula:
-; 	DX = calibrated memory offset (AX) DIV 40 (DH=row, DL=col)
-;	CH = row (DH) * 2
-;	DH = row (DH) / 4
-;	if ( high res ):
-; 		DL = col (DL) * 2
-;	BX = DL * 8
+; AH = text grid row = 2 * cell row / 8 (or cell row / 4)
 ;
-; Note: output registers used as variable names in comments below.
-;----------------------------------------------------------------------------;
 INT_10_4_GFX:
-	MOV	CH, 40			; divide value by 40
-	DIV	CH				; AL = row, AH = col
-	XCHG	AH, AL			; AH = row, AL = col
-	MOV	CH, AH			; CH = row (DH) * 2
-	SHL	CH, 1				; adjust for odd/even fields
-
-;----------------------------------------------------------------------------;
-; Multiply column according to graphics mode
-;
-	SHR	CL, 1				; is 640x200 mode 6?
-	JNP	INT_10_4_LOW		; jump if mode 4 or 5
-	SHL	AL, 1				; DL = col (DL) * 2
-INT_10_4_LOW:
-	MOV	CL, 3				; shift counter 3 for * 8
-	MOV	BX, AX			; BL = DL for pixel column
-	XOR	AH, AH			; zero extend to word
-	SHL	AX, CL			; BX = DL * 8
-	XCHG	AX, BX			; return as BX
-	DEC	CX				; shift counter 2 for / 4
-	SHR	AH, CL			; DH = row / 4
-	XCHG	AX, DI			; return as DX
+	SHR	AH, CL			; DH = row (DH) / 4
 	JMP	SHORT INT_10_4_DONE	; clear latch and return with AH=1
 INT_10_4 ENDP
-		ENDIF
+		ENDIF				; /LIGHT_PEN EQ 1
 
 ;
 ; 79 BYTES HERE / 0 BYTES HERE 5150
