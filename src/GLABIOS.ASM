@@ -280,6 +280,7 @@ OEM_FONT		=	0		; 1=use OEM style font, 0=clone style
 POST_CARD		=	0		; enable POST codes on port 80H
 MUTE_TANDY		=	0		; mute buzzing on Tandy 3 Voice
 MUSHROOM_HACK	=	0		; workaround delay if PIT is stopped
+INT_10_SCR_REG	=	1		; Preserve CX and DX on INT 10h scroll
 FE_CONF_LOCK	=	1		; lock FE2010 config register after init
 ROM_SCAN_ALIGN	=	1		; option ROM scan aligns to 2K boundaries
 OEM_KB_EXT		=	1		; allow EAh reset byte on ext. keyboard
@@ -9472,7 +9473,10 @@ INT_10_6 PROC
 			IF CPU_TYPE EQ CPU_V20
 	PUSHA					; preserve all registers
 			ELSE
-	PUSHX	AX, BX, CX, DX, SI, BP	; call-preserve these registers
+	PUSHX	AX, BX, SI, BP		; call-preserve these registers
+				IF INT_10_SCR_REG EQ 1
+	PUSHX	CX, DX
+				ENDIF
 			ENDIF
 	MOV	ES, VID_MEM_SEG		; ES = video/regen RAM segment (B800 or B000)
 
@@ -9553,8 +9557,13 @@ INT_10_SCR_TXT:
 	XCHG	DI, DX			; DI = new rect bottom, DX = row/col pos.
 	SUB	DX, CX			; DH = rect height (rows), DL = rect width (cols)
 	MOV	CX, VID_COLS		; CL = current video mode cols (80 or 40), CH = 0
+			IF INT_10_SCR_REG EQ 1 AND CPU_TYPE EQ CPU_8088
+	PUSH	ES				; source and destination is video/regen RAM
+	POP	DS				; (jump out of range if INT_10_SCR_REG)
+			ELSE
 	MOV	AX, ES			; source and destination is video/regen RAM
 	MOV	DS, AX
+			ENDIF
 	MOV	AX, BP			; AL = # of rows to scroll
 	SHL	CL, 1				; WORD-align bytes per full row (now 160 or 80)
 	MUL	CL				; AX = size in WORDs of full rows to scroll
@@ -9666,7 +9675,10 @@ INT_10_6_DONE:
 			IF CPU_TYPE EQ CPU_V20
 	POPA					; preserve all registers
 			ELSE
-	POPX	BP, SI, DX, CX, BX, AX
+				IF INT_10_SCR_REG EQ 1
+	POPX	DX, CX
+				ENDIF
+	POPX	BP, SI, BX, AX
 			ENDIF
 	RET
 
