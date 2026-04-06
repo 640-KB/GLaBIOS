@@ -572,11 +572,16 @@ CASSETTE		=	0			; use all features on 5150
 CGA_SNOW_REMOVE	=	0			; disable CGA snow removal
 RAM_TEST_LONG	=	0			; disable long RAM test
 OEM_FONT		=	1			; use OEM style font
+MARTY_FAST_BOOT	=	0			; faster boot
 		IF ARCH_TYPE EQ ARCH_TURBO
 TURBO_TYPE		=	TURBO_STD		; use high = turbo
 		ENDIF
 		IF MAX_RAM_AUTO EQ 1		; select max RAM from video switch
-POST_TEST_PIT_1	=	00			; disable to free code space
+POST_TEST_PIT_1	=	0			; disable to free code space
+		ENDIF
+		IF MARTY_FAST_BOOT EQ 1
+RAM_TEST_NONE	=	1			; disable ALL RAM test
+POST_TEST_DMA_TC0	=	0			; may not complete in time
 		ENDIF
 	ENDIF
 
