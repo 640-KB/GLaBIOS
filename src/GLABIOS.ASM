@@ -1676,7 +1676,7 @@ COM_MSR RECORD	MLSD:1,MRI:1,MDSR:1,MCTS:1,DDCD:1,DRI:1,DDSR:1,DCTS:1
 ; Port 3FD/2FD - Line Status Register - LSR (read only)
 ;----------------------------------------------------------------------------;
 ; 84218421
-; 7	    |			- LSX		unused
+; 7	    |			- COM_ERR_T	BIOS INT 14h timeout error flag
 ;  6      |			- TSRE	1 = transmitter shift register empty (TSRE)
 ;   5     |			- THRE	1 = transmitter holding register empty (THRE)
 ;    4    |			- LBI		1 = break interrupt  (BI)
@@ -1685,7 +1685,18 @@ COM_MSR RECORD	MLSD:1,MRI:1,MDSR:1,MCTS:1,DDCD:1,DRI:1,DDSR:1,DCTS:1
 ;       1 |			- LOE		1 = overrun error (OE)
 ;        0|			- LDR		1 = data ready
 ;----------------------------------------------------------------------------;
-COM_LSR RECORD	LSX:1,TSRE:1,THRE:1,LBI:1,LFE:1,LPE:1,LOE:1,LDR:1
+COM_LSR RECORD	COM_ERR_T:1,TSRE:1,THRE:1,LBI:1,LFE:1,LPE:1,LOE:1,LDR:1
+
+;----------------------------------------------------------------------------;
+; INT 14,0 AL port parameters
+;----------------------------------------------------------------------------;
+; 84218421
+; 765     |		- SPBR baud rate bits (see above)
+;    43   |		- SPPB parity bits (00 = none, 01 = odd, 10 = none, 11 = even)
+;      2  |		- SPSB stop bits flag (0 = 1 stop bit, 1 = 2 stop bits)
+;       10|		- SPWL word length bits (10 = 7 bits, 11 = 8 bits)
+;----------------------------------------------------------------------------;
+COM_PP RECORD	SPBR:3,SPPB:2,SPSB:1,SPWL:2
 
 ;----------------------------------------------------------------------------;
 ; HALT_BEEP Pattern - Short / Long
@@ -6528,6 +6539,7 @@ GET_DISK_PARAMS ENDP
 
 BYTES_HERE	INT_14
 
+
 ;----------------------------------------------------------------------------;
 ; INT 14 - BIOS COM Port Services
 ;----------------------------------------------------------------------------;
@@ -6537,14 +6549,15 @@ BYTES_HERE	INT_14
 ;	INT 14,3  Get Serial port status
 ;
 ; All functions have:
-;	  AH = function number (bounds not checked)
+;	  AH = function number (0-3)
 ;	  AL = character to send or receive
-;	  DX = zero based RS232 card number
+;	  DX = zero based RS232 card number (0-3)
 ;
 ; All registers call-preserved (except AX)
 ;----------------------------------------------------------------------------;
 ; Ref:
 ; https://stanislavs.org/helppc/int_14.html
+; http://bos.asmhackers.net/docs/serial/
 ;----------------------------------------------------------------------------;
 		ORG 0E739H
 INT_14 PROC
@@ -6564,25 +6577,32 @@ INT_14 PROC
 	JZ	INT_14_DONE 		; is port index valid (detected)?
 	CMP	AH, CL			; check function number (CL = 3)
 	JA	INT_14_DONE			; > 3? Not valid
-	JZ 	INT_14_3	 		; = 3 then status
+	JE 	INT_14_3	 		; = 3 then status
 	CMP	AH, 1				; check remaining functions
 	JA	INT_14_2 			; = 2 then read
-	JZ	INT_14_1 			; = 1 then write
+	JE	INT_14_1 			; = 1 then write
 						; = 0 fall through to init
 
 ;----------------------------------------------------------------------------;
 ; INT 14,0  Initialize serial port parameters
 ;----------------------------------------------------------------------------;
-; https://stanislavs.org/helppc/int_14-0.html
-; https://stanislavs.org/helppc/8250.html
-;----------------------------------------------------------------------------;
+; This function initializes the selected adapter card from the baud rate,
+; parity, stop bit and word length parameters specified in the AL register.
+; The function returns with the modem status register and the line status
+; register in AL and AH respectively. All other registers are preserved.
+;
+; The UART's clock input runs at 1.8432 MHz which is first divided by 16
+; generating a baud rate of 115200. This may be further divided by specifying
+; a divisor for lower baud rates. Example: 115200 / 30H = 2400 baud. These
+; pre-defined rates are specified by these indexes:
+;
 ; Baud rate divisor table:
 ;	0 (000) = 110 baud -> 417H	|	4 (100) = 1200 baud -> 60H
 ;	1 (001) = 150 baud -> 300H	|	5 (101) = 2400 baud -> 30H
 ;	2 (010) = 300 baud -> 180H	|	6 (110) = 4800 baud -> 18H
 ;	3 (011) = 600 baud -> 0C0H	|	7 (111) = 9600 baud -> 0CH
 ;
-; Formula:
+; Formula to derive divisor from index:
 ;	if (baud == 110) then
 ; 		divisor = 417H
 ;	else
@@ -6590,49 +6610,62 @@ INT_14 PROC
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	DX = base port address
-;	AL = port params, AH = 0
 ;	CX = 3 (from earlier)
+;	AH = 0
+;	AL = port params:
+;
+; |7|6|5|4|3|2|1|0|  AL
+;  | | | | | | `------ word length bits (10b = 7 bits, 11b = 8 bits)
+;  | | | | | `------- stop bits flag (0 = 1 stop bit, 1 = 2 stop bits)
+;  | | | `---------- parity bits (00 = none, 01 = odd, 10 = none, 11 = even)
+;  `--------------- baud rate divisor index (see above)
+;
+; https://stanislavs.org/helppc/int_14-0.html
+; https://stanislavs.org/helppc/8250.html
 ;----------------------------------------------------------------------------;
 
 INT_14_0 PROC
 ;----------------------------------------------------------------------------;
 ; Set baud rate
 ;
-	MOV	DI, DX 			; DX = 3F8/2F8 base port
-	ADD	DX, CX			; DX = 3FB/2FB Line Control Register (LCR), CX = 3
-	XCHG	AX, BX			; save port params to BL
+	MOV	DI, DX 			; DI = 3F8/2F8 base port
+	ADD	DX, CX			; DX = 3FB/2FB Line Control Register (LCR) (CX = 3)
+	XCHG	AX, BX			; BX = port params
 	MOV	AL, MASK DLAB 		; set baud rate divisor (DLAB); 0 = RBR, THR or IER
 	OUT	DX, AL 			; write to 3FB/2FB (LCR)
-	SHL	BX, CL 			; BH = baud rate, CL = 3
-	SHR	BL, CL 			; BL = flags
+	SHL	BX, CL 			; BH = baud rate (CL = 3)
+	SHR	BL, CL 			; BL = only word length, stop and parity bits flags
 	MOV	AX, 417H 			; divisor for 110 baud
 	MOV	CL, BH 			; CL = shift counter or 0 for 110 baud (CH = 0)
 	JCXZ	INT_14_0_SET_BAUD		; Jump if 110 baud
 	MOV	AX, 600H 			; AX = divisor base (see above formula)
 	SHR	AX, CL			; divisor = 600H >> CL
 INT_14_0_SET_BAUD:
-	XCHG	DX, DI 			; DX = 3F8/2F8, DI = 3FB/2FB (4)
-						; AL = Divisor LSB, AH = Divisor MSB (4)
+	XCHG	DX, DI 			; DX = 3F8/2F8, DI = 3FB/2FB
+						; AL = Divisor LSB, AH = Divisor MSB
 	OUT	DX, AX			; write LSB, then MSB to ports 3F8/3F9
 ;----------------------------------------------------------------------------;
 ; Set parity, stop and word bits
 ; 
 INT_14_0_SET_PSW:
-	XCHG	AX, BX 			; AL = parity, stop and word bits (4)
-	XCHG	DX, DI 			; DX = 3FB/2FB, DI = 3F8/2F8 (4)
+	XCHG	AX, BX 			; AL = parity, stop and word bits
+	XCHG	DX, DI 			; DX = 3FB/2FB, DI = 3F8/2F8
 	OUT	DX, AL			; set LCR parity, stop and word bits
-	XCHG	DX, DI 			; DX = 3F8/2F8, DI = 3FB/2FB (4)
+	XCHG	DX, DI 			; DX = 3F8/2F8, DI = 3FB/2FB
 ;----------------------------------------------------------------------------;
 ; Disable IER
 ;
-	XOR	AX, AX 			; AL = 0 (3)
-	INC	DX 				; DX = 3F9/2F9 (3)
+	XOR	AX, AX 			; AL = 0
+	INC	DX 				; DX = 3F9/2F9
 	OUT	DX, AL			; DX = 3F9 - Interrupt Enable Register (IER) disabled
-	DEC	DX 				; DX = 3F8 (3)
+	DEC	DX 				; DX = 3F8
 						; fall through to get status
 
 ;----------------------------------------------------------------------------;
 ; INT 14,3  Get Serial port status
+;----------------------------------------------------------------------------;
+; The Get Serial Port Status function returns the current modem status in
+; the AL register and the current line status in the AH register.
 ;----------------------------------------------------------------------------;
 ; Input:
 ; 	DX = base port address
@@ -6650,51 +6683,62 @@ INT_14_3 PROC
 	IN	AL, DX 			; get modem status 
 INT_14_3 ENDP
 
-INT_14_DONE PROC
+INT_14_DONE:
 	POPX	DS, DX, BX, DI		; restore all registers
 
 INT_14_EXIT:
 	POP	CX
 	IRET
-INT_14_DONE ENDP
 
 INT_14_0 ENDP
 
 ;----------------------------------------------------------------------------;
 ; INT 14, 1 - Send/write character in AL
 ;----------------------------------------------------------------------------;
+; The Send character function transmits the character supplied in AL over the
+; communications line specified in DX.
+; If successful, this function returns with the contents of the line status
+; register in AH, bit 7=0. If unsuccessful, AH bit 7=1.
+;----------------------------------------------------------------------------;
 ; Input:
+;	AL = character to send
 ; 	DX = base port address
-;	BL = port timeout
+; Output:
+;	AH = port status
+;	NZ = timeout or failure occurred
+;
+; Clobbers: BX
 ;----------------------------------------------------------------------------;
 INT_14_1 PROC
 	PUSH	DX 					; save base port
-	PUSH	AX
+	PUSH	AX					; preserve output char
 	ADD	DX, COM1_MCR-COM1_DATA		; DX = 3FC/2FC - Modem Control Register
 	MOV	AL, MASK RTS OR MASK DTR	; activate DTR & RTS
 	OUT	DX, AL				; set DTR or RTS
-	INC	DX
-	INC	DX 					; DX = 3FE - Modem Status Register
 	MOV	BX, DBW <MASK THRE OR MASK LBI, MASK MDSR> ; BH = line (THRE)
 							;  BL = modem (DSR/CTS)
 	CALL	INT_14_POLL 			; poll both registers, AH = status
-	POP	BX
-	MOV	AL, BL 				; AL = output char
+	POP	DX					; restore output char
+	MOV	AL, DL 				; AL = output char, preserve AH
 	POP	DX 					; restore base port
 	JNZ	INT_14_RW_ERR			; Jump if port timeout
 	OUT	DX, AL
 	JMP	SHORT INT_14_DONE
 INT_14_RW_ERR:
-	OR	AH, 10000000B			; set error bit
+	OR	AH, MASK COM_ERR_T		; set timeout error bit
 	JMP	SHORT INT_14_DONE
 INT_14_1 ENDP
 
 ;----------------------------------------------------------------------------;
 ; INT 14, 2 - Receive/read character in AL
 ;----------------------------------------------------------------------------;
+; The Receive character function receives one character from the serial port
+; specified in the DX register.
+; If successful, this function returns with the character received in the AL
+; register. The contents of the line status register is returned in AH.
+;----------------------------------------------------------------------------;
 ; Input:
 ;	DX = base port address
-;	BL = port timeout
 ; Output:
 ;	AH = port status
 ;	AL = character read
@@ -6707,11 +6751,10 @@ INT_14_2 PROC
 	ADD	DX, COM1_MCR-COM1_DATA		; DX = 3FC/2FC - Modem Control Register
 	MOV	AL, MASK DTR			; activate DTR
 	OUT	DX, AL				; set DTR
-	INC	DX
-	INC	DX 					; DX = 3FE/2FE - Modem Status Register
 	MOV	BX, DBW <MASK MDSR, MASK LDR>	; BH = modem (DSR), BL = line (data ready)
 	CALL	INT_14_POLL 			; poll both registers, AH = status
 	POP	DX 					; restore base port
+	JNZ	INT_14_RW_ERR			; Jump if port timeout
 	AND	AH, MASK LBI OR MASK LFE OR MASK LPE OR MASK LOE ; include only 
 							;  error bits in port status
 	IN	AL, DX				; read char from buffer
@@ -6723,7 +6766,7 @@ INT_14_2 ENDP
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	DI = port index (0 based byte)
-; 	DX = 3FE Modem Status Register
+; 	DX = 3FC Modem Control Register
 ;	BL = line status expected masked
 ;	BH = modem status expected masked
 ; Output:
@@ -6734,6 +6777,8 @@ INT_14_2 ENDP
 ; Clobbers: AX, CX
 ;----------------------------------------------------------------------------;
 INT_14_POLL PROC
+	INC	DX
+	INC	DX 				; DX = 3FE/2FE - Modem Status Register
 	CALL	INT_14_POLL_PORT 		; first poll modem status
 	JNZ	INT_14_POLL_RET  		; jump if ZF = 0, timeout or failure occurred
 	XCHG	BH, BL 			; BH = line status
@@ -6753,10 +6798,11 @@ INT_14_POLL_LOOP:
 	MOV	AH, AL 			; save to AH
 	XOR	AL, BH 			; mask result bits
 	TEST	AL, BH 			; did it match expected result?
-	JZ	INT_14_POLL_DONE
+	JZ	INT_14_POLL_DONE		; if so, return success
 	LOOP	INT_14_POLL_LOOP		; poll port 65,535 * timeout times
-	DEC	SI 				;
-	JNZ	INT_14_POLL_LOOP		; Jump if timeout not expired
+	DEC	SI
+	JNS	INT_14_POLL_LOOP		; loop if timeout not expired
+						; (extend timeout by 1 for faster CPUs)
 INT_14_POLL_DONE:
 	POP	SI
 INT_14_POLL_RET:
@@ -12681,7 +12727,6 @@ ROM_SCAN_POST ENDP
 ;	   = 1 light pen triggered
 ;	BX = pixel column (0-319 or 0-639, mode dependent)
 ;	CH = raster line (0-199) (CGA and EGA modes 4, 5 and 6)
-;	CX = raster line (EGA modes except 4, 5 and 6)
 ;	DH = row (0-24)
 ;	DL = column (0-79 or 0-79 mode dependent)
 ;
@@ -12807,7 +12852,7 @@ INT_10_4_TXT:
 ; DONE: Clear latch and return with AH = 1
 ;
 INT_10_4_DONE:
-	XCHG	DI, AX			; save DX for return DH = row, DL = col
+	XCHG	AX, DI 			; AX to DI for return as DH = row, DL = col
 	MOV	AH, 1				; light pen triggered
 
 ;----------------------------------------------------------------------------;
@@ -13676,10 +13721,13 @@ EKB_INT_16 ENDP
 EKB_INT ENDP
 			ENDIF				; /IF KB_EXT EQ 1
 
+BYTES_HERE	OPTIONS				; various options here
+
+		ORG 0FA6EH-2			; align to GFX_CHARSET for 0 term
+OPTIONS LABEL BYTE
+
 POST_RSEP		DB	POST_R		; POST screen field right separator
 ;			DB	0			; use 0 below as string term
-
-BYTES_HERE	GFX_CHARSET
 
 ;----------------------------------------------------------------------------;
 ; INT 1F - 8x8 Font bitmaps
