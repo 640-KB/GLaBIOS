@@ -5646,7 +5646,12 @@ FOUND_ROM:
 	CALL	ROM_SCAN_POST			; show ROM offset, size and errors
 			ENDIF
 	JNZ	NEXT_ROM				; if NZ, checksum failed, skip it
-	POP	BP					; discard previous boundary size
+
+;----------------------------------------------------------------------------;
+; Option ROM found and checksum is valid. Calculate ROM's size in paragraphs
+; and save to determine the start segment of next ROM. This should be re-aligned
+; to the next 2K boundary to accomodate ROMs with odd numbered sizes.
+;
 			IF ROM_SCAN_ALIGN EQ 1
 	ADD	AL, KRB < 2 > - 1			; align next ROM segment to
 	AND	AL, NOT KRB < 2 > - 1		;  2K boundary
@@ -5657,6 +5662,7 @@ FOUND_ROM:
 	MOV	CL, RB_P				; 8088: 512 byte blocks to paragraph
 	SHL	AX, CL
 			ENDIF
+	POP	BP					; discard previous boundary size
 	PUSH	AX					; replace next boundary with ROM size
 
 ;----------------------------------------------------------------------------;
@@ -12659,10 +12665,11 @@ HELLO_RAND_TAGLINE ENDP
 ;
 ; Clobbers: BX, DX, BP
 ;
-; Size: 99 bytes
+; Size: 101 bytes
 ;----------------------------------------------------------------------------;
 ROM_SCAN_POST PROC
 	XCHG	AX, BP					; preserve AX ROM size
+	PUSH	BX
 	PUSH	SI						; working register
 	PUSHF							; and flags
 	MOV	AX, DS					; AX = ROM segment
@@ -12707,6 +12714,7 @@ ROM_SCAN_POST_DONE:
 ROM_SCAN_POST_EXIT:
 	POPF							; restore checksum result flag
 	POP	SI
+	POP	BX
 	XCHG	AX, BP					; restore AX
 	RET
 
