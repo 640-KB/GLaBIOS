@@ -470,6 +470,7 @@ FE_CPU_CFG		=	FE_SPD_HI		; boot to 9.54 MHz, 2 RAM WS
 FE_3_SPD		=	1			; toggle three speeds
 INT_10_SCR_REG	=	0			; clobber CX and DX on INT 10h scroll
 EKB_INT_SR		=	0			; NuXT's KBC doesn't implement SysRq
+;POST_OPT_ROM_END	=	0F800H		; don't show bundled opt ROMs on POST
 	ENDIF
 
 	IF ARCH_SUB_TYPE EQ ARCH_WILDCARD
@@ -12654,6 +12655,7 @@ HELLO_RAND_TAGLINE ENDP
 ;	AX = BIOS size in 512 byte blocks
 ;	DI = Option ROM scan end segment
 ;	DL = ROM checksum value
+;	DS = ROM segment
 ;
 ; Clobbers: BX, DX, BP
 ;
@@ -12663,6 +12665,7 @@ ROM_SCAN_POST PROC
 	XCHG	AX, BP					; preserve AX ROM size
 	PUSH	SI						; working register
 	PUSHF							; and flags
+	MOV	AX, DS					; AX = ROM segment
 
 ;----------------------------------------------------------------------------;
 ; Ensure this is not scanning a display option ROM - could crash if video
@@ -12671,11 +12674,18 @@ ROM_SCAN_POST PROC
 	CMP	DI, 0C800H					; is video ROM scan?
 	JBE	ROM_SCAN_POST_EXIT			; exit if so
 
+			IFDEF POST_OPT_ROM_END
+;----------------------------------------------------------------------------;
+; Do not show option ROM loading for GLaBIOS Core Companion ROMs
+;
+	CMP	AX, POST_OPT_ROM_END			; is above?
+	JAE	ROM_SCAN_POST_EXIT			; exit if so
+			ENDIF
+
 ;----------------------------------------------------------------------------;
 ; Display ROM column
 ;
 	POST_COL_1  S_OPT_ROM, POST_CLR_VAL2	; start ROM column label
-	MOV	AX, DS					; AX = ROM segment
 	CALL	WORD_HEX					; display as hex
 	POST_COL_END					; end column 1
 
