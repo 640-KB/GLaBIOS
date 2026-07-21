@@ -189,9 +189,11 @@ CGA_SNOW_REMOVE	=	3		; 0: Snow, Normal Flashing, Fastest
 						; 3: No Snow, More Flashing, Quite Fast
 
 ;----------------------------------------------------------------------------;
-; Keyboard support
+; Extended Keyboard support
 ;
+	IFNDEF KB_EXT
 KB_EXT		=	1		; Enable Extended Keyboard support
+	ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Personality Traits
@@ -287,6 +289,7 @@ POST_CARD		=	0		; enable POST codes on port 80H
 MUTE_TANDY		=	0		; mute buzzing on Tandy 3 Voice
 MUSHROOM_HACK	=	0		; workaround delay if PIT is stopped
 INT_10_SCR_REG	=	1		; Preserve CX and DX on INT 10h scroll
+INT_10_SCR_COLCHK	=	1		; check col bounds on INT 10h scroll
 FE_CONF_LOCK	=	1		; lock FE2010 config register after init
 ROM_SCAN_ALIGN	=	1		; option ROM scan aligns to 2K boundaries
 FEATURE_BYTES	=	1		; include build options in build binary
@@ -10049,6 +10052,8 @@ INT_10_5 PROC
 
 INT_10_5 ENDP
 
+INT_10_EXP_SCROLL	EQU	1		; experimental scrolling code!
+
 ;----------------------------------------------------------------------------;
 ; INT 10,7 - Scroll active page down
 ;----------------------------------------------------------------------------;
@@ -10110,7 +10115,7 @@ INT_10_6 PROC
 ;	AH = saved flags - ZF if scroll up
 ;	AL = number of rows to scroll
 ;	BH = attribute to be used on blank line
-;	BL = scratch
+;	BL = (scratch)
 ;	CH = row of upper left corner of scroll window
 ;	CL = column of upper left corner of scroll window
 ;	DH = row of lower right corner of scroll window
@@ -10118,9 +10123,9 @@ INT_10_6 PROC
 ;
 	CMP	AH, 6				; is scroll up?
 	LAHF					; save ZF if scroll up
-	MOV	BP, AX			; save original AL / AH flags
+	XCHG	AX, BP			; save original AL / AH flags
 	MOV	DI, DX			; save original DX
-	JNZ	INT_10_CHECK_BOUNDS	; jump if scroll down
+	JNZ	INT_10_CALC_ROW		; jump if scroll down
 
 ;----------------------------------------------------------------------------;
 ; On scroll up, the new rectangle to scroll is above the old one so start the
@@ -10135,16 +10140,22 @@ INT_10_6 PROC
 	MOV	SI, CX			; if CX = 0, skip column calculation
 	JCXZ	INT_10_SCR_ROW		; and scroll full row
 
+INT_10_CALC_ROW:
+;----------------------------------------------------------------------------;
+; Calculate video memory offset for start of bottom row
+;
+	MOV	AL, BYTE PTR VID_COLS	; AL = video mode columns
+
+			IF INT_10_SCR_COLCHK EQ 1
 ;----------------------------------------------------------------------------;
 ; Make sure lower right column does not exceed screen width
 ;
-INT_10_CHECK_BOUNDS:
-	MOV	AL, BYTE PTR VID_COLS	; AL = video mode columns
 	CMP	DL, AL			; is rect right column > screen columns?
 	JB	INT_10_BOUNDS_OK
 	MOV	DL, AL			; number of screen columns (80 or 40)
 	DEC	DX				; fixup for 0-based column index (0-79, etc)
 INT_10_BOUNDS_OK:
+			ENDIF
 	MUL	DH				; AX = memory offset of col 0 of new bottom row
 	XCHG	AX, SI			; SI = memory offset
 	MOV	DH, 0				; DX = lower right column position
@@ -10155,6 +10166,7 @@ INT_10_SCR_ROW:
 ;
 	CALL	INT_10_IS_TXT		; NZ if CGA GFX, ZR if CGA/MDA Text
 	PUSH	DS				; save BDA data SEG
+	MOV	AX, BP			; AL = # rows to scroll, AH = scroll dir
 	JNZ	INT_10_SCR_GFX
 
 ;----------------------------------------------------------------------------;
@@ -10176,18 +10188,29 @@ INT_10_SCR_TXT:
 	ADD	DX, SI			; DX = byte offset of new bottom row and col
 	SHL	DX, 1				; WORD-align memory offset
 	ADD	DX, VID_SEG			; DX = memory offset bottom row/col in video page
-	MOV	SI, DX			; SI = memory offset of new rect bottom (midpoint)
 	XCHG	DI, DX			; DI = new rect bottom, DX = row/col pos.
 	SUB	DX, CX			; DH = rect height (rows), DL = rect width (cols)
-	MOV	CX, VID_COLS		; CL = current video mode cols (80 or 40), CH = 0
-			IF INT_10_SCR_REG EQ 1 AND CPU_TYPE EQ CPU_8088
-	PUSH	ES				; source and destination is video/regen RAM
-	POP	DS				; (jump out of range if INT_10_SCR_REG)
+			IF INT_10_EXP_SCROLL EQ 1
+	MOV	BL, BYTE PTR VID_COLS	; BL = current video mode cols (80 or 40)
+	MOV	SI, ES			; source and destination is video/regen RAM
+	MOV	DS, SI
+	MOV	SI, DI			; SI = memory offset of new rect bottom (midpoint)
+	SHL	BL, 1				; WORD-align bytes per full row (now 160 or 80)
+	MUL	BL				; AX = size in WORDs of full rows to scroll
+	XCHG	AX, BP			; AL = # rows, AH = func, BP = WORD size of rect. rows
+	INC	DX				; convert 0-based indexes to 1-based loop counters
+	INC	DH
+	XCHG	AL, BL			; AL = WORDs of memory per full row
+	SUB	AL, DL			; AL = WORD offset btwn end of rect. col and start col
+	SUB	AL, DL			;  on next row (subtract twice to WORD align)
+	SAHF					; set ZF if scroll up
+	CBW					; sign extend AX to WORD
+	XCHG	AX, BX			; BX = WORD offset between start and end of next row
 			ELSE
-	MOV	AX, ES			; source and destination is video/regen RAM
-	MOV	DS, AX
-			ENDIF
-	MOV	AX, BP			; AL = # of rows to scroll
+	MOV	CX, VID_COLS		; CL = current video mode cols (80 or 40), CH = 0
+	MOV	SI, ES			; source and destination is video/regen RAM
+	MOV	DS, SI
+	MOV	SI, DI			; SI = memory offset of new rect bottom (midpoint)
 	SHL	CL, 1				; WORD-align bytes per full row (now 160 or 80)
 	MUL	CL				; AX = size in WORDs of full rows to scroll
 	XCHG	AX, BP			; AL = # rows, AH = func, BP = WORD size of rect. rows
@@ -10201,6 +10224,7 @@ INT_10_SCR_TXT:
 	SUB	BX, CX			; BX = WORD offset btwn end of rect. col and start col
 	SUB	BX, CX			;  on next row (subtract twice to WORD align)
 	POPF					; set ZF if scroll up
+			ENDIF
 	JZ	INT_10_CGA_CHECK		; jump if scroll up
 
 ;----------------------------------------------------------------------------;
@@ -10248,6 +10272,9 @@ INT_10_CGA_WAIT:
 				ENDIF
 
 INT_10_6_CHECK_CLS:
+			IF INT_10_EXP_SCROLL EQ 1
+	XOR	CH, CH			; CH = 0 for REP loops below
+			ENDIF
 	TEST	AL, AL			; is number of lines to scroll 0?
 	JZ	INT_10_6_TXT_CLR		; if so, skip move and only clear
 
@@ -10310,9 +10337,10 @@ INT_10_6_DONE:
 ;----------------------------------------------------------------------------;
 ; Input:
 ;	SI = memory offset of col 0 of new bottom row
+;	AH = flags (ZF if scroll up, NZ if scroll down)
+;	AL = lines to scroll
 ;	BH = attribute to be used on blank line
 ;	BL = (scratch)
-;	BP (high) = flags (ZF if scroll up, NZ if scroll down)
 ;	CH = row/Y of upper left corner of scroll window
 ;	CL = column/X of upper left corner of scroll window
 ;	DX = lower right column/X position
@@ -10328,7 +10356,6 @@ INT_10_SCR_GFX PROC
 	INC	DX				; DX = original row/col
 	INC	DH				; use 0-based indexes for 1-based counters
 	SUB	DX, CX			; DH = rect height, DL = rect width
-	XCHG	AX, BP			; restore original AL / AH = func flag
 	MOV	BL, AL			; BL = lines to scroll
 	MOV	BP, 80			; 1 scanline = 80 bytes
 	MOV	CX, 2				; CL = 2, CH = 0 (needed later for counters)
