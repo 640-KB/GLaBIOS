@@ -10182,16 +10182,16 @@ INT_10_SCR_TXT:
 	MOV	SI, ES			; source and destination is video/regen RAM
 	MOV	DS, SI
 	MOV	SI, DI			; SI = memory offset of new rect bottom (midpoint)
-	SHL	BL, 1				; WORD-align bytes per full row (now 160 or 80)
-	MUL	BL				; AX = size in WORDs of full rows to scroll
+	MUL	BL				; AX = size in BYTEs of full rows to scroll
+	SHL	AX, 1				; WORD align row size
 	XCHG	AX, BP			; AL = # rows, AH = func, BP = WORD size of rect. rows
 	INC	DX				; convert 0-based indexes to 1-based loop counters
 	INC	DH
 	XCHG	AL, BL			; AL = WORDs of memory per full row
 	SUB	AL, DL			; AL = WORD offset btwn end of rect. col and start col
-	SUB	AL, DL			;  on next row (subtract twice to WORD align)
 	SAHF					; set ZF if scroll up
 	CBW					; sign extend AX to WORD
+	SHL	AX, 1				; WORD align memory offset
 	XCHG	AX, BX			; BX = WORD offset between start and end of next row
 			ELSE
 	MOV	CX, VID_COLS		; CL = current video mode cols (80 or 40), CH = 0
