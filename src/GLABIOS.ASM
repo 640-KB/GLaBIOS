@@ -210,6 +210,7 @@ WARM_ENABLE		=	1		; 1=enable WARM boot or 0=always COLD boot
 RANDOM_TAGLINE	=	1		; randomize pithy tagline
 UNITS_IEC		=	0		; 0=period-correct "KB" or 1=modern IEC "KiB"
 POST_VID_HGC	=	0		; show/detect MDA vs HGC (Herc) on POST
+POST_BEEP		=	1		; beep after POST and warm reboot
 
 ;----------------------------------------------------------------------------;
 ; Enable/Disable POST tests (not all tests can be enabled due to 8K ROM space)
@@ -5544,7 +5545,9 @@ CLEAR_POST_SCREEN:
 	INT	10H
 			ENDIF
 
+			IF POST_BEEP EQ 1
 	CALL	BEEP 					; beep to signify POST test is done
+			ENDIF
 	CALL	CRLF
 
 ;----------------------------------------------------------------------------;
@@ -7915,8 +7918,18 @@ INT_KB_CTRL_ALT_DEL:
 			IF KB_EXT EQ 1
 	AND	_EKB_FLAGS1, MASK KEEN			; clear all except ext KB flag
 			ENDIF
+
+			IF POST_BEEP EQ 1
+				IF CPU_TYPE	EQ CPU_V20
+	PUSH	OFFSET BOOT_WARM				; ret address is warm reboot
+	JMP	BEEP						; beep and return to reboot
+				ELSE
 	CALL	BEEP						; BEEP on ctrl-alt-del
 	JMP	BOOT_WARM					; warm reboot
+				ENDIF
+			ELSE
+	JMP	BOOT_WARM					; warm reboot (no beep)
+			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; 5. Is a flag key?
