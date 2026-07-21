@@ -366,6 +366,7 @@ TURBO_TYPE		=	TURBO_NONE
 DETECT_EXP		=	1			; enable Expansion Unit
 OEM_FONT		=	1			; use OEM style font
 POST_TEST_DMA_TC0	=	0			; OEM 5150 BIOS does not do this test
+KB_EXT		=	0			; disable Extended Keyboard by default
 	ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -12038,8 +12039,12 @@ INT_15_DONE_NO_DX:			; return without restoring DX
 ; Turn off motor and return success (only read operation returns non-success)
 ;
 CAS_MOTOR_OFF_DONE:
-	CALL	CAS_TIMER_ON_MOTOR_OFF		
-	JMP	SHORT INT_15_DONE_OK	; return with success
+			IF CPU_TYPE EQ CPU_V20
+	PUSH	OFFSET INT_15_DONE_OK	; push return with success, fall through
+			ELSE
+	MOV	DX, OFFSET INT_15_DONE_OK	; push return with success and
+	PUSH	DX				; fall through to CAS_TIMER_ON_MOTOR_OFF
+			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Re-enable timer and turn off motor
