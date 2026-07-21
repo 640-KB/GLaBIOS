@@ -7143,29 +7143,16 @@ POST_V20		DB	'V20'
 POST_LPT		DB	'LPT',  0
 POST_COM		DB	'COM',  0
 POST_FDD		DB	'FDD',  0
-					IF POST_HD_COUNT EQ 1
-POST_HDD		DB	'HDD',  0
-					ENDIF
 POST_LSEP		DB	POST_L, 0
 
 ;----------------------------------------------------------------------------;
 ; NMI strings - these must be contiguous
 ; NOTE: some of these strings have to be shortened due to lack of space
 ;
+NMI_ERR_IO		DB	'IO'				; NMI I/O Error string
 		IF KB_EXT EQ 1
-				IF ARCH_TYPE EQ ARCH_EHB
-NMI_ERR_IO		DB	'I'				; NMI I/O Error string
-NMI_ERR_PAR		DB	'P'				; NMI Parity Error (ab.)
-				ELSE
-					IF ARCH_SUB_TYPE EQ ARCH_M88
-NMI_ERR_IO		DB	'I'				; NMI I/O Error string
-					ELSE
-NMI_ERR_IO		DB	'IO'				; NMI I/O Error string
-					ENDIF
 NMI_ERR_PAR		DB	'PAR'				; NMI Parity Error (abbrev.)
-				ENDIF
 		ELSE
-NMI_ERR_IO		DB	'IO'				; NMI I/O Error string
 NMI_ERR_PAR		DB	' PARITY'			; NMI Parity Error
 		ENDIF
 			DB	0
@@ -11938,6 +11925,10 @@ CAS_CRC_SHIFT:
 	RET
 CAS_CRC_ADD ENDP
 			ENDIF			; IF CASSETTE EQ 1
+
+					IF POST_HD_COUNT EQ 1
+POST_HDD		DB	'HDD',  0
+					ENDIF
 
 BYTES_HERE	INT_12
 
