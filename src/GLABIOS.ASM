@@ -371,6 +371,7 @@ DETECT_EXP		=	1			; enable Expansion Unit
 OEM_FONT		=	1			; use OEM style font
 POST_TEST_DMA_TC0	=	0			; OEM 5150 BIOS does not do this test
 KB_EXT		=	0			; disable Extended Keyboard by default
+INT_10_SCR_COLCHK	=	0			; consistent with 5150 behavior
 	ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -382,6 +383,7 @@ FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
 DETECT_EXP		=	1			; enable Expansion Unit
 OEM_FONT		=	1			; use OEM style font
 KB_BUF_BDA		=	1			; use BDA KB start/end pointers
+INT_10_SCR_COLCHK	=	0			; consistent with 5160 behavior
 	IF ARCH_SUB_TYPE EQ ARCH_5160v2 OR KB_EXT EQ 1
 ARCH_ID		=	0FBH			; 0xFB=XT v2/v3
 FDC_IPL_SW		=	0			; Don't use IPL SW1 for drive count
@@ -10191,7 +10193,6 @@ INT_10_SCR_TXT:
 	SUB	AL, DL			; AL = WORD offset btwn end of rect. col and start col
 	SAHF					; set ZF if scroll up
 	CBW					; sign extend AX to WORD
-	SHL	AX, 1				; WORD align memory offset
 	XCHG	AX, BX			; BX = WORD offset between start and end of next row
 			ELSE
 	MOV	CX, VID_COLS		; CL = current video mode cols (80 or 40), CH = 0
@@ -10228,6 +10229,7 @@ INT_10_SCR_TXT:
 	NEG	BP				; BP = - WORD size of region of rows to scroll
 
 INT_10_CGA_CHECK:
+
 				IF CGA_SNOW_REMOVE GT 0
 ;----------------------------------------------------------------------------;
 ; If CGA, blank video during memory writes to avoid "CGA snow" effect
@@ -10240,7 +10242,7 @@ INT_10_CGA_CHECK:
 ; Blank CRTC video during memory writes to avoid "CGA snow" effect.
 ;
 INT_10_CGA_DISABLE:
-	PUSH	AX
+	XCHG	AX, CX			; save AX
 	PUSH	DX
 	MOV	DX, CGA_STAT		; CGA Status (3DAH)
 INT_10_CGA_WAIT:
@@ -10255,11 +10257,12 @@ INT_10_CGA_WAIT:
 	MOV	AL, 00100101B		; Mode 80x25 text, BW, disable video, blink
 	OUT	DX, AL			; disable video
 	POP	DX
-	POP	AX
+	XCHG	AX, CX			; restore AX
 				ENDIF
 
 INT_10_6_CHECK_CLS:
 			IF INT_10_EXP_SCROLL EQ 1
+	SHL	BX, 1				; WORD align memory offset
 	XOR	CH, CH			; CH = 0 for REP loops below
 			ENDIF
 	TEST	AL, AL			; is number of lines to scroll 0?
