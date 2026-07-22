@@ -208,7 +208,6 @@ POST_OPT_ROM	=	1		; show option ROM address and loading info
 POST_VIDEO_TYPE	=	1		; show the video adapter type on POST
 POST_WARM_COLD	=	1		; show boot WARM or COLD
 POST_BANNER		=	1		; show banner and version
-WARM_ENABLE		=	1		; 1=enable WARM boot or 0=always COLD boot
 RANDOM_TAGLINE	=	1		; randomize pithy tagline
 UNITS_IEC		=	0		; 0=period-correct "KB" or 1=modern IEC "KiB"
 POST_VID_HGC	=	0		; show/detect MDA vs HGC (Herc) on POST
@@ -245,8 +244,7 @@ RAM_TEST_NONE	=	0		; Don't test or clear RAM at all
 RAM_DIGITS		=	3		; Number of zero-padded digits for RAM (3 or 4)
 BASIC_ROM		=	1		; BASIC ROM support at 0F600h
 OPT_ROM_END		=	0FE00H	; Option ROM scan ending address (must be xx00)
-FDC_ENABLE		=	1		; Enable INT 13h floppy support (using GLaDISK)
-FDC_IPL_SW		=	0		; Use IPL switch to enable/disable floppy
+FDC_ENABLE		=	1		; Enable INT 13h floppy support (0 if using GLaDISK)
 FDC_HLT_WAIT	=	1		; Halt CPU during FD access
 						;   Some chipsets (TD3300A known affected)
 						;   hang during floppy access if this is
@@ -297,6 +295,10 @@ EKB_EXT_RESET	=	1		; handle EAh extended keyboard reset byte
 EKB_EXT_CHK		=	0		; set/save BDA extended keyboard flags on boot
 EKB_INT_15		=	1		; enable keyboard intercept (if KB_EXT)
 EKB_INT_SR		=	1		; enable SysRq handling (if KB_EXT)
+BOOT_TEMP		=	0		; 0=normal COLD/WARM by ctrl-alt-del
+						; 1=always WARM boot, 2=always COLD boot
+IPL_SW_FDC		=	0		; Use IPL switch to enable/disable floppy
+IPL_SW_WARM		=	1		; IPL switch OFF (normal) always WARM boot
 
 ;----------------------------------------------------------------------------;
 ; Hardware hacks!
@@ -365,7 +367,7 @@ ARCH_SUB_TYPE	EQU	0			; this must always be defined
 ARCH_ID		=	0FFH			; 0xFF=5150
 CASSETTE		=	1			; enable INT 13h cassette
 MBR_CHECK		=	0			; disable MBR check for DOS 1.x
-FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
+IPL_SW_FDC		=	1			; Use IPL SW1 for drive count
 TURBO_TYPE		=	TURBO_NONE
 DETECT_EXP		=	1			; enable Expansion Unit
 OEM_FONT		=	1			; use OEM style font
@@ -379,14 +381,14 @@ INT_10_SCR_COLCHK	=	0			; consistent with 5150 behavior
 ;
 	IF ARCH_TYPE EQ ARCH_5160
 TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
-FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
+IPL_SW_FDC		=	1			; Use IPL SW1 for drive count
 DETECT_EXP		=	1			; enable Expansion Unit
 OEM_FONT		=	1			; use OEM style font
 KB_BUF_BDA		=	1			; use BDA KB start/end pointers
 INT_10_SCR_COLCHK	=	0			; consistent with 5160 behavior
 	IF ARCH_SUB_TYPE EQ ARCH_5160v2 OR KB_EXT EQ 1
 ARCH_ID		=	0FBH			; 0xFB=XT v2/v3
-FDC_IPL_SW		=	0			; Don't use IPL SW1 for drive count
+IPL_SW_FDC		=	0			; Don't use IPL SW1 for drive count
 KB_EXT		=	1			; Extended Keyboard support
 	ENDIF
 	ENDIF
@@ -397,7 +399,7 @@ KB_EXT		=	1			; Extended Keyboard support
 ;
 BASIC_ROM		= 	0			; disable to free code space
 FDC_HLT_WAIT	=	0			; halting CPU on FDC and KB wait
-FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
+IPL_SW_FDC		=	1			; Use IPL SW1 for drive count
 KB_HLT_WAIT		=	0			; seems to cause issues on TD3300A
 TURBO_TYPE		=	TURBO_REV		; always use Reverse
 TURBO_SWITCH	=	1			; boot under hardware Turbo control
@@ -427,7 +429,7 @@ N3_UMA		=	1			; enable UMA bank (E000) on boot
 ;----------------------------------------------------------------------------;
 ; Configuration for UM82C088
 ;
-FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
+IPL_SW_FDC		=	1			; Use IPL SW1 for drive count
 BASIC_ROM		= 	0			; disable to free code space
 		IF BASIC_ROM EQ 1			; if BASIC enabled, disable
 POST_TEST_PIC_REG	=	0			;  unnecessary tests to free code
@@ -734,10 +736,6 @@ POST_VID_HGC	=	0			; remove HGC detection display
 ;
 	IF POST_HD_CHECK EQ 0
 POST_HD_PARMS	=	0			; disable HD PARM display also
-	ENDIF
-
-	IF WARM_ENABLE EQ 0
-POST_WARM_COLD	=	0			; disable show boot WARM or COLD
 	ENDIF
 
 	IF FDC_ENABLE EQ 0
@@ -1136,6 +1134,11 @@ EKB_SC_E0		EQU	0E0H			; Extended scan code E0
 EKB_SC_E1		EQU	0E1H			; Extended scan code E1
 EKB_FLAG_SE		EQU	0E0H			; Flag for ext. Slash or Enter key (AH)
 
+; WARM/COLD Boot type flags
+BOOT_TEMP_AUTO	EQU	BOOT_TEMP EQ 0	; Normal behavior
+BOOT_TEMP_COLD	EQU	BOOT_TEMP NE 1	; if not WARM only
+BOOT_TEMP_WARM	EQU	BOOT_TEMP NE 2	; if not COLD only
+
 ;============================================================================;
 ;
 ; 			   * * *   S T R U C T S   * * *
@@ -1285,7 +1288,7 @@ EFLAGS86	RECORD FSF:1,FZF:1,FR1:1,FAF:1,FR2:1,FPF:1,FR3:1=1,FCF:1
 ;         |      0	- FPU : FPU installed
 ;         |       1	- IPL : Floppy drive(s) installed (always 1 on 5160)
 ;----------------------------------------------------------------------------;
-				IF FDC_ENABLE EQ 1 OR FDC_IPL_SW EQ 0
+				IF FDC_ENABLE EQ 1 OR IPL_SW_FDC EQ 0
 EQFLAGS RECORD	LPT:2,X1:1,GAM:1,COM:3,DMA:1,FLP:2,VID:2,MBRAM:2=11b,FPU:1,IPL:1=1
 				ELSE
 EQFLAGS RECORD	LPT:2,X1:1,GAM:1,COM:3,DMA:1,FLP:2,VID:2,MBRAM:2=11b,FPU:1,IPL:1=0
@@ -3011,11 +3014,13 @@ USE_V20	EQU	1				; use CLR1 (ZF unaffected)
 			ENDIF
 		ENDM
 
+
+
 ;----------------------------------------------------------------------------;
 ; Jump if Warm Boot
 ;----------------------------------------------------------------------------;
 JWB		MACRO	LBL
-			IF WARM_ENABLE EQ 1
+			IF BOOT_TEMP_WARM		; if not COLD only
 	TEST	BP, BP				; is warm boot?
 	JS	LBL					; jump if so
 			ENDIF
@@ -3025,8 +3030,10 @@ JWB		MACRO	LBL
 ; Jump if not Warm Boot
 ;----------------------------------------------------------------------------;
 JNWB		MACRO	LBL
+			IF BOOT_TEMP_COLD		; if not WARM only
 	TEST	BP, BP				; is warm boot?
 	JNS	LBL					; jump if not
+			ENDIF
 		ENDM
 
 ;----------------------------------------------------------------------------;
@@ -3422,7 +3429,7 @@ BYTES_HERE	BOOT_WARM
 			ENDIF
 BOOT_WARM	PROC NEAR
 			ASSUME DS:_BDA
-			IF WARM_ENABLE EQ 1
+			IF BOOT_TEMP_WARM			; if not COLD boot only
 	MOV	WARM_FLAG, WARM_BOOT			; set warm boot flag
 			ELSE
 	MOV	WARM_FLAG, COLD_BOOT			; clear warm boot flag
@@ -3558,11 +3565,15 @@ INIT_VIDEO:
 	POST_CODE				; optionally display 01 on POST card
 
 ;----------------------------------------------------------------------------;
-; Set up POST flags in BP
+; Set up POST flags in BP for WARM or COLD boot
 ;----------------------------------------------------------------------------;
-	CMP	WARM_FLAG_ABS, WARM_BOOT
+			IF BOOT_TEMP_AUTO		; if normal WARM/COLD
+	CMP	WARM_FLAG_ABS, WARM_BOOT	; check BDA flag
 	JNZ	POST_FLAG_DONE
-	MOV	BP, MASK WARM		; clear and set POST warm boot flag
+			ENDIF
+			IF BOOT_TEMP_WARM		; if not COLD only
+	MOV	BP, MASK WARM			; clear and set POST warm boot flag
+			ENDIF
 POST_FLAG_DONE:
 
 			IF RANDOM_TAGLINE EQ 1
@@ -4403,7 +4414,19 @@ SETTINGS_DONE:
 			ELSE
 	AND	AL, NOT MASK FPU			; otherwise clear FPU flag
 			ENDIF
+
 SETTINGS_SAVE:
+			IF IPL_SW_WARM EQ 1 AND BOOT_TEMP_AUTO
+;----------------------------------------------------------------------------;
+; If IPL switch is OFF (normal), system will always WARM boot
+; If IPL switch is ON (test mode), system will COLD boot unless Ctrl-Alt-Del
+;
+	TEST	AL, MASK IPL			; 1=normal (always WARM), 0=test mode
+	JZ	IPL_SW_WARM_DONE			; if test mode, do nothing
+	POST_FLAG_SET WARM			; else, set WARM BOOT for rest of POST
+IPL_SW_WARM_DONE:
+			ENDIF
+
 	MOV	BYTE PTR EQUIP_FLAGS, AL	; set to low byte of EQUIP_FLAGS
 
 			IF ARCH_TYPE EQ ARCH_FE2010
@@ -5366,7 +5389,7 @@ DMA_STATUS_OK:
 FDC_POST PROC
 	CBW						; AH = reset (0)
 	CWD						; DL = start at drive 0
-			IF FDC_IPL_SW EQ 1
+			IF IPL_SW_FDC EQ 1
 	TEST_EFLAG	IPL				; IPL switch (floppy installed) set?
 	JZ	FDC_POST_TESTS_COL		; if not, skip floppy init/test
 			ENDIF
