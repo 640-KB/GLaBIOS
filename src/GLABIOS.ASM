@@ -5214,7 +5214,7 @@ POST_KB_RESET PROC
 	OR	AL, MASK PBKB OR MASK PBKC	; keyboard enable clock and clear
 	OUT	DX, AL				; send to PPI port B
 	;PUSH	CX					; give a little more time
-	IO_DELAY_SHORT
+	IO_DELAY_SHORT				; give a little more time
 	AND	AL, NOT MASK PBKB			; keyboard enable (clear low)
 	OUT	DX, AL				; send to PPI port B
 
@@ -5499,8 +5499,8 @@ ENABLE_NMI:
 	CALL	KB_BUF_CLEAR			; clear any stray keys in buffer
 	IN	AL, PPI_B 				; AL = PB0 flags
 	AND	AL, NOT MASK PBKB			; keyboard clear LOW (enable KB)
-	;IO_DELAY_SHORT
-	NOP
+	IO_DELAY_SHORT
+	;NOP
 	OUT	PPI_B, AL				; send to PPI port B
 
 ;----------------------------------------------------------------------------;
@@ -6456,7 +6456,7 @@ L_EKB_CTRL_SCAN_TBL	EQU $-EKB_CTRL_SCAN_TBL
 
 			IF EKB_INT_SR EQ 1 AND ARCH_TYPE NE ARCH_TD3300
 ;----------------------------------------------------------------------------;
-; Handle SysRq key - The Sequel
+; Handle SysRq key [2/2] (all except ARCH_TD3300)
 ;----------------------------------------------------------------------------;
 EKB_INT_SYSRQ_2 PROC
 			ASSUME DS:_BDA
@@ -9272,13 +9272,13 @@ FDC_TEST_DRIVE_EXIT:
 FDC_SEEK_TRACKS	DB	38, 2, 19, 0	; tracks (0 is end)
 
 FDC_RECAL_SEEK_TEST ENDP
-			ENDIF
+			ENDIF				; /POST_TEST_SEEK EQ 1
 		ENDIF					; /IF FDC_ENABLE EQ 1
 
 			IF KB_EXT EQ 1
 			IF EKB_INT_SR EQ 1
 ;----------------------------------------------------------------------------;
-; Handle SysRq key (relocated due to ROM space)
+; Handle SysRq key [1/2] (partially relocated due to contiguous ROM space)
 ;----------------------------------------------------------------------------;
 ; The SysRq key calls INT 15h, AH=85h on both key down and key up. The value
 ; of AL is passed as 0 for key down and 1 for key down to INT 15h.
@@ -10742,9 +10742,13 @@ INT_10_9A_MODE_GFX PROC
 
 INT_10_9A_GFX_2:
 	CBW					; AH = 0
+			IF CPU_TYPE	EQ CPU_V20
+	SHL	AX, 3				; AX = char * 8
+			ELSE
+		REPT 3
 	SHL	AX, 1				; AX = char * 8
-	SHL	AX, 1
-	SHL	AX, 1
+		ENDM
+			ENDIF
 	ADD	SI, AX			; SI = offset in char table
 	CMP	BH, 6
 	JE	INT_10_9A_GFX_HIGH	; jump if high res
@@ -13485,7 +13489,7 @@ EKB_INT_15_4F ENDP
 
 			IF EKB_INT_SR EQ 1 AND ARCH_TYPE EQ ARCH_TD3300
 ;----------------------------------------------------------------------------;
-; Handle SysRq key - The Sequel
+; Handle SysRq key [2/2] (only ARCH_TD3300, relocated for code space)
 ;----------------------------------------------------------------------------;
 EKB_INT_SYSRQ_2 PROC
 			ASSUME DS:_BDA
