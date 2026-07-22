@@ -5546,7 +5546,7 @@ CLEAR_POST_SCREEN:
 	MOV	CX, DBW <23, 0>			; upper left row 23, column 0
 			ENDIF
 
-	MOV	DX, DBW <25, 80>			; lower right row 25, column 80
+	MOV	DX, DBW <24, 79>			; lower right row 24, column 79
 	INT	10H
 
 			IF POST_CLS EQ 1		; set cursor to top of screen
