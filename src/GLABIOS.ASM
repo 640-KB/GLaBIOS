@@ -6440,6 +6440,7 @@ KB_PUT_BUFFER_DONE:
 	RET
 KB_PUT_BUFFER ENDP
 
+			IF KB_EXT_RELOCATE EQ 0
 ;----------------------------------------------------------------------------;
 ; Extended Ctrl + scan code replacements.
 ; Table is aligned so that even offsets are E0 and odd are F0 filter codes.
@@ -6453,6 +6454,7 @@ EKB_CTRL_SCAN_TBL	LABEL BYTE			; E0
 	DB	4EH					;   [1] Keypad +
 	DB	53H					; x [0] Del
 L_EKB_CTRL_SCAN_TBL	EQU $-EKB_CTRL_SCAN_TBL
+			ENDIF
 
 			IF EKB_INT_SR EQ 1 AND (ARCH_TYPE NE ARCH_TD3300 AND KB_EXT_RELOCATE EQ 0)
 ;----------------------------------------------------------------------------;
@@ -13504,6 +13506,22 @@ EKB_INT_SYSRQ_2_DONE:
 	RET
 EKB_INT_SYSRQ_2 ENDP
 			ENDIF				; /IF EKB_INT_SR EQ 1
+
+			IF KB_EXT_RELOCATE NE 0
+;----------------------------------------------------------------------------;
+; Extended Ctrl + scan code replacements.
+; Table is aligned so that even offsets are E0 and odd are F0 filter codes.
+;
+EKB_CTRL_SCAN_TBL	LABEL BYTE			; E0
+	DB	48H					; x [6] Up Arrow / 8
+	DB	4AH					;   [5] Keypad -
+	DB	50H					; x [4] Down Arrow / 2
+	DB	4CH					;   [3] Keypad 5
+	DB	52H					; x [2] Ins / 0
+	DB	4EH					;   [1] Keypad +
+	DB	53H					; x [0] Del
+L_EKB_CTRL_SCAN_TBL	EQU $-EKB_CTRL_SCAN_TBL
+			ENDIF
 
 			ASSUME DS:NOTHING, ES:NOTHING
 EKB_INT_09 ENDP
