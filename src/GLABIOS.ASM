@@ -6454,9 +6454,9 @@ EKB_CTRL_SCAN_TBL	LABEL BYTE			; E0
 	DB	53H					; x [0] Del
 L_EKB_CTRL_SCAN_TBL	EQU $-EKB_CTRL_SCAN_TBL
 
-			IF EKB_INT_SR EQ 1 AND ARCH_TYPE NE ARCH_TD3300
+			IF EKB_INT_SR EQ 1 AND (ARCH_TYPE NE ARCH_TD3300 AND KB_EXT_RELOCATE EQ 0)
 ;----------------------------------------------------------------------------;
-; Handle SysRq key [2/2] (all except ARCH_TD3300)
+; Handle SysRq key [2/2] (here if not ARCH_TD3300 and not KB_EXT_RELOCATE)
 ;----------------------------------------------------------------------------;
 EKB_INT_SYSRQ_2 PROC
 			ASSUME DS:_BDA
@@ -13487,9 +13487,9 @@ EKB_INT_15_4F PROC
 EKB_INT_15_4F ENDP
 			ENDIF
 
-			IF EKB_INT_SR EQ 1 AND ARCH_TYPE EQ ARCH_TD3300
+			IF EKB_INT_SR EQ 1 AND (ARCH_TYPE EQ ARCH_TD3300 OR KB_EXT_RELOCATE NE 0)
 ;----------------------------------------------------------------------------;
-; Handle SysRq key [2/2] (only ARCH_TD3300, relocated for code space)
+; Handle SysRq key [2/2] (here if ARCH_TD3300 or KB_EXT_RELOCATE)
 ;----------------------------------------------------------------------------;
 EKB_INT_SYSRQ_2 PROC
 			ASSUME DS:_BDA
