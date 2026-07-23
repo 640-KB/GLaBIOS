@@ -6,7 +6,7 @@ Copyright &copy; 2022-2026, [640KB](mailto:640kb@glabios.org) and contributors.
 
 ## Version 0.8 (beta):
 
-#### Featuring complete Extended Keyboard support and more!
+#### Featuring complete [Extended Keyboard support](https://github.com/640-KB/GLaBIOS/wiki/GLaBIOS-Extended-Keyboard-Support) and more!
 [Download ROMs](https://github.com/640-KB/GLaBIOS/releases/tag/v0.8b0)
 
 ## Version 0.4 (stable):
