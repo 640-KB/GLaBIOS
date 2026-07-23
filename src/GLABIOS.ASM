@@ -464,6 +464,8 @@ POST_TEST_PIT_1	=	0			; FE2010A chipset cannot read timer 1
 SW1_FLP		=	01b			; SW1 5/6 Max # of floppy drives (0-1)
 FE_3_SPD		=	1			; toggle through all three speeds
 TURBO_TYPE		=	TURBO_REV		; FE2010A always use reverse
+;FE_BASE_MEM	=	256			; Force base MB RAM 512K or 256K
+							;  ONLY use if ISA RAM installed
 	IF BASIC_ROM EQ 1				; if BASIC enabled, PIC tests are
 POST_TEST_PIC_REG =	0			;  disabled to fit available code space
 POST_TEST_PIC_INT =	0			; Since PIC is integrated on FE2010A
@@ -2076,10 +2078,26 @@ LASER_CR	RECORD	LASER_SPD:1=1,LASER_X1:7
 ;       0 |             - FFPU      0=No FPU/NMI, 1=enable FPU/NMI
 ;        1|             - FPAR      0=Parity check enabled, 1=Parity disabled
 ;----------------------------------------------------------------------------;
+
+;----------------------------------------------------------------------------;
+; FE2010 set RAM enabled by MMU on motherboard. Otherwise MMU prevents use
+; of ISA RAM cards. Define FE_BASE_MEM to force and bypass auto-detect.
+;
+FE_M1			=	0				; default: 00b = 640K
+FE_M2			=	0
+					IFDEF FE_BASE_MEM
+				IF FE_BASE_MEM EQ 512
+FE_M1			=	1				; 10b = 512K
+				ENDIF
+				IF FE_BASE_MEM EQ 256
+FE_M2			=	1				; 01b = 256K
+				ENDIF
+					ENDIF
+
 				IF RAM_PARITY EQ 1
-FE_CR RECORD      FSPD:3=FE_CPU_CFG,FME1:1,FLCK:1,FME2:1,FFPU:1,FPAR:1
+FE_CR RECORD      FSPD:3=FE_CPU_CFG,FME1:1=FE_M1,FLCK:1,FME2:1=FE_M2,FFPU:1,FPAR:1
 				ELSE
-FE_CR RECORD      FSPD:3=FE_CPU_CFG,FME1:1,FLCK:1,FME2:1,FFPU:1,FPAR:1=1
+FE_CR RECORD      FSPD:3=FE_CPU_CFG,FME1:1=FE_M1,FLCK:1,FME2:1=FE_M2,FFPU:1,FPAR:1=1
 				ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -4909,6 +4927,7 @@ FE2010_SETUP_MEM PROC
 			IF FE_CONF_LOCK EQ 1
 	OR	AL, MASK FLCK			; lock config until reboot
 			ENDIF
+			IFNDEF FE_BASE_MEM	; only set base RAM if not forced
 	CMP	DH, HIGH KBP < 512 >		; is memory size 8000H? (512K)
 	JA	FE2010_SETUP_OUT			; is > 512K (already set for 640K)
 	MOV	AH, MASK FME1			; set for 512K
@@ -4916,6 +4935,7 @@ FE2010_SETUP_MEM PROC
 	MOV	AH, MASK FME2			; else set for 256K
 FE2010_SETUP_SET:
 	OR	AL, AH				; set bits if not 640K
+			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Write AL to memory and control register
