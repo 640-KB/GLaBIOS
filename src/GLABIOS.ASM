@@ -299,6 +299,7 @@ BOOT_TEMP		=	0		; 0=normal COLD/WARM by ctrl-alt-del
 						; 1=always WARM boot, 2=always COLD boot
 IPL_SW_FDC		=	0		; Use IPL switch to enable/disable floppy
 IPL_SW_WARM		=	1		; IPL switch OFF (normal) always WARM boot
+FD_BOOT_RETRY	=	3		; number of times to retry floppy boot
 
 ;----------------------------------------------------------------------------;
 ; Hardware hacks!
@@ -5606,7 +5607,7 @@ CLEAR_POST_SCREEN:
 
 	CWD						; start IPL from drive 00h (A:)
 BOOT_DEVICE:
-	MOV	CX, 3 				; retry three times
+	MOV	CX, FD_BOOT_RETRY			; number of boot attempts
 BOOT_RETRY:
 	PUSH	CX					; save retry counter
 			IF INT_19_BOOT_HD EQ 1
