@@ -2255,7 +2255,11 @@ V40_WCY1	RECORD	IOW:2, UMW:2, MMW:2, LMW:2
 ; Format: data byte, low byte of register port (high byte is FF)
 ;----------------------------------------------------------------------------;
 V40_INIT_OPTIONAL =	0	; init optional unused registers
-V40_INIT	STRUC
+
+;----------------------------------------------------------------------------;
+; V40 INIT for EHM Homebrew PC
+;
+V40_INIT_EHB	STRUC
 	DB	00000000B,	0FEH 	; FFFE: OPCN - INT Select
 	DB	00000110B,	0FDH 	; FFFD: OPSEL - Enable TCU/ICU, Disable DMAU/SCU
 					;	Only Enable The Interrupt Controller And Timer
@@ -2295,7 +2299,7 @@ V40_INIT	STRUC
 			ENDIF
 					; 	Bits 4-2 set sources for timers (1 for TCLK)
 					;	1=Pin, 0=internal, Bits 1-0 Prescale Div For Internal
-V40_INIT	ENDS
+V40_INIT_EHB	ENDS
 				ENDIF
 
 ;============================================================================;
@@ -4959,7 +4963,9 @@ UM82_MEM_SIZE ENDP
 ;----------------------------------------------------------------------------;
 ; V40 PC register initialization table
 ;
-V40_REG	V40_INIT <>			; data byte, low byte of register port
+			IF ARCH_TYPE EQ ARCH_EHB
+V40_REG	V40_INIT_EHB <>		; data byte, low byte of register port
+			ENDIF
 			ENDIF
 
 COLD_INIT PROC
