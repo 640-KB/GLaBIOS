@@ -806,9 +806,9 @@ WHITE			EQU	15
 ; Theme My POST Test!
 ; Pick theme from below or roll your own!
 ;----------------------------------------------------------------------------;
-		IF POST_THEME EQ 3
+		IF POST_THEME EQ 2
 
-; Theme #3 - "Boring"
+; Theme #2 - "Boring"
 POST_CLR_TXT	EQU	GRAY			; primary color for text
 POST_CLR_VAL1	EQU	GRAY			; value text color
 POST_CLR_VAL2	EQU	GRAY			; value text alternate color
@@ -816,15 +816,25 @@ POST_CLR_COLD	EQU	BLUE			; COLD color
 POST_CLR_WARM	EQU	RED			; WARM color
 POST_CLR_GB		EQU	GRAY			; BIOS name in bootup screen
 		ELSE
-		IF POST_THEME EQ 2
+		IF POST_THEME EQ 3
 
-; Theme #2 - "Kinda l33t?"
+; Theme #3 - "Kinda l33t?"
 POST_CLR_TXT	EQU	DARKGRAY
 POST_CLR_VAL1	EQU	BLUE
 POST_CLR_VAL2	EQU	GREEN
 POST_CLR_COLD	EQU	BLUE
 POST_CLR_WARM	EQU	RED
 POST_CLR_GB		EQU	WHITE
+		ELSE
+		IF POST_THEME EQ 4
+
+; Theme #4 - "Adrian"
+POST_CLR_TXT	EQU	RED			; primary color for text
+POST_CLR_VAL1	EQU	WHITE			; element text color
+POST_CLR_VAL2	EQU	WHITE			; element text alternate color
+POST_CLR_COLD	EQU	BLUE			; COLD color
+POST_CLR_WARM	EQU	DARKRED		; WARM color
+POST_CLR_GB		EQU	GRAY			; BIOS name in bootup screen
 		ELSE
 
 ; Theme #1 - "Old skool BBS" (default)
@@ -834,6 +844,7 @@ POST_CLR_VAL2	EQU	YELLOW
 POST_CLR_COLD	EQU	BLUE
 POST_CLR_WARM	EQU	DARKRED
 POST_CLR_GB		EQU	GRAY
+		ENDIF
 		ENDIF
 		ENDIF
 
