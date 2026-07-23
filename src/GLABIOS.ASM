@@ -211,7 +211,8 @@ POST_BANNER		=	1		; show banner and version
 RANDOM_TAGLINE	=	1		; randomize pithy tagline
 UNITS_IEC		=	0		; 0=period-correct "KB" or 1=modern IEC "KiB"
 POST_VID_HGC	=	0		; show/detect MDA vs HGC (Herc) on POST
-POST_BEEP		=	1		; beep after POST and warm reboot
+POST_BEEP		=	1		; beep after POST
+REBOOT_BEEP		=	1		; beep after WARM reboot
 
 ;----------------------------------------------------------------------------;
 ; Enable/Disable POST tests (not all tests can be enabled due to 8K ROM space)
@@ -626,7 +627,8 @@ POST_TEST_PIT_1	=	00			; disable to free code space
 		ENDIF
 		IF MARTY_FAST_BOOT EQ 1
 RAM_TEST_NONE	=	1			; disable ALL RAM test
-POST_BEEP		=	0			; disable beep
+POST_BEEP		=	0			; disable POST beep
+REBOOT_BEEP		=	POST_BEEP		; disable reboot beep
 POST_TEST_DMA_TC0	=	0			; may not complete in time
 		ENDIF
 	ENDIF
@@ -7954,7 +7956,7 @@ INT_KB_CTRL_ALT_DEL:
 	AND	_EKB_FLAGS1, MASK KEEN			; clear all except ext KB flag
 			ENDIF
 
-			IF POST_BEEP EQ 1
+			IF REBOOT_BEEP EQ 1
 				IF CPU_TYPE	EQ CPU_V20
 	PUSH	OFFSET BOOT_WARM				; ret address is warm reboot
 	JMP	BEEP						; beep and return to reboot
