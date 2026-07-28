@@ -111,10 +111,10 @@ TURBO_REV		EQU	2			; reversed PPI (0=turbo, 1=normal)
 ;
 VER_NAME		EQU	'GLaBIOS'
 	IFNDEF VER_NUM
-VER_NUM		EQU	'0.8b5'		; (max 5 chars)
+VER_NUM		EQU	'0.8b6'		; (max 5 chars)
 	ENDIF
 	IFNDEF VER_DATE
-VER_DATE		EQU	'07/20/26'		; must be MM/DD/YY per Intel CSM
+VER_DATE		EQU	'07/27/26'		; must be MM/DD/YY per Intel CSM
 	ENDIF
 COPY_YEAR		EQU	'2022-26'		; Copyright year range
 
@@ -298,9 +298,15 @@ EKB_INT_15		=	1		; enable keyboard intercept (if KB_EXT)
 EKB_INT_SR		=	1		; enable SysRq handling (if KB_EXT)
 BOOT_TEMP		=	0		; 0=normal COLD/WARM by ctrl-alt-del
 						; 1=always WARM boot, 2=always COLD boot
-IPL_SW_FDC		=	0		; Use IPL switch to enable/disable floppy
-IPL_SW_WARM		=	1		; IPL switch OFF (normal) always WARM boot
+IPL_SW_FDC		=	0		; 1=use IPL DIP SW1-1 to enable/disable floppy
+IPL_SW_WARM		=	0		; 1=when IPL DIP SW1-1 is OFF always WARM boot
 FD_BOOT_RETRY	=	3		; number of times to retry floppy boot
+
+;----------------------------------------------------------------------------;
+; New, experimental/testing versions of core features in 0.8b.
+;
+INT_10_EXP_SCROLL	EQU	1		; experimental scrolling code!
+INT_19_EXP_BOOT	EQU	1		; experimental INT 19h boot loader!
 
 ;----------------------------------------------------------------------------;
 ; Hardware hacks!
@@ -5525,9 +5531,10 @@ HDD_POST PROC
 	CALL	NIB_HEX				; write as hex to console (clobs AX)
 	POST_COL_END_NL				; end column
 	POP	CX					; CX = drive count
-	JCXZ	HDD_POST_DONE			; reset passed but 0 drives
 
 			IF POST_HD_PARMS EQ 1
+	JCXZ	HDD_POST_DONE			; reset passed but 0 drives
+
 ;----------------------------------------------------------------------------;
 ; Display HDD drive letter(s) and size(s)
 ;	
@@ -5536,9 +5543,45 @@ HDD_POST_SHOW_LOOP:
 	CALL	SHOW_DISK_PARAMS			; show drive letter and geometry
 	INC	DX					; move to next drive
 	LOOP	HDD_POST_SHOW_LOOP
-	JMP	SHORT HDD_POST_DONE
 			ENDIF				; ENDIF POST_HD_PARMS EQ 1
 			ENDIF				; ENDIF POST_HD_COUNT EQ 1
+	JMP	SHORT HDD_POST_DONE
+
+			IF INT_19_EXP_BOOT EQ 1
+;----------------------------------------------------------------------------;
+;  Get Hard Drive Parameters
+;----------------------------------------------------------------------------;
+;  Input:
+;	DL = drive number
+;  Output:
+; 	CF if Error
+;	AL = number of heads (AX if no error)
+; 	AH = return code
+;	BX = last cylinder
+; 	CX = logical last index of sectors/track
+;	DX = number of hard disk drives (all)
+;----------------------------------------------------------------------------;
+GET_DISK_PARAMS PROC
+	MOV	AH, 8 				; Get Drive in DL Parameters: 
+	INT	13H					;  CH = Last cyl, CL = # cylinders
+							;  DH = heads, DL = # drives
+							;  ES:DI = drive table
+	JC	GET_DISK_PARAMS_ERR 		; if error, exit
+	MOV	BX, CX 				; BX = last cylinder
+	XCHG	BH, BL 				; swap bytes
+	ROL	BH, 1 				; rotate high two bits into low bits
+	ROL	BH, 1
+	AND	BH, 11B				; BX = cylinder (10 bits)
+	AND	CX, 00111111B			; CX = logical last index of sec/trk
+	MOV	AL, DH
+	INC	AX					; convert heads to 1 index (count)
+	INC	BX					; convert cylinders to 1 index
+	XOR	DH, DH				; clear high byte of DX, CF = 0
+GET_DISK_PARAMS_ERR:
+	RET
+GET_DISK_PARAMS ENDP
+			ENDIF
+
 HDD_POST_NONE:
 			ENDIF				; ENDIF POST_HD_CHECK EQ 1
 	CALL	CRLF
@@ -5627,12 +5670,21 @@ CLEAR_POST_SCREEN:
 ;----------------------------------------------------------------------------;
 ; [40] DO BOOTSTRAP!
 ;----------------------------------------------------------------------------;
+			IF INT_19_EXP_BOOT EQ 1	; INT 19h will handle retry
+	INT	19H					; call INT 19h disk bootstrap loader
 
+			IF ARCH_SUB_TYPE NE ARCH_NEST
+	INT	18H					; INT 19h should never return...
+							; call INT 18h just in case
+							; TODO: FIX on 8/V S N
+			ENDIF
+	HLT
+
+			ELSE				; Below code will handle retry
 ;----------------------------------------------------------------------------;
 ; Attempt to IPL three times. If failure, call INT 18h / ROM BASIC.
 ; If INT_19_BOOT_HD is 1, BIOS will also attempt to IPL from 80h (C:)
 ;
-
 	CWD						; start IPL from drive 00h (A:)
 BOOT_DEVICE:
 	MOV	CX, FD_BOOT_RETRY			; number of boot attempts
@@ -5652,7 +5704,6 @@ BOOT_RETRY:
 	XOR	DL, 80H				; flip to HD
 	JNZ	BOOT_DEVICE				; retry if HD, otherwise INT 18
 			ENDIF
-
 TRY_INT_18:
 	INT	18H					; Try vectored ROM BASIC or boot failure
 							; INT 18h should never return...
@@ -5673,6 +5724,8 @@ INT_18 PROC
 	INT	16H					; wait for key press
 	JMP	BOOT					; reboot
 INT_18 ENDP
+
+			ENDIF				; /IF INT_19_EXP_BOOT EQ 1
 
 BOOT ENDP
 
@@ -6549,6 +6602,116 @@ BYTES_HERE	INT_19
 ; is transferred.
 ;
 ; Input:
+;	None
+; Output:
+;	Transfer control to bootable MBR if success
+;	INT 18H if failure
+;----------------------------------------------------------------------------;
+		ORG 0E6F2H
+INT_19 PROC
+			IF INT_19_EXP_BOOT EQ 1
+			ASSUME DS:NOTHING, ES:_IPL_SEG
+	XOR	DX, DX				; DH = head 0, DL=drive 00h (A:)
+	MOV	ES, DX				; ES = IPL Segment (0000)
+	MOV	DI, OFFSET IVT_1E			; INT 1E vector table address
+	MOV	AX, OFFSET INT_1E 		; INT 1E DBT address
+	CLD						; clear direction for STOS
+	STOSW
+	MOV	AX, CS				; INT 1E DBT segment
+	STOSW
+			IF MBR_CHECK EQ 0		; INT 13h should return with IF=1
+	STI						; enable interrupts
+			ENDIF
+
+;----------------------------------------------------------------------------;
+; Attempt boot drive number DL, try FD_BOOT_RETRY number of times
+;
+BOOT_DEVICE:
+	MOV	CX, FD_BOOT_RETRY			; number of boot attempts
+
+BOOT_RETRY:
+	PUSH	CX					; save retry counter
+	PUSH	DX					; save drive number
+			IF MBR_CHECK EQ 1
+	CBW						; AH = 0 (reset), AL should be < 128
+			ELSE
+	XOR	AH, AH				; AH = 0 (reset)
+			ENDIF
+	INT	13H					; reset disk in DL, IF=1
+	JC	INT_19_RESET_FAIL			; exit if error
+
+;----------------------------------------------------------------------------;
+; Read boot loader from sector 1, track 0, head 0 from disk
+;
+	MOV	AX, DBW <2, 1>			; AH = 2 (read), AL = 1 sector
+	MOV	BX, OFFSET IPL_TOP		; ES:BX = IPL boot sector offset
+	MOV	CX, DBW <0, 1>			; CH = cyl 0, CL = sec 1
+	INT	13H					; read 1 sector into ES:BX
+	JC	INT_19_RESET_FAIL			; retry if failure
+
+;----------------------------------------------------------------------------;
+; Boot sector read success
+;
+			IF MBR_CHECK EQ 1
+	CMP	IPL_ID, MAGIC_WORD		; verify bootable MBR signature
+	JNE	INT_19_IPL_FAIL			; jump if MBR not bootable
+			ENDIF
+	JMP 	IPL_TOP 				; jump to IPL segment and boot!
+
+;----------------------------------------------------------------------------;
+; Boot sector read failure
+;
+INT_19_RESET_FAIL:
+			IF MBR_CHECK EQ 0
+	XCHG	AX, CX				; longer delay for higher error codes
+	IO_DELAY					; delay between attempts
+			ENDIF
+	POP	DX					; restore drive number
+	POP	CX					; restore retry counter
+	LOOP	BOOT_RETRY				; retry current drive
+
+			IF INT_19_BOOT_HD EQ 1
+;----------------------------------------------------------------------------;
+; If boot floppy failed, re-attempt with hard drive 80h.
+;
+	RCR	DL, 1					; flip to 80h (since CF=1 from above)
+	JO	BOOT_DEVICE				; retry if 80h, otherwise INT 18h
+			ENDIF
+
+;----------------------------------------------------------------------------;
+; No bootable disk devices. Call INT 18h for vectored ROM BASIC or boot failure.
+;
+INT_19_IPL_FAIL:
+	INT	18H					; INT 18h should never return...
+							;  fall through just in case
+
+;----------------------------------------------------------------------------;
+; INT 18 - Unbootable IPL
+;----------------------------------------------------------------------------;
+; Display a disk boot failure message and wait for a key to cold reboot.
+;
+; This may be re-vectored to ROM BASIC, if present.
+;
+; Size: 18 bytes
+;----------------------------------------------------------------------------;
+INT_18 PROC
+	PRINT_SZ  BOOT_FAIL			; print boot failure string
+	XOR	AX, AX				; AH = 0 (wait for key)
+	INT	16H					; wait for key press
+	JMP	BOOT					; reboot
+INT_18 ENDP
+
+			ASSUME DS:NOTHING, ES:NOTHING
+INT_19 ENDP
+
+			ELSE
+;----------------------------------------------------------------------------;
+; INT 19 - Bootstrap Loader (Original version)
+;----------------------------------------------------------------------------;
+; IPL: track 0, sector 1 is loaded into address 0:7C00 and control
+; is transferred.
+;
+; Input:
 ; 	DL = physical drive where boot sector is located (00=A:,80h=C:)
 ; Output:
 ;	Transfer control to bootable MBR if success
@@ -6556,9 +6719,7 @@ BYTES_HERE	INT_19
 ;
 ; Clobbers AX, BX, CX, DH, DI, DS, ES
 ;----------------------------------------------------------------------------;
-		ORG 0E6F2H
-INT_19 PROC
-		ASSUME DS:_IPL_SEG, ES:_IPL_SEG
+			ASSUME DS:_IPL_SEG, ES:_IPL_SEG
 	STI						; enable interrupts
 	CLD						; clear direction for STOS
 	XOR	CX, CX				; CX = 0
@@ -6586,10 +6747,9 @@ INT_19_READ_MBR:
 	JMP 	IPL_TOP 				; jump to IPL segment and boot!
 INT_19_IPL_FAIL:
 	IRET
-		ASSUME DS:NOTHING, ES:NOTHING
+			ASSUME DS:NOTHING, ES:NOTHING
 INT_19 ENDP
 
-		IF POST_HD_CHECK EQ 1
 ;----------------------------------------------------------------------------;
 ;  Get Hard Drive Parameters
 ;----------------------------------------------------------------------------;
@@ -6604,28 +6764,28 @@ INT_19 ENDP
 ;	DX = number of hard disk drives (all)
 ;----------------------------------------------------------------------------;
 GET_DISK_PARAMS PROC
-	MOV	AH, 8 			; Get Drive in DL Parameters: 
-	INT	13H				;  CH = Last cyl, CL = # cylinders
-						;  DH = heads, DL = # drives
-						;  ES:DI = drive table
-	JC	GET_DISK_PARAMS_ERR 	; if error, exit
-	MOV	BX, CX 			; BX = last cylinder
-	XCHG	BH, BL 			; swap bytes
-	ROL	BH, 1 			; rotate high two bits into low bits
+	MOV	AH, 8 				; Get Drive in DL Parameters: 
+	INT	13H					;  CH = Last cyl, CL = # cylinders
+							;  DH = heads, DL = # drives
+							;  ES:DI = drive table
+	JC	GET_DISK_PARAMS_ERR 		; if error, exit
+	MOV	BX, CX 				; BX = last cylinder
+	XCHG	BH, BL 				; swap bytes
+	ROL	BH, 1 				; rotate high two bits into low bits
 	ROL	BH, 1
-	AND	BH, 11B			; BX = cylinder (10 bits)
-	AND	CX, 00111111B		; CX = logical last index of sectors/track
+	AND	BH, 11B				; BX = cylinder (10 bits)
+	AND	CX, 00111111B			; CX = logical last index of sec/trk
 	MOV	AL, DH
-	INC	AX				; convert heads to 1 index (count)
-	INC	BX				; convert cylinders to 1 index
-	XOR	DH, DH			; clear high byte of DX, CF = 0
+	INC	AX					; convert heads to 1 index (count)
+	INC	BX					; convert cylinders to 1 index
+	XOR	DH, DH				; clear high byte of DX, CF = 0
 GET_DISK_PARAMS_ERR:
 	RET
 GET_DISK_PARAMS ENDP
-		ENDIF
+
+			ENDIF
 
 BYTES_HERE	INT_14
-
 
 ;----------------------------------------------------------------------------;
 ; INT 14 - BIOS COM Port Services
@@ -10105,8 +10265,6 @@ INT_10_5 PROC
 	JMP	INT_10_SET_CUR_OFFSET	; write it to the new page's offset on 6845
 
 INT_10_5 ENDP
-
-INT_10_EXP_SCROLL	EQU	1		; experimental scrolling code!
 
 ;----------------------------------------------------------------------------;
 ; INT 10,7 - Scroll active page down
