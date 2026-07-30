@@ -416,7 +416,6 @@ TD_UPMEM		=	1			; clear and display upper memory bank
 		IF TD_UPMEM EQ 1
 RAM_DIGITS		=	4			; display RAM as four digits
 POST_TEST_PIC_REG	=	0			; disable PIC reg tests
-POST_TEST_PIC_INT	=	0			; not enough code space
 		ENDIF
 		IF KB_EXT EQ 1
 ;FDC_ENABLE		=	0			; remove FDC to enable Ext. KB
@@ -430,6 +429,7 @@ TD_WS_SETUP		=	1			; set wait state register on boot
 UNSAFE_REFRESH	=	1			; go big or go home
 DRAM_REFRESH	=	655
 N3_UMA		=	1			; enable UMA bank (E000) on boot
+POST_TEST_PIC_INT	=	0			; not enough code space
 	ENDIF						; /IF ARCH_SUB_TYPE EQ ARCH_NEST
 	ENDIF						; /IF ARCH_TYPE EQ ARCH_TD3300
 
@@ -3611,7 +3611,7 @@ INIT_VIDEO:
 ;----------------------------------------------------------------------------;
 			IF BOOT_TEMP_AUTO		; if normal WARM/COLD
 	CMP	WARM_FLAG_ABS, WARM_BOOT	; check BDA flag
-	JNZ	POST_FLAG_DONE
+	JNE	POST_FLAG_DONE
 			ENDIF
 			IF BOOT_TEMP_WARM		; if not COLD only
 	MOV	BP, MASK WARM			; clear and set POST warm boot flag
@@ -4086,28 +4086,32 @@ BASE_RAM_TEST_DONE:
 
 			IF POST_TEST_PIC_REG EQ 1
 ;----------------------------------------------------------------------------;
-; [22] 8259A PIC Test
+; [22.1] 8259A PIC Register Test
 ;----------------------------------------------------------------------------;
-; - Read and write registers (IMR) and verify result
+; Read and write PIC IMR register and verify result
 ;----------------------------------------------------------------------------;
 	CALL	PORT_TEST			; test of PIC IMR register
 	MOV	BL, BEEP_SL <5,2>		; beep error 5 short, 2 long
-	JZ	PIC_REG_PASS
-PIC_INT_FAIL:
-	JMP	SHORT HALT_BEEP_1
-PIC_REG_PASS:
-	DEC	DX				; DX = Port 1 (0021h)
+	JNZ	HALT_BEEP_1			; beep and halt if PIC PORT test failed
+	DEC	DX				; DX = IMR Port 1 (0021h)
 			ELSE
-	NOP
-			ENDIF			; IF POST_TEST_PIC_REG EQ 1
+	NOP					; short I/O delay
+			ENDIF			; /POST_TEST_PIC_REG EQ 1
 
 	MOV	AL, OCW1 <1,1,1,1,1,1,1,1> ; OCW1 - mask all interrupts (for now)
 	OUT	DX, AL			; write IMR to PIC
 
 			IF POST_TEST_PIC_INT EQ 1
 ;----------------------------------------------------------------------------;
-; - Set up test interrupt handler for all interrupts
-; - AX = CS used by INIT_SW_INT_VECTORS
+; [22.2] 8259A PIC Hot Interrupt Test
+;----------------------------------------------------------------------------;
+; Ensure no CPU interrupts are generated with all interrupts masked by IMR.
+;
+; Output: AX = CS used by INIT_SW_INT_VECTORS
+;----------------------------------------------------------------------------;
+
+;----------------------------------------------------------------------------;
+; Set up test interrupt handler for all interrupts
 ;
 PIC_INT_TEST:
 	MOV	CL, 1FH			; 0 - 1EH BIOS vectors (LOW L_VECTOR_TABLE)
@@ -4115,34 +4119,22 @@ PIC_INT_TEST:
 PIC_VECT_TMP_LOOP:
 	MOV	AX, OFFSET INT_IRQ	; offset for handler
 	STOSW					; write to IVT (ES=0000 from CPU_REG_TEST)
-	MOV	AX, CS			; segment for handler (BIOS)
+	MOV	AX, CS			; segment for handler (BIOS), AX=F000
 	STOSW					; write to IVT
 	LOOP	PIC_VECT_TMP_LOOP
 
 ;----------------------------------------------------------------------------;
-; - Mask all interrupts and ensure none are received
-; Input: AL = 0 (from MOV AX, CS)
+; Mask all interrupts and ensure none are received
 ;
 	MOV	DI, OFFSET INT_LAST_ABS
-	MOV	[DI], AL			; clear last interrupt flag
+	MOV	[DI], AL			; clear last interrupt flag (AL = 0)
 	STI					; enable interrupts
 	IO_DELAY				; wait for it...
 	CLI
 	INC	BX				; beep error 5 short, 3 long
 	OR	[DI], AL			; did any interrupts happen?
-
-			IF POST_TEST_PIC_REG EQ 1
-	JNZ	PIC_INT_FAIL
-			ELSE
-	JZ	PIC_INT_PASS
-	JMP	SHORT HALT_BEEP_1
-			ENDIF			; IF POST_TEST_PIC_REG EQ 1
-			ENDIF			; IF POST_TEST_PIC_INT EQ 1
-
-	MOV	AL, NOT MASK IRQ0		; OCW1 - unmask timer
-	OUT	DX, AL			; write IMR to PIC
-
-PIC_INT_PASS:
+	JNZ	HALT_BEEP_1			; beep and halt if PIC INT test failed
+			ENDIF			; /POST_TEST_PIC_INT EQ 1
 
 ;----------------------------------------------------------------------------;
 ; [23] Setup Channel #0 on 8253 timer chip.
@@ -4887,7 +4879,7 @@ TD3300_NO_CLEAR:
 	MOV	BX, 1024 - 16			; fake 1024K display count
 	JMP	NEAR PTR ZERO_ALL_RAM		; display RAM count and exit test
 
-			ELSE
+			ELSE				; ARCH_SUB_TYPE EQ ARCH_NEST
 ;----------------------------------------------------------------------------;
 ; D-11/Nest implementation. Swap each 64K bank into E000, clear and test.
 ;----------------------------------------------------------------------------;
@@ -5569,8 +5561,12 @@ GET_DISK_PARAMS PROC
 	JC	GET_DISK_PARAMS_ERR 		; if error, exit
 	MOV	BX, CX 				; BX = last cylinder
 	XCHG	BH, BL 				; swap bytes
+			IF CPU_TYPE	EQ CPU_V20
+	ROL	BH, 2 				; rotate high two bits into low bits
+			ELSE
 	ROL	BH, 1 				; rotate high two bits into low bits
 	ROL	BH, 1
+			ENDIF
 	AND	BH, 11B				; BX = cylinder (10 bits)
 	AND	CX, 00111111B			; CX = logical last index of sec/trk
 	MOV	AL, DH
