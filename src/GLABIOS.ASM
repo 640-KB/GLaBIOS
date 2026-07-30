@@ -411,15 +411,20 @@ IPL_SW_FDC		=	1			; Use IPL SW1 for drive count
 KB_HLT_WAIT		=	0			; seems to cause issues on TD3300A
 TURBO_TYPE		=	TURBO_REV		; always use Reverse
 TURBO_SWITCH	=	1			; boot under hardware Turbo control
-TD_WS_SETUP		=	0			; set wait state register on boot (0 ws)
+TD_WS_SETUP		=	0			; set 0 WS register on boot (+9 bytes)
 TD_UPMEM		=	1			; clear and display upper memory bank
+;UNSAFE_REFRESH	=	1			; not always stable on ST-12
 		IF TD_UPMEM EQ 1
 RAM_DIGITS		=	4			; display RAM as four digits
-POST_TEST_PIC_REG	=	0			; disable PIC reg tests
+;POST_TEST_PIC_REG	=	0			; PIC reg tests (+8 bytes)
 		ENDIF
 		IF KB_EXT EQ 1
-;FDC_ENABLE		=	0			; remove FDC to enable Ext. KB
-		ENDIF					;  if using GLaDISK for floppy
+;FDC_ENABLE		=	0			; optionally remove FDC to enable
+							;  EXT_KB if using GLaDISK for floppy
+;ROM_SIZE		=	9			; OR extend ROM size to 9K
+;DETECT_GAM		=	0			; disable if extended ROM size
+POST_TEST_PIC_INT	=	0			; PIC interrupt test (+27 bytes)
+		ENDIF
 
 	IF ARCH_SUB_TYPE EQ ARCH_NEST
 ;----------------------------------------------------------------------------;
@@ -429,7 +434,8 @@ TD_WS_SETUP		=	1			; set wait state register on boot
 UNSAFE_REFRESH	=	1			; go big or go home
 DRAM_REFRESH	=	655
 N3_UMA		=	1			; enable UMA bank (E000) on boot
-POST_TEST_PIC_INT	=	0			; not enough code space
+POST_TEST_PIC_REG	=	1			; PIC reg test (+8 bytes)
+POST_TEST_PIC_INT	=	0			; PIC interrupt test (+27 bytes)
 	ENDIF						; /IF ARCH_SUB_TYPE EQ ARCH_NEST
 	ENDIF						; /IF ARCH_TYPE EQ ARCH_TD3300
 
@@ -4090,10 +4096,12 @@ BASE_RAM_TEST_DONE:
 ;----------------------------------------------------------------------------;
 ; Read and write PIC IMR register and verify result
 ;----------------------------------------------------------------------------;
+PIC_REG_TEST PROC
 	CALL	PORT_TEST			; test of PIC IMR register
 	MOV	BL, BEEP_SL <5,2>		; beep error 5 short, 2 long
 	JNZ	HALT_BEEP_1			; beep and halt if PIC PORT test failed
 	DEC	DX				; DX = IMR Port 1 (0021h)
+PIC_REG_TEST ENDP
 			ELSE
 	NOP					; short I/O delay
 			ENDIF			; /POST_TEST_PIC_REG EQ 1
@@ -4113,7 +4121,7 @@ BASE_RAM_TEST_DONE:
 ;----------------------------------------------------------------------------;
 ; Set up test interrupt handler for all interrupts
 ;
-PIC_INT_TEST:
+PIC_INT_TEST PROC
 	MOV	CL, 1FH			; 0 - 1EH BIOS vectors (LOW L_VECTOR_TABLE)
 	XOR	DI, DI			; DI = beginning to IVT
 PIC_VECT_TMP_LOOP:
@@ -4134,6 +4142,7 @@ PIC_VECT_TMP_LOOP:
 	INC	BX				; beep error 5 short, 3 long
 	OR	[DI], AL			; did any interrupts happen?
 	JNZ	HALT_BEEP_1			; beep and halt if PIC INT test failed
+PIC_INT_TEST ENDP
 			ENDIF			; /POST_TEST_PIC_INT EQ 1
 
 ;----------------------------------------------------------------------------;
