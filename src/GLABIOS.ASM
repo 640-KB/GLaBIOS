@@ -676,10 +676,12 @@ TURBO_TYPE		=	TURBO_STD		; use inverse so toggle sets speed
 ;
 IS_TURBO		=	TURBO_TYPE NE TURBO_NONE	; use for conditionals
 
+	IFNDEF BOOT_SPEED
 	IF IS_TURBO
-BOOT_SPEED		EQU	BOOT_TURBO
+BOOT_SPEED		=	BOOT_TURBO
 	ELSE
-BOOT_SPEED		EQU	BOOT_NORMAL
+BOOT_SPEED		=	BOOT_NORMAL
+	ENDIF
 	ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -5402,6 +5404,14 @@ DMA_STATUS_OK:
 			ENDIF
 
 	CALL	CRLF_SHOW_CURSOR			; CRLF and re-enable cursor
+
+			IF IS_TURBO AND BOOT_SPEED EQ BOOT_NORMAL
+;----------------------------------------------------------------------------;
+; If booting to NORMAL (low) speed, initially set cursor to big
+;
+	CBW						; starting scan line 0 ("big cursor")
+	CALL	SET_CURSOR				; Video set cursor
+			ENDIF
 
 ;----------------------------------------------------------------------------;
 ; Unmask IRQs for Timer (IRQ0), Keyboard (IRQ1) and Floppy (IRQ6)
