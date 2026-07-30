@@ -260,6 +260,7 @@ FDC_ERR_SEC_CT	=	0		; On error, 0=always return 0 sectors
 KB_HLT_WAIT		=	1		; Halt CPU during KB wait
 KB_BUF_BDA		=	0		; 1=use BDA KB buffer ptrs (40:80-83)
 						;   0=static offsets (-3 bytes)
+INT_19_BOOT_HD	=	0		; Try IPL to floppy then hard drive (80h)
 MBR_CHECK		=	0		; Verify magic number of DOS MBR at boot
 						;   note: DOS 1.0 does not use MBR, so
 						;   will not boot if this is enabled
@@ -273,7 +274,6 @@ FD_AUTO_DETECT	=	0		; Auto-detect number of floppy drives
 						;   use only for DIP switch-less PCs!
 POST_ERR_WAIT	=	1		; Wait for Any Key press to continue if
 						;   there is a POST error
-INT_19_BOOT_HD	=	0		; Try IPL to floppy then hard drive (80h)
 SW1_FLP		=	11b		; Default SW1 floppy drives value
 MDA_ATTR		=	1		; Display MDA character attributes
 						; 2=all, 1=intensity only, 0=filter all
@@ -620,7 +620,7 @@ MAX_RAM_AUTO	=	1			; select max RAM from video switch
 TURBO_TYPE		=	TURBO_STD		; enable Turbo features
 ;FDC_ENABLE		=	0			; disable all INT 13h floppy support
 	ENDIF
-	ENDIF
+	ENDIF						; /IF ARCH_TYPE EQ ARCH_EMU
 
 	IF ARCH_SUB_TYPE EQ ARCH_MARTY
 ;----------------------------------------------------------------------------;
@@ -634,7 +634,8 @@ RAM_TEST_LONG	=	0			; disable long RAM test
 OEM_FONT		=	1			; use OEM style font
 MARTY_FAST_BOOT	=	0			; faster boot
 		IF ARCH_TYPE EQ ARCH_TURBO
-TURBO_TYPE		=	TURBO_STD		; use high = turbo
+;TURBO_TYPE		=	TURBO_STD		; use high = turbo
+TURBO_TYPE		=	TURBO_REV		; use low = turbo
 		ENDIF
 		IF MAX_RAM_AUTO EQ 1		; select max RAM from video switch
 POST_TEST_PIT_1	=	00			; disable to free code space
