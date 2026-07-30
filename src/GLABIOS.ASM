@@ -345,10 +345,12 @@ UNSAFE_FLP_DIV	EQU	<3/10>	; 30%
 ; https://en.wikipedia.org/wiki/Memory_refresh
 ;
 UNSAFE_REFRESH	=	0		; Use unsafe DRAM refresh timing
-	IF UNSAFE_REFRESH EQ 1
-DRAM_REFRESH	=	655		; "FASTV20" DRAM divisor: 1,821.65 Hz
-;DRAM_REFRESH	=	64		; "SPEEDER" DRAM divisor: 18,640 Hz
-	ENDIF
+
+;----------------------------------------------------------------------------;
+; Set default desired UNSAFE divisor
+;
+UNSAFE_DIV		=	655		; "FASTV20" DRAM divisor: 1,821.65 Hz
+;UNSAFE_DIV		=	64		; "SPEEDER" DRAM divisor: 18,640 Hz
 
 ;----------------------------------------------------------------------------;
 ; END Configurable Build Options
@@ -432,7 +434,6 @@ POST_TEST_PIC_INT	=	0			; PIC interrupt test (+27 bytes)
 ;
 TD_WS_SETUP		=	1			; set wait state register on boot
 UNSAFE_REFRESH	=	1			; go big or go home
-DRAM_REFRESH	=	655
 N3_UMA		=	1			; enable UMA bank (E000) on boot
 POST_TEST_PIC_REG	=	1			; PIC reg test (+8 bytes)
 POST_TEST_PIC_INT	=	0			; PIC interrupt test (+27 bytes)
@@ -468,16 +469,15 @@ FE_SPD_LO		EQU	000b			; 4.77 MHz, 1 IOWS, 0 MBWS
 ;
 FE_CPU_CFG		=	FE_SPD_HI_SAFE	; boot to 9.54 MHz, 6 IOWS, 4 MBWS
 FE_CPU_CFG_MED	=	FE_SPD_MED		; 7.15 MHz, 4 IOWS, 0 MBWS
-FE_SPD_MED_ONLY	=	0			; FE2010 (not A) or 7.15 MHZ CPU only
-
-BASIC_ROM		=	0			; can be disabled to free code space
-FD_AUTO_DETECT	=	1			; auto-detect number of floppy drives
-POST_TEST_PIT_1	=	0			; FE2010A chipset cannot read timer 1
-SW1_FLP		=	01b			; SW1 5/6 Max # of floppy drives (0-1)
 FE_3_SPD		=	1			; toggle through all three speeds
-TURBO_TYPE		=	TURBO_REV		; FE2010A always use reverse
+FE_SPD_MED_ONLY	=	0			; FE2010 (not A) or 7.15 MHZ CPU only
 ;FE_BASE_MEM	=	256			; Force base MB RAM 512K or 256K
 							;  ONLY use if ISA RAM installed
+TURBO_TYPE		=	TURBO_REV		; FE2010A always use reverse
+POST_TEST_PIT_1	=	0			; FE2010A chipset cannot read timer 1
+SW1_FLP		=	01b			; SW1 5/6 Max # of floppy drives (0-1)
+FD_AUTO_DETECT	=	1			; must auto-detect # of floppy drives
+BASIC_ROM		=	0			; can be disabled to free code space
 	IF BASIC_ROM EQ 1				; if BASIC enabled, PIC tests are
 POST_TEST_PIC_REG =	0			;  disabled to fit available code space
 POST_TEST_PIC_INT =	0			; Since PIC is integrated on FE2010A
@@ -693,6 +693,10 @@ LIGHT_PEN		=	1			; enable light pen (for compatibility)
 POST_HD_PARMS	=	0			; enable POST HD size display
 POST_OPT_ROM	=	0			; enable POST option ROM display
 RANDOM_TAGLINE	=	0			; enable random tagline
+	ENDIF
+
+	IF UNSAFE_REFRESH EQ 1
+DRAM_REFRESH	=	UNSAFE_DIV		; set DRAM refresh divisor
 	ENDIF
 
 ;----------------------------------------------------------------------------;
@@ -11593,6 +11597,7 @@ BIOS_VIDEO:
 ;----------------------------------------------------------------------------;
 ; Check if HGC/Hercules (+30 bytes)
 ; http://www.pennelynn.com/Documents/CUJ/HTML/90HTML/199001B5.HTM
+; Note: this may slow down POST slightly if MDA (not HGC) is installed
 ;
 CHECK_HGC PROC
 	JNC	CHECK_CGA				; Not MDA/HGC
