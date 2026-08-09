@@ -81,7 +81,7 @@ ARCH_MARTY		EQU	'C'			; MartyPC Emulator
 ARCH_VEN888		EQU	'V'			; Vendex 888-XT
 ARCH_LASER		EQU	'L'			; VTech Laser Turbo XT
 ARCH_BOOK88		EQU	'B'			; Book 8088
-ARCH_CPQ		EQU	'Q'			; Compaq Portable XT
+ARCH_CPQ		EQU	'Q'			; Compaq Portable
 ARCH_VIRTUALXT	EQU	'J'			; VirtualXT Emulator
 ARCH_NEST		EQU	'N'			; Juko Nest N3 (D-11 chipset)
 ARCH_WILDCARD	EQU	'W'			; Wildcard 88 (80C88AL)
@@ -532,9 +532,7 @@ SW1_FLP		=	00b			; SW1 7/8 Max # of floppy drives (0-3)
 ;
 	IF ARCH_TYPE EQ ARCH_CPQ
 TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
-SW1_VID		=	10b			; SW1 5/6 ON/OFF Video Type CGA 80
-SW1_FLP		=	1			; SW1 7/8 Max # of floppy drives (0-3)
-							;  0-based: 0=1 drive, 1=2 drives, etc
+FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
 	ENDIF
 
 	IF ARCH_TYPE EQ ARCH_EMU
@@ -4129,7 +4127,7 @@ SETTINGS_FE2010_1:
 							;   FD: 00b=1 drive, 01b=2 drives
 
 		ELSE                          ; not ARCH_5150 OR ARCH_FE2010
-		IF ARCH_TYPE EQ ARCH_EHB OR ARCH_TYPE EQ ARCH_BOOK88 OR ARCH_TYPE EQ ARCH_CPQ
+		IF ARCH_TYPE EQ ARCH_EHB OR ARCH_TYPE EQ ARCH_BOOK88
 		;IF ARCH_TYPE EQ ARCH_EHB OR ARCH_TYPE EQ ARCH_BOOK88
 		; TODO: better way to force DIP switches
 ;----------------------------------------------------------------------------;
@@ -4138,6 +4136,19 @@ SETTINGS_FE2010_1:
 	MOV	AL, LOW EQFLAGS <,,,,,SW1_FLP,SW1_VID>	; use preconfigured values
 
 		ELSE
+			IF ARCH_TYPE EQ ARCH_CPQ
+;----------------------------------------------------------------------------;
+; Early Compaq Portable boards had two switch blocks, like the 5150. The second
+; switch block was eventually eliminated and is ignored by later revisions of
+; the Compaq BIOS. SW1 is read like the 5150, but the Compaq BIOS still ignores
+; most of the switches except for the ones that affect the video mode.
+;
+SETTINGS_CPQ:
+	OR	AL, MASK PBKB			; Enable SW1 switches
+	OUT	PPI_B, AL
+	IN	AL, PPI_A				; AL = raw SW1 byte, already in EQFLAGS order
+
+			ELSE
 ;----------------------------------------------------------------------------;
 ; Is a 5160 or standard PPI
 ;
@@ -4185,6 +4196,7 @@ MAX_RAM_AUTO_DONE:
 MAX_RAM_AUTO_SETUP ENDP
 			ENDIF
 
+			ENDIF				; not ARCH_TYPE EQ ARCH_CPQ
 		ENDIF					; not ARCH_TYPE EQ ARCH_EHB
 		ENDIF					; not ARCH_TYPE EQ ARCH_FE2010
 		ENDIF					; not ARCH_TYPE EQ ARCH_5150
