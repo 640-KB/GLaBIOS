@@ -81,7 +81,7 @@ ARCH_MARTY		EQU	'C'			; MartyPC Emulator
 ARCH_VEN888		EQU	'V'			; Vendex 888-XT
 ARCH_LASER		EQU	'L'			; VTech Laser Turbo XT
 ARCH_BOOK88		EQU	'B'			; Book 8088
-ARCH_CPQ		EQU	'Q'			; Compaq Portable XT
+ARCH_CPQ		EQU	'Q'			; Compaq Portable
 ARCH_VIRTUALXT	EQU	'J'			; VirtualXT Emulator
 ARCH_NEST		EQU	'N'			; Juko Nest N3 (D-11 chipset)
 ARCH_WILDCARD	EQU	'W'			; Wildcard 88 (80C88AL)
@@ -528,13 +528,11 @@ SW1_FLP		=	00b			; SW1 7/8 Max # of floppy drives (0-3)
 	ENDIF
 
 ;----------------------------------------------------------------------------;
-; Configuration for Compaq XT (incomplete)
+; Configuration for Compaq Portable (incomplete)
 ;
 	IF ARCH_TYPE EQ ARCH_CPQ
 TURBO_TYPE		=	TURBO_NONE		; disable Turbo features
-SW1_VID		=	10b			; SW1 5/6 ON/OFF Video Type CGA 80
-SW1_FLP		=	1			; SW1 7/8 Max # of floppy drives (0-3)
-							;  0-based: 0=1 drive, 1=2 drives, etc
+FDC_IPL_SW		=	1			; Use IPL SW1 for drive count
 	ENDIF
 
 	IF ARCH_TYPE EQ ARCH_EMU
@@ -4129,7 +4127,7 @@ SETTINGS_FE2010_1:
 							;   FD: 00b=1 drive, 01b=2 drives
 
 		ELSE                          ; not ARCH_5150 OR ARCH_FE2010
-		IF ARCH_TYPE EQ ARCH_EHB OR ARCH_TYPE EQ ARCH_BOOK88 OR ARCH_TYPE EQ ARCH_CPQ
+		IF ARCH_TYPE EQ ARCH_EHB OR ARCH_TYPE EQ ARCH_BOOK88
 		;IF ARCH_TYPE EQ ARCH_EHB OR ARCH_TYPE EQ ARCH_BOOK88
 		; TODO: better way to force DIP switches
 ;----------------------------------------------------------------------------;
@@ -4138,6 +4136,19 @@ SETTINGS_FE2010_1:
 	MOV	AL, LOW EQFLAGS <,,,,,SW1_FLP,SW1_VID>	; use preconfigured values
 
 		ELSE
+			IF ARCH_TYPE EQ ARCH_CPQ
+;----------------------------------------------------------------------------;
+; Early Compaq Portable boards had two switch blocks, like the 5150. The second
+; switch block was eventually eliminated and is ignored by later revisions of
+; the Compaq BIOS. SW1 is read like the 5150, but the Compaq BIOS still ignores
+; most of the switches except for the ones that affect the video mode.
+;
+SETTINGS_CPQ:
+	OR	AL, MASK PBKB			; Enable SW1 switches
+	OUT	PPI_B, AL
+	IN	AL, PPI_A				; AL = raw SW1 byte, already in EQFLAGS order
+
+			ELSE
 ;----------------------------------------------------------------------------;
 ; Is a 5160 or standard PPI
 ;
@@ -4185,6 +4196,7 @@ MAX_RAM_AUTO_DONE:
 MAX_RAM_AUTO_SETUP ENDP
 			ENDIF
 
+			ENDIF				; not ARCH_TYPE EQ ARCH_CPQ
 		ENDIF					; not ARCH_TYPE EQ ARCH_EHB
 		ENDIF					; not ARCH_TYPE EQ ARCH_FE2010
 		ENDIF					; not ARCH_TYPE EQ ARCH_5150
@@ -7227,7 +7239,7 @@ INT_KB_IS_ALT_000:
 INT_KB_NOT_ALT_000:
 	XCHG	AX, BX					; restore AX
 	MOV	DI, OFFSET INT_KB_ALT_SKIP
-	MOV	CL, 10					; L_INT_KB_ALT_SKIP
+	MOV	CX, L_INT_KB_ALT_SKIP
 	XCHG	AH, AL
 	REPNE SCASB						; is in table?
 	XCHG	AH, AL
@@ -7308,7 +7320,10 @@ INT_KB_CTRL:
 INT_KB_CTRL_ALT:
 	CMP	AH, 53H					; is Ctrl-Alt-Del?
 			IF IS_TURBO
-	JNE	INT_KB_CTRL_ALT_1				; if not check for turbo hotkey
+	JNZ	INT_KB_CTRL_ALT_1				; if not check for turbo hotkey
+			ENDIF
+			IF ARCH_TYPE EQ ARCH_CPQ
+	JNZ	INT_KB_CTRL_ALT_2				; jump to compaq key commands
 			ELSE
 	JNE	INT_KB_CTRL_NO_DONE			; put in buffer as-is and exit
 			ENDIF
@@ -7337,7 +7352,7 @@ INT_KB_CTRL_ALT_DEL:
 
 			IF IS_TURBO
 ;----------------------------------------------------------------------------;
-; 10. Handle Ctrl-Alt but not Del (only Turbo hotkey)
+; 10. Handle Ctrl-Alt but not Del
 ;
 INT_KB_CTRL_ALT_1:
 
@@ -7377,6 +7392,29 @@ INT_KB_TOGGLE_TURBO PROC
 	JMP	SHORT INT_KB_DONE_3			; done with keyboard
 INT_KB_TOGGLE_TURBO ENDP
 			ENDIF
+
+
+                  IF ARCH_TYPE EQ ARCH_CPQ
+INT_KB_CTRL_ALT_2:
+;----------------------------------------------------------------------------;
+; Ctrl-Alt-, CGA 80x25
+;
+      CMP   AH, 33H
+	JNZ	INT_KB_CTRL_ALT_3
+	CALL	CPQ_VID_CGA
+	JMP	SHORT INT_KB_DONE_3
+
+;----------------------------------------------------------------------------;
+; Ctrl-Alt-. MDA 80x25
+;
+INT_KB_CTRL_ALT_3:
+      CMP   AH, 34H
+	JNZ	INT_KB_CTRL_NO_DONE
+	CALL	CPQ_VID_MDA
+	JMP	SHORT INT_KB_DONE_3
+
+                  ENDIF
+
 
 ;----------------------------------------------------------------------------;
 ; 5. Is a flag key?
@@ -7550,8 +7588,10 @@ INT_KB_ALT_SKIP	LABEL BYTE
 	DB	28H					; '
 	DB	29H					; `
 	DB	2BH					; \
+			IF ARCH_TYPE NE ARCH_CPQ
 	DB	33H					; ,
 	DB	34H					; .
+			ENDIF
 	DB	35H					; /
 	DB	37H					; * PrcSc
 L_INT_KB_ALT_SKIP	EQU $-INT_KB_ALT_SKIP
@@ -9119,7 +9159,8 @@ O_INT_1D_40		EQU	INT_1D_40-INT_1D		; 40x25 mode data offset
 
 ; 80x25 CGA text
 		IF ARCH_TYPE EQ ARCH_CPQ
-INT_1D_80		CRTC	<71H,50H,5AH,0AH,19H,06H,19H,19H,02H,0DH,0BH,0CH>
+INT_1D_80		CRTC	<71H,50H,5AH,0AH,19H,06H,19H,19H,02H,0DH,0BH,0CH>	; MDA-like (default)
+INT_1D_80_CGA	CRTC	<71H,50H,5AH,0AH,1FH,06H,19H,1CH,02H,07H,06H,07H>	; standard CGA
 		ELSE
 INT_1D_80		CRTC	<71H,50H,5AH,0AH,1FH,06H,19H,1CH,02H,07H,06H,07H>
 		ENDIF
@@ -9226,7 +9267,7 @@ INT_10_0_IS_CGA:
 ;----------------------------------------------------------------------------;
 ; Is CGA graphics (modes 4-6)
 ;
-	SHL	SI, 1					; SI = CGA GFX CRTD offset (20H)
+	MOV	SI, O_INT_1D_GFX			; SI = CGA GFX CRTD offset
 	MOV	AH, HIGH CGA_MEM_SZ		; CGA gfx page size = 4000H (16K)
 	XOR	DI, DI				; DI = memory fill 0's
 	TEST	BL, 0010B				; is 80 or 40 col text?
@@ -12199,6 +12240,33 @@ INT_10_4_GFX:
 	JMP	SHORT INT_10_4_DONE	; clear latch and return with AH=1
 INT_10_4 ENDP
 		ENDIF				; /LIGHT_PEN EQ 1
+
+		IF ARCH_TYPE EQ ARCH_CPQ
+;----------------------------------------------------------------------------;
+; Compaq Portable video style switch (Ctrl-Alt-, / Ctrl-Alt-.)
+;----------------------------------------------------------------------------;
+; The Compaq Portable has a dual sync internal monitor paired with a Compaq
+; VDU that can display MDA & CGA timings. In 80x25 mode it will default to
+; MDA-like mode, but can be switched back and forth via keyboard commands.
+; CRTC timings drive the VDU without any video mode change, screen clear, etc.
+;----------------------------------------------------------------------------;
+CPQ_VID_CGA:
+	MOV	SI, OFFSET INT_1D_80_CGA		; standard CGA 80x25 timing
+	JMP	SHORT CPQ_VID_SET
+CPQ_VID_MDA:
+	MOV	SI, OFFSET INT_1D_80			; MDA-like 80x25 timing (boot default)
+CPQ_VID_SET:
+	MOV	DX, VID_PORT
+	XOR	AX, AX
+	MOV	CX, 12
+CPQ_VID_LOOP:
+	MOV	AH, CS:[SI]
+	OUT	DX, AX
+	INC	AX
+	INC	SI
+	LOOP	CPQ_VID_LOOP
+	RET
+		ENDIF
 
 ;
 ; 79 BYTES HERE / 0 BYTES HERE 5150
